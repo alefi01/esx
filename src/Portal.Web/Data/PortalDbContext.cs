@@ -55,6 +55,20 @@ public class PortalDbContext : DbContext
             // Имя папки уникально среди соседей: две папки «Договоры» рядом
             // сбивают с толку и делают бессмысленными ссылки на них.
             entity.HasIndex(f => new { f.ParentId, f.Name }).IsUnique();
+
+            // Отдельный индекс для верхнего уровня.
+            //
+            // Индекс выше папки верхнего уровня НЕ защищает: там ParentId пуст,
+            // а база считает два пустых значения РАЗНЫМИ — пара (NULL, «Договоры»)
+            // не нарушает уникальность сама с собой. Это общее правило языка
+            // запросов, а не особенность PostgreSQL.
+            //
+            // Поэтому здесь второй индекс — только по имени и только для строк
+            // без родителя (HasFilter). Он и закрывает верхний уровень.
+            entity.HasIndex(f => f.Name)
+                .IsUnique()
+                .HasFilter("\"ParentId\" IS NULL")
+                .HasDatabaseName("IX_Folders_Name_Root");
         });
 
         modelBuilder.Entity<FolderPermission>(entity =>

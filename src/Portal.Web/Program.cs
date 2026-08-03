@@ -261,6 +261,28 @@ builder.Services.Configure<WebEncoderOptions>(options =>
         UnicodeRanges.Cyrillic);
 });
 
+// То же самое, но для ответов в формате JSON: их отдают окно «Свойства»
+// и колокольчик уведомлений. По умолчанию сериализатор экранирует всё,
+// кроме латиницы, и «Размер» уезжает как «Размер» —
+// вшестеро больше байт на каждую букву. На канале между офисами это заметно,
+// а в отладке такой ответ вдобавок нечитаем.
+//
+// Набор разрешённых символов тот же, что и у страниц: латиница и кириллица.
+// Экранирование опасных для разметки символов сериализатор сохраняет.
+var jsonEncoder = JavaScriptEncoder.Create(UnicodeRanges.BasicLatin, UnicodeRanges.Cyrillic);
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    // Точки /api/... — они отвечают через минимальные обработчики.
+    options.SerializerOptions.Encoder = jsonEncoder;
+});
+
+builder.Services.Configure<Microsoft.AspNetCore.Mvc.JsonOptions>(options =>
+{
+    // JsonResult со страниц — окно «Свойства», отчёт о загрузке файлов.
+    options.JsonSerializerOptions.Encoder = jsonEncoder;
+});
+
 builder.Services.AddRazorPages(options =>
 {
     // Страницы, доступные без входа. Всё остальное закрыто политикой по умолчанию.

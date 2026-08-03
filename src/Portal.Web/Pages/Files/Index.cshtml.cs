@@ -519,10 +519,7 @@ public class IndexModel : PageModel
 
         var name = NewFolderName.Trim();
 
-        var duplicate = await _db.Folders
-            .AnyAsync(f => f.ParentId == parentId && f.Name.ToLower() == name.ToLower(), cancellationToken);
-
-        if (duplicate)
+        if (await HasSiblingNamedAsync(parentId, name, exceptId: null, cancellationToken))
         {
             ErrorMessage = $"Папка «{name}» здесь уже есть.";
             return RedirectToPage(new { id = parentId });
@@ -1014,11 +1011,7 @@ public class IndexModel : PageModel
             return RedirectToPage(new { id = folder.ParentId });
         }
 
-        var duplicate = await _db.Folders.AnyAsync(
-            f => f.ParentId == folder.ParentId && f.Id != folderId && f.Name.ToLower() == name.ToLower(),
-            cancellationToken);
-
-        if (duplicate)
+        if (await HasSiblingNamedAsync(folder.ParentId, name, folderId, cancellationToken))
         {
             ErrorMessage = $"Папка «{name}» здесь уже есть.";
             return RedirectToPage(new { id = folder.ParentId });
@@ -1036,6 +1029,35 @@ public class IndexModel : PageModel
         StatusMessage = $"Папка переименована в «{name}».";
 
         return RedirectToPage(new { id = folder.ParentId });
+    }
+
+    /// <summary>
+    /// Есть ли рядом папка с таким же именем.
+    ///
+    /// ПОЧЕМУ ОТДЕЛЬНЫМ МЕТОДОМ, А НЕ ОДНИМ УСЛОВИЕМ
+    ///
+    /// Напрашивается написать «f.ParentId == parentId», и для вложенных папок
+    /// это работает. А для папок верхнего уровня — нет: там parentId равен null,
+    /// а в языке запросов к базе сравнение с пустым значением через «равно»
+    /// не даёт истины НИКОГДА, даже если слева тоже пусто. Проверка молча
+    /// переставала работать, и на верхнем уровне можно было завести вторую
+    /// папку с тем же именем — а потом гадать, в какой из них лежат документы.
+    ///
+    /// Поэтому случай «верхний уровень» выделен явно, через IS NULL.
+    /// Уникальный индекс в базе от этого, кстати, тоже не спасает: пустые
+    /// значения там считаются различными, и пара (NULL, «Договоры») дважды
+    /// его не нарушает. Отдельный индекс для верхнего уровня добавлен миграцией.
+    /// </summary>
+    private async Task<bool> HasSiblingNamedAsync(
+        int? parentId, string name, int? exceptId, CancellationToken cancellationToken)
+    {
+        var siblings = parentId is null
+            ? _db.Folders.Where(f => f.ParentId == null)
+            : _db.Folders.Where(f => f.ParentId == parentId);
+
+        return await siblings.AnyAsync(
+            f => f.Name.ToLower() == name.ToLower() && (exceptId == null || f.Id != exceptId),
+            cancellationToken);
     }
 
     /// <summary>
