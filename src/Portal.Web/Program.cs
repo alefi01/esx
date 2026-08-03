@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using System.Text.Encodings.Web;
 using System.Text.Unicode;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.WebEncoders;
 using Portal.Web.Data;
@@ -11,6 +12,7 @@ using Portal.Web.Security;
 using Portal.Web.Services;
 using Portal.Web.Services.ActiveDirectory;
 using Portal.Web.Services.Offices;
+using Portal.Web.Services.Storage;
 using Portal.Web.Services.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -32,12 +34,48 @@ builder.Services.Configure<OfficesOptions>(
 builder.Services.Configure<SecurityOptions>(
     builder.Configuration.GetSection(SecurityOptions.SectionName));
 
+builder.Services.Configure<StorageOptions>(
+    builder.Configuration.GetSection(StorageOptions.SectionName));
+
 // Часть настроек нужна прямо здесь, при сборке конвейера, а не через DI.
 var security = builder.Configuration
     .GetSection(SecurityOptions.SectionName).Get<SecurityOptions>() ?? new SecurityOptions();
 
 var adOptions = builder.Configuration
     .GetSection(ActiveDirectoryOptions.SectionName).Get<ActiveDirectoryOptions>() ?? new ActiveDirectoryOptions();
+
+var storageOptions = builder.Configuration
+    .GetSection(StorageOptions.SectionName).Get<StorageOptions>() ?? new StorageOptions();
+
+// ---------------------------------------------------------------------------
+// 1а. Ограничения на размер запроса
+//
+// Загрузка файла — это обычный HTTP-запрос, и по умолчанию ASP.NET Core
+// разрешает не больше 30 МБ. Поднимаем предел до общего верхнего значения
+// хранилища. Настроить надо в двух местах — Kestrel (когда приложение
+// запускают напрямую) и IIS (когда оно работает внутри рабочего процесса IIS).
+//
+// ТРЕТЬЕ место — файл web.config, атрибут maxAllowedContentLength.
+// Там ограничение самого IIS, и оно срабатывает РАНЬШЕ приложения:
+// если его не поднять, крупный файл оборвётся с невнятной ошибкой 404.13
+// и никакого понятного сообщения пользователь не увидит.
+// ---------------------------------------------------------------------------
+
+var maxRequestBytes = (long)storageOptions.AbsoluteMaxFileSizeMb * 1024 * 1024
+                      + 4 * 1024 * 1024;   // запас на служебные части multipart-запроса
+
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = maxRequestBytes);
+
+builder.Services.Configure<IISServerOptions>(options => options.MaxRequestBodySize = maxRequestBytes);
+
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = maxRequestBytes;
+
+    // Загружать можно несколько файлов сразу; предел по умолчанию (128 полей)
+    // при массовой загрузке легко упереться.
+    options.ValueCountLimit = 1024;
+});
 
 // ---------------------------------------------------------------------------
 // 2. Защита данных (Data Protection)
@@ -152,6 +190,24 @@ builder.Services.AddSingleton<IOfficeResolver, OfficeResolver>();
 builder.Services.AddSingleton<PlainTextFormatter>();
 builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddScoped<IAdAuthenticationService, LdapAdAuthenticationService>();
+
+// ---------------------------------------------------------------------------
+// 5б. Файловое хранилище
+// ---------------------------------------------------------------------------
+
+// Работа с диском состояния не имеет — достаточно одного экземпляра.
+builder.Services.AddSingleton<FileStorage>();
+builder.Services.AddSingleton<UploadValidator>();
+
+// Дерево папок читается из базы один раз за запрос, поэтому Scoped.
+builder.Services.AddScoped<FolderTree>();
+builder.Services.AddScoped<AuditLog>();
+
+// AuditLog нужно знать, кто выполняет действие и с какого адреса.
+builder.Services.AddHttpContextAccessor();
+
+// Фоновая уборка: автоочистка папок по сроку и вычистка корзины.
+builder.Services.AddHostedService<StorageCleanupService>();
 
 // ---------------------------------------------------------------------------
 // 5а. База данных (PostgreSQL)

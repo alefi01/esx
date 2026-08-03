@@ -1,0 +1,164 @@
+@page "{id:int}"
+@using Portal.Web.Data
+@model Portal.Web.Pages.Files.SettingsModel
+@{
+    ViewData["Title"] = $"Настройки папки: {Model.Folder?.Name}";
+}
+
+<nav class="breadcrumbs">
+    <a asp-page="Index">Файлы</a>
+    @foreach (var crumb in Model.Breadcrumbs)
+    {
+        <span>/</span>
+        <a asp-page="Index" asp-route-id="@crumb.Id">@crumb.Name</a>
+    }
+</nav>
+
+<h1>Настройки папки «@Model.Folder?.Name»</h1>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert--ok" role="status">@Model.StatusMessage</div>
+}
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
+}
+
+<div class="card">
+    <h2>Ограничения и хранение</h2>
+
+    <form method="post" asp-page-handler="Save" asp-route-id="@Model.Folder?.Id">
+        <div asp-validation-summary="All" class="alert alert--error"></div>
+
+        <div class="field field--check">
+            <label>
+                <input asp-for="Input.InheritPermissions" type="checkbox" />
+                Наследовать права родительской папки
+            </label>
+            <p class="hint">
+                Включено — к правам этой папки добавляются права всех папок выше по дереву.
+                Выключено — действуют только права, назначенные здесь: папка становится
+                закрытой даже для тех, кто имеет доступ к родительской.
+                Администраторы портала (группа <code>@Model.AdminGroup</code>) попадают сюда в любом случае.
+            </p>
+        </div>
+
+        <div class="field">
+            <label asp-for="Input.MaxFileSizeMb">Предел размера одного файла, МБ</label>
+            <input asp-for="Input.MaxFileSizeMb" type="number" min="1" max="@Model.AbsoluteMaxMb"
+                   placeholder="не задано — как у родителя" />
+            <span asp-validation-for="Input.MaxFileSizeMb" class="field-error"></span>
+            <p class="hint">
+                Пусто — берётся значение родительской папки, а если и там пусто —
+                общее по умолчанию (@Model.DefaultMaxMb МБ).
+                Сейчас действует: <strong>@Model.FormatSize(Model.EffectiveMaxFileSize)</strong>.
+                Верхний предел для всего портала — @Model.AbsoluteMaxMb МБ.
+            </p>
+        </div>
+
+        <div class="field">
+            <label asp-for="Input.QuotaMb">Квота на объём папки, МБ</label>
+            <input asp-for="Input.QuotaMb" type="number" min="1" placeholder="не задано — без ограничения" />
+            <span asp-validation-for="Input.QuotaMb" class="field-error"></span>
+            <p class="hint">
+                Сейчас занято: <strong>@Model.FormatSize(Model.UsedBytes)</strong>@(Model.EffectiveQuota is { } q ? $" из {Model.FormatSize(q)}" : ", квота не задана").
+                В занятое место входят и файлы в корзине — они всё ещё лежат на диске.
+            </p>
+        </div>
+
+        <div class="field">
+            <label asp-for="Input.RetentionDays">Автоочистка: удалять файлы старше, дней</label>
+            <input asp-for="Input.RetentionDays" type="number" min="1" max="3650"
+                   placeholder="пусто — автоочистка выключена" />
+            <span asp-validation-for="Input.RetentionDays" class="field-error"></span>
+            <p class="hint">
+                По умолчанию выключена. Файлы не стираются сразу, а попадают в корзину,
+                где лежат ещё @Model.TrashDays дн. — есть время заметить ошибку в настройке.
+                На подпапки этот срок НЕ распространяется: у каждой папки он свой.
+                @if (Model.Folder?.RetentionLastRunAt is { } last)
+                {
+                    <text>Последняя проверка: @last.ToLocalTime().ToString("dd.MM.yyyy HH:mm").</text>
+                }
+            </p>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="button button--primary button--inline">Сохранить</button>
+            <a class="button" asp-page="Index" asp-route-id="@Model.Folder?.Id">Назад к папке</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Права доступа</h2>
+
+    <p class="hint">
+        Права выдаются группам Active Directory, а не отдельным людям.
+        Указывайте короткое имя группы (sAMAccountName) — точно так, как оно
+        записано в оснастке «Пользователи и компьютеры».
+    </p>
+
+    @if (Model.Permissions.Count == 0)
+    {
+        <p class="hint">
+            На эту папку напрямую не выдано ни одного права.
+            @if (Model.Folder?.InheritPermissions == true)
+            {
+                <text>Действуют права, унаследованные от папок выше.</text>
+            }
+            else
+            {
+                <text><strong>Наследование выключено — папку видят только администраторы портала.</strong></text>
+            }
+        </p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+            <tr>
+                <th>Группа</th>
+                <th>Уровень</th>
+                <th></th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var permission in Model.Permissions)
+            {
+                <tr>
+                    <td><code>@permission.GroupName</code></td>
+                    <td>@permission.Access</td>
+                    <td>
+                        <form method="post" asp-page-handler="RemovePermission"
+                              asp-route-id="@Model.Folder?.Id" asp-route-permissionId="@permission.Id"
+                              class="inline-form">
+                            <button type="submit" class="button button--link link--danger">Убрать</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+
+    <h3>Выдать доступ</h3>
+
+    <form method="post" asp-page-handler="AddPermission" asp-route-id="@Model.Folder?.Id" class="row-form">
+        <input asp-for="NewPermission.GroupName" placeholder="Имя группы AD" maxlength="256" />
+
+        <select asp-for="NewPermission.Access">
+            <option value="@FolderAccess.Read">Чтение — видеть и скачивать</option>
+            <option value="@FolderAccess.Write">Запись — загружать файлы и создавать подпапки</option>
+            <option value="@FolderAccess.Manage">Управление — удалять и менять права</option>
+        </select>
+
+        <button type="submit" class="button button--inline">Добавить</button>
+    </form>
+
+    <p class="hint">
+        Если группа уже есть в списке, её уровень будет заменён на выбранный.
+        Права разных групп складываются: у человека действует наибольший из полученных уровней.
+    </p>
+</div>

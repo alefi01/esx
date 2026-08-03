@@ -81,11 +81,22 @@ public sealed class PortalFactory : WebApplicationFactory<Program>
     /// <summary>Группы пользователя, который войдёт в этот экземпляр приложения.</summary>
     public FakeAdState Ad { get; } = new();
 
+    /// <summary>
+    /// Куда складывать файлы в этом тесте. Задавать нужно ДО первого обращения
+    /// к приложению: после того как хост поднят, настройка уже прочитана.
+    /// </summary>
+    public string? StorageRootPath { get; set; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // Миграции написаны под PostgreSQL и на SQLite не применятся.
         // Схему создаём отдельно, методом EnsureCreated (см. CreateHost).
         builder.UseSetting("Database:ApplyMigrationsOnStartup", "false");
+
+        if (StorageRootPath is not null)
+        {
+            builder.UseSetting("Storage:RootPath", StorageRootPath);
+        }
 
         builder.ConfigureServices(services =>
         {
@@ -138,11 +149,21 @@ public sealed class PortalFactory : WebApplicationFactory<Program>
         return host;
     }
 
-    /// <summary>Выполнить действие с базой напрямую — например, положить туда данные для теста.</summary>
+    /// <summary>
+    /// Выполнить действие с базой напрямую: положить данные для теста
+    /// или поправить уже имеющиеся.
+    ///
+    /// Отслеживание изменений включается явно. По умолчанию контекст портала
+    /// настроен на запросы без отслеживания (так быстрее для страниц-читалок),
+    /// и без этой строки правка вида db.Folders.First(...).X = 1 молча
+    /// не сохранилась бы — тест «проходил» бы, ничего не проверив.
+    /// </summary>
     public void Seed(Action<PortalDbContext> action)
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
+
+        db.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.TrackAll;
 
         action(db);
         db.SaveChanges();

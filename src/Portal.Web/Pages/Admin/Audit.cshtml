@@ -1,0 +1,89 @@
+@page
+@using Portal.Web.Data
+@model Portal.Web.Pages.Admin.AuditModel
+@{
+    ViewData["Title"] = "Журнал действий";
+}
+
+<h1>Журнал действий с файлами</h1>
+
+@if (Model.DatabaseError is not null)
+{
+    <div class="alert alert--error" role="alert">
+        Не удалось прочитать журнал: <code>@Model.DatabaseError</code>
+    </div>
+}
+
+<div class="card">
+    <form method="get" class="row-form">
+        <input asp-for="UserFilter" placeholder="логин" />
+        <input asp-for="TargetFilter" placeholder="файл или папка" />
+
+        <select asp-for="ActionFilter">
+            <option value="">все действия</option>
+            @foreach (var action in Enum.GetValues<AuditAction>())
+            {
+                <option value="@action">@Portal.Web.Pages.Admin.AuditModel.Describe(action)</option>
+            }
+        </select>
+
+        <button type="submit" class="button button--inline">Показать</button>
+        <a class="button" asp-page="Audit">Сбросить</a>
+    </form>
+</div>
+
+<div class="card">
+    @if (Model.Entries.Count == 0)
+    {
+        <p class="hint">Записей нет.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+            <tr>
+                <th>Когда</th>
+                <th>Кто</th>
+                <th>Адрес</th>
+                <th>Действие</th>
+                <th>Объект</th>
+                <th>Подробности</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var entry in Model.Entries)
+            {
+                <tr>
+                    <td>@entry.At.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")</td>
+                    <td>@entry.UserName</td>
+                    <td><code>@(entry.RemoteIp ?? "—")</code></td>
+                    <td>@Portal.Web.Pages.Admin.AuditModel.Describe(entry.Action)</td>
+                    <td>@entry.Target</td>
+                    <td class="hint">@entry.Details</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@if (Model.TotalPages > 1)
+{
+    <nav class="pager">
+        @if (Model.PageNumber > 1)
+        {
+            <a asp-page="Audit" asp-route-pageNumber="@(Model.PageNumber - 1)"
+               asp-route-userFilter="@Model.UserFilter" asp-route-actionFilter="@Model.ActionFilter"
+               asp-route-targetFilter="@Model.TargetFilter">← Новее</a>
+        }
+
+        <span class="hint">Страница @Model.PageNumber из @Model.TotalPages</span>
+
+        @if (Model.PageNumber < Model.TotalPages)
+        {
+            <a asp-page="Audit" asp-route-pageNumber="@(Model.PageNumber + 1)"
+               asp-route-userFilter="@Model.UserFilter" asp-route-actionFilter="@Model.ActionFilter"
+               asp-route-targetFilter="@Model.TargetFilter">Старее →</a>
+        }
+    </nav>
+}

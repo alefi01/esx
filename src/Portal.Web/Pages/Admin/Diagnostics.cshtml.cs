@@ -33,17 +33,20 @@ public class DiagnosticsModel : PageModel
     private readonly ActiveDirectoryOptions _ad;
     private readonly DatabaseStatus _databaseStatus;
     private readonly PortalDbContext _db;
+    private readonly Portal.Web.Services.Storage.FileStorage _fileStorage;
 
     public DiagnosticsModel(
         IOfficeResolver offices,
         IOptions<ActiveDirectoryOptions> ad,
         DatabaseStatus databaseStatus,
-        PortalDbContext db)
+        PortalDbContext db,
+        Portal.Web.Services.Storage.FileStorage fileStorage)
     {
         _offices = offices;
         _ad = ad.Value;
         _databaseStatus = databaseStatus;
         _db = db;
+        _fileStorage = fileStorage;
     }
 
     public sealed record DcProbe(string Host, int Port, bool Reachable, long ElapsedMs, string? Error);
@@ -67,6 +70,13 @@ public class DiagnosticsModel : PageModel
     /// <summary>Сколько объявлений лежит в базе — заодно подтверждает, что таблица создана.</summary>
     public int? AnnouncementCount { get; private set; }
 
+    /// <summary>Путь к файловому хранилищу и доступно ли оно на запись.</summary>
+    public string StorageRoot => _fileStorage.RootPath;
+    public bool StorageOk { get; private set; }
+    public string? StorageError { get; private set; }
+    public int? FileCount { get; private set; }
+    public long? StorageUsedBytes { get; private set; }
+
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         var address = HttpContext.Connection.RemoteIpAddress;
@@ -83,6 +93,23 @@ public class DiagnosticsModel : PageModel
         }
 
         await ProbeDatabaseAsync(cancellationToken);
+
+        // Проверяем именно запись: прав на чтение может хватать,
+        // а на запись — нет, и выяснится это при первой же загрузке файла.
+        (StorageOk, StorageError) = _fileStorage.Probe();
+
+        if (DatabaseRespondsNow)
+        {
+            try
+            {
+                FileCount = await _db.Files.CountAsync(f => f.DeletedAt == null, cancellationToken);
+                StorageUsedBytes = await _db.Files.SumAsync(f => (long?)f.SizeBytes, cancellationToken) ?? 0;
+            }
+            catch
+            {
+                // Таблицы могло ещё не быть — не повод ронять всю диагностику.
+            }
+        }
     }
 
     /// <summary>

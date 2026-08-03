@@ -20,6 +20,11 @@ public class PortalDbContext : DbContext
 
     public DbSet<Announcement> Announcements => Set<Announcement>();
 
+    public DbSet<StorageFolder> Folders => Set<StorageFolder>();
+    public DbSet<FolderPermission> FolderPermissions => Set<FolderPermission>();
+    public DbSet<StoredFile> Files => Set<StoredFile>();
+    public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -34,6 +39,60 @@ public class PortalDbContext : DbContext
             // Отдельный индекс по автору: по нему строится проверка
             // «моё это объявление или чужое», а в будущем — фильтр «мои объявления».
             entity.HasIndex(a => a.AuthorUserName);
+        });
+
+        modelBuilder.Entity<StorageFolder>(entity =>
+        {
+            entity.HasOne(f => f.Parent)
+                .WithMany(f => f.Children)
+                .HasForeignKey(f => f.ParentId)
+                // Удаление папки с подпапками запрещено на уровне базы данных.
+                // Это подстраховка: в интерфейсе удалить непустую папку и так нельзя,
+                // но правило, записанное в схеме, переживёт любую ошибку в коде.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Имя папки уникально среди соседей: две папки «Договоры» рядом
+            // сбивают с толку и делают бессмысленными ссылки на них.
+            entity.HasIndex(f => new { f.ParentId, f.Name }).IsUnique();
+        });
+
+        modelBuilder.Entity<FolderPermission>(entity =>
+        {
+            entity.HasOne(p => p.Folder)
+                .WithMany(f => f.Permissions)
+                .HasForeignKey(p => p.FolderId)
+                // Права — часть папки, отдельно от неё они не нужны.
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Одна группа — одна запись на папку. Иначе получится два разных
+            // уровня доступа для одной группы, и поведение станет непредсказуемым.
+            entity.HasIndex(p => new { p.FolderId, p.GroupName }).IsUnique();
+        });
+
+        modelBuilder.Entity<StoredFile>(entity =>
+        {
+            entity.HasOne(f => f.Folder)
+                .WithMany(f => f.Files)
+                .HasForeignKey(f => f.FolderId)
+                // Папку с файлами удалить нельзя — сначала надо разобраться с файлами.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Основной запрос: «покажи содержимое папки, кроме удалённого».
+            entity.HasIndex(f => new { f.FolderId, f.DeletedAt });
+
+            // Фоновая уборка ищет по дате удаления и по дате загрузки.
+            entity.HasIndex(f => f.DeletedAt);
+            entity.HasIndex(f => f.UploadedAt);
+
+            // Вычисляемое свойство, в базе его быть не должно.
+            entity.Ignore(f => f.IsDeleted);
+        });
+
+        modelBuilder.Entity<AuditEntry>(entity =>
+        {
+            entity.HasIndex(a => a.At);
+            entity.HasIndex(a => a.UserName);
+            entity.HasIndex(a => a.Action);
         });
     }
 }

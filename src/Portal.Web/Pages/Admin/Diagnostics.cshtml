@@ -119,6 +119,42 @@
 </div>
 
 <div class="card">
+    <h2>Файловое хранилище</h2>
+
+    <dl class="facts">
+        <dt>Путь</dt>
+        <dd><code>@(string.IsNullOrEmpty(Model.StorageRoot) ? "не задан (Storage:RootPath)" : Model.StorageRoot)</code></dd>
+
+        <dt>Доступно на запись</dt>
+        <dd>
+            @if (Model.StorageOk)
+            {
+                <span class="badge badge--ok">да</span>
+            }
+            else
+            {
+                <span class="badge badge--error">нет</span>
+                <span class="hint">@Model.StorageError</span>
+            }
+        </dd>
+
+        <dt>Файлов в хранилище</dt>
+        <dd>@(Model.FileCount?.ToString() ?? "—")</dd>
+
+        <dt>Занято по данным базы</dt>
+        <dd>@(Model.StorageUsedBytes is { } used
+                ? Portal.Web.Services.Storage.UploadValidator.Format(used)
+                : "—")</dd>
+    </dl>
+
+    <p class="hint">
+        «Занято» считается по записям в базе, включая корзину.
+        Если цифра сильно расходится с реальным размером папки на диске,
+        значит там остались файлы, потерявшие запись в базе.
+    </p>
+</div>
+
+<div class="card">
     <h2>Настроенные офисы</h2>
 
     <table class="table">

@@ -1,0 +1,74 @@
+@page
+@model Portal.Web.Pages.Files.TrashModel
+@{
+    ViewData["Title"] = "Корзина";
+}
+
+<div class="page-header">
+    <h1>Корзина</h1>
+    <a class="button button--inline" asp-page="Index">К файлам</a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert--ok" role="status">@Model.StatusMessage</div>
+}
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
+}
+
+<div class="card">
+    <p class="hint">
+        Удалённые файлы лежат здесь @Model.RetentionDays дн., после чего стираются
+        с диска безвозвратно. Всё это время они продолжают занимать место
+        и учитываются в квоте папки.
+    </p>
+
+    @if (Model.Items.Count == 0)
+    {
+        <p class="hint">Корзина пуста.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+            <tr>
+                <th>Имя</th>
+                <th>Папка</th>
+                <th>Размер</th>
+                <th>Удалил</th>
+                <th>Будет стёрт</th>
+                <th></th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var item in Model.Items)
+            {
+                <tr>
+                    <td>@item.File.OriginalName</td>
+                    <td>@item.FolderPath</td>
+                    <td>@Portal.Web.Pages.Files.TrashModel.FormatSize(item.File.SizeBytes)</td>
+                    <td>@item.File.DeletedByUserName</td>
+                    <td>@item.PurgeAt.ToLocalTime().ToString("dd.MM.yyyy")</td>
+                    <td class="actions-cell">
+                        @if (item.CanRestore)
+                        {
+                            <form method="post" asp-page-handler="Restore"
+                                  asp-route-fileId="@item.File.Id" class="inline-form">
+                                <button type="submit" class="button button--link">Восстановить</button>
+                            </form>
+                        }
+
+                        <form method="post" asp-page-handler="Purge"
+                              asp-route-fileId="@item.File.Id" class="inline-form">
+                            <button type="submit" class="button button--link link--danger">Стереть</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>

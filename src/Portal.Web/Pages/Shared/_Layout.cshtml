@@ -20,8 +20,10 @@
     <nav class="topbar__nav">
         <a asp-page="/Index">Главная</a>
         <a asp-page="/Announcements/Index">Объявления</a>
+        <a asp-page="/Files/Index">Файлы</a>
         @if (User.IsInRole(adminGroup))
         {
+            <a asp-page="/Admin/Audit">Журнал</a>
             <a asp-page="/Admin/Diagnostics">Диагностика</a>
         }
     </nav>
