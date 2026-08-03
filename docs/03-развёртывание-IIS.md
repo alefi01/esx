@@ -4,7 +4,7 @@
 **от имени администратора**.
 
 Обозначения:
-- `C:\inetpub\portal` — куда ставим приложение
+- `C:\inetpub\ftp` — куда ставим приложение
 - `C:\build\portal` — куда скопированы исходники
 - `ftp.domen.pro` — DNS-имя сайта (уже настроено).
   Пользователи будут заходить и по короткому имени `ftp` — под это
@@ -53,12 +53,12 @@ Get-WebGlobalModule | Where-Object Name -like "*AspNetCore*"
 ```powershell
 cd C:\build\portal
 dotnet --version          # должно показать 10.0.302
-dotnet publish src\Portal.Web -c Release -o C:\inetpub\portal
+dotnet publish src\Portal.Web -c Release -o C:\inetpub\ftp
 ```
 
 Интернет не нужен: единственный пакет берётся из папки `packages\`.
 
-Проверка — в `C:\inetpub\portal` должны появиться:
+Проверка — в `C:\inetpub\ftp` должны появиться:
 
 ```
 Portal.Web.dll
@@ -93,7 +93,7 @@ wwwroot\css\site.css
 
 ## Шаг 4. Настроить приложение
 
-Откройте `C:\inetpub\portal\appsettings.json` и проверьте:
+Откройте `C:\inetpub\ftp\appsettings.json` и проверьте:
 
 ```jsonc
 "ActiveDirectory": {
@@ -115,8 +115,8 @@ nltest /dsgetdc:domen.pro
 
 ```jsonc
 "Offices": { "Items": [
-  { "Code": "office1", "Subnets": [ "192.168.96.0/24" ],  "DomainControllers": [ "192.168.96.3"  ] },
-  { "Code": "office2", "Subnets": [ "192.168.112.0/24" ], "DomainControllers": [ "192.168.112.2" ] }
+  { "Code": "office1", "Subnets": [ "192.168.96.0/20" ],  "DomainControllers": [ "192.168.96.3"  ] },
+  { "Code": "office2", "Subnets": [ "192.168.112.0/20" ], "DomainControllers": [ "192.168.112.2" ] }
 ]}
 ```
 
@@ -151,7 +151,7 @@ Set-ItemProperty IIS:\AppPools\PortalPool -Name recycling.periodicRestart.time -
 
 ```powershell
 New-Website -Name "Portal" `
-            -PhysicalPath "C:\inetpub\portal" `
+            -PhysicalPath "C:\inetpub\ftp" `
             -ApplicationPool "PortalPool" `
             -HostHeader "ftp.domen.pro" `
             -Port 80
@@ -212,11 +212,11 @@ Set-WebConfigurationProperty -Filter "/system.webServer/security/authentication/
 $pool = "IIS AppPool\PortalPool"
 
 # Чтение и выполнение — на всю папку приложения
-icacls "C:\inetpub\portal" /grant "${pool}:(OI)(CI)(RX)" /T
+icacls "C:\inetpub\ftp" /grant "${pool}:(OI)(CI)(RX)" /T
 
 # Запись — только в App_Data
-New-Item -ItemType Directory -Force -Path "C:\inetpub\portal\App_Data"
-icacls "C:\inetpub\portal\App_Data" /grant "${pool}:(OI)(CI)(M)"
+New-Item -ItemType Directory -Force -Path "C:\inetpub\ftp\App_Data"
+icacls "C:\inetpub\ftp\App_Data" /grant "${pool}:(OI)(CI)(M)"
 ```
 
 > Содержимое `App_Data\keys` — секрет. Кто может прочитать эти файлы,
@@ -248,7 +248,7 @@ Stop-WebAppPool -Name "PortalPool"
 
 cd C:\build\portal
 git pull                     # или скопируйте новые исходники вручную
-dotnet publish src\Portal.Web -c Release -o C:\inetpub\portal
+dotnet publish src\Portal.Web -c Release -o C:\inetpub\ftp
 
 Start-WebAppPool -Name "PortalPool"
 ```
@@ -266,7 +266,7 @@ Start-WebAppPool -Name "PortalPool"
 
 ### Ошибка 500.30 — приложение не стартует
 
-Включите журнал в `C:\inetpub\portal\web.config`:
+Включите журнал в `C:\inetpub\ftp\web.config`:
 
 ```xml
 <aspNetCore ... stdoutLogEnabled="true" stdoutLogFile=".\logs\stdout">
@@ -275,8 +275,8 @@ Start-WebAppPool -Name "PortalPool"
 Создайте папку и дайте пулу право записи:
 
 ```powershell
-New-Item -ItemType Directory -Force -Path "C:\inetpub\portal\logs"
-icacls "C:\inetpub\portal\logs" /grant "IIS AppPool\PortalPool:(OI)(CI)(M)"
+New-Item -ItemType Directory -Force -Path "C:\inetpub\ftp\logs"
+icacls "C:\inetpub\ftp\logs" /grant "IIS AppPool\PortalPool:(OI)(CI)(M)"
 ```
 
 Перезапустите пул, повторите запрос и посмотрите файл в `logs\`.

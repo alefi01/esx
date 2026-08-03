@@ -13,7 +13,7 @@ public sealed class OfficeDefinition
     public string Name { get; set; } = "";
 
     /// <summary>
-    /// Подсети офиса в формате CIDR, например "192.168.96.0/24".
+    /// Подсети офиса в формате CIDR, например "192.168.96.0/20".
     /// Их может быть несколько — просто перечислите.
     /// </summary>
     public string[] Subnets { get; set; } = [];

@@ -95,7 +95,7 @@ Invoke-WebRequest https://ftp/healthz -UseBasicParsing
 
 ## Шаг 3. Включить редирект и Secure-cookie
 
-Только теперь, в `C:\inetpub\portal\appsettings.json`:
+Только теперь, в `C:\inetpub\ftp\appsettings.json`:
 
 ```jsonc
 "Security": {

@@ -11,7 +11,7 @@ public sealed class OfficeResolver : IOfficeResolver
     private readonly ActiveDirectoryOptions _ad;
     private readonly ILogger<OfficeResolver> _logger;
 
-    // Подсети разобраны один раз при старте: разбирать строку "192.168.96.0/24"
+    // Подсети разобраны один раз при старте: разбирать строку "192.168.96.0/20"
     // на каждый запрос не нужно, а кривая запись в конфиге должна всплыть сразу,
     // а не в момент чьего-то входа.
     private readonly List<(IPNetwork Network, OfficeDefinition Office)> _networks = [];
@@ -38,7 +38,7 @@ public sealed class OfficeResolver : IOfficeResolver
                 {
                     _logger.LogError(
                         "Подсеть '{Subnet}' офиса '{Office}' записана неверно и будет пропущена. " +
-                        "Ожидается формат CIDR, например 192.168.96.0/24.",
+                        "Ожидается формат CIDR, например 192.168.96.0/20.",
                         subnet, office.Code);
                 }
             }
@@ -55,7 +55,7 @@ public sealed class OfficeResolver : IOfficeResolver
         }
 
         // IIS отдаёт IPv4-адрес клиента в виде IPv6-совместимой записи ::ffff:192.168.96.15.
-        // Приводим к обычному IPv4, иначе сравнение с подсетью 192.168.96.0/24 не сработает.
+        // Приводим к обычному IPv4, иначе сравнение с подсетью 192.168.96.0/20 не сработает.
         if (address.IsIPv4MappedToIPv6)
         {
             address = address.MapToIPv4();
