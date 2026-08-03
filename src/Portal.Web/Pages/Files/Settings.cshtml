@@ -79,7 +79,7 @@
                 На подпапки этот срок НЕ распространяется: у каждой папки он свой.
                 @if (Model.Folder?.RetentionLastRunAt is { } last)
                 {
-                    <text>Последняя проверка: @last.ToLocalTime().ToString("dd.MM.yyyy HH:mm").</text>
+                    <span>Последняя проверка: @last.ToLocalTime().ToString("dd.MM.yyyy HH:mm").</span>
                 }
             </p>
         </div>
@@ -106,11 +106,11 @@
             На эту папку напрямую не выдано ни одного права.
             @if (Model.Folder?.InheritPermissions == true)
             {
-                <text>Действуют права, унаследованные от папок выше.</text>
+                <span>Действуют права, унаследованные от папок выше.</span>
             }
             else
             {
-                <text><strong>Наследование выключено — папку видят только администраторы портала.</strong></text>
+                <span><strong>Наследование выключено — папку видят только администраторы портала.</strong></span>
             }
         </p>
     }

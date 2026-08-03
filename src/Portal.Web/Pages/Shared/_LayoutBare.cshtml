@@ -7,11 +7,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] — Портал</title>
+    <meta name="color-scheme" content="light dark" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
-<body class="body--centered">
+<body>
+<partial name="_Icons" />
+
 <main class="page page--centered">
     @RenderBody()
 </main>
+
+<script src="~/js/app.js" asp-append-version="true"></script>
 </body>
 </html>

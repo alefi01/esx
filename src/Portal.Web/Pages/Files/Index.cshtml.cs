@@ -64,6 +64,21 @@ public class IndexModel : PageModel
 
     public bool StorageConfigured => _storage.IsConfigured;
 
+    /// <summary>
+    /// Объём каждой видимой подпапки вместе со всем вложенным, байты.
+    /// Считается только для тех, кто вправе это видеть (см. ShowSizes):
+    /// размер папки — косвенный признак её содержимого, и показывать его
+    /// всем подряд незачем.
+    /// </summary>
+    public IReadOnlyDictionary<int, long> FolderSizes { get; private set; } =
+        new Dictionary<int, long>();
+
+    /// <summary>
+    /// Показывать ли объёмы папок. Администратору портала — всегда,
+    /// остальным — только там, где они и так управляют квотой.
+    /// </summary>
+    public bool ShowSizes => IsAdmin || Access >= FolderAccess.Manage;
+
     [TempData]
     public string? StatusMessage { get; set; }
 
@@ -233,8 +248,223 @@ public class IndexModel : PageModel
                 string.Join("; ", rejected.Select(r => $"«{r.FileName}» — {r.Reason}"));
         }
 
+        // Страница умеет грузить файлы без перезагрузки, показывая ход выполнения.
+        // В этом случае возвращаем не перенаправление, а короткий отчёт:
+        // сколько принято, что отклонено и почему.
+        if (IsAjax())
+        {
+            return new JsonResult(new
+            {
+                accepted,
+                rejected = rejected.Select(r => new { file = r.FileName, reason = r.Reason }),
+                message = StatusMessage,
+                error = ErrorMessage
+            });
+        }
+
         return RedirectToPage(new { id = folderId });
     }
+
+    /// <summary>
+    /// Копирование файлов в другую папку — то, что происходит по Ctrl+V
+    /// после Ctrl+C. Права проверяются с ОБЕИХ сторон: читать исходную папку
+    /// и писать в целевую.
+    /// </summary>
+    public async Task<IActionResult> OnPostCopyAsync(
+        int targetFolderId, int[] fileIds, CancellationToken cancellationToken)
+    {
+        return await CopyOrMoveAsync(targetFolderId, fileIds, move: false, cancellationToken);
+    }
+
+    /// <summary>Перемещение файлов — Ctrl+X, Ctrl+V либо перетаскивание на папку.</summary>
+    public async Task<IActionResult> OnPostMoveAsync(
+        int targetFolderId, int[] fileIds, CancellationToken cancellationToken)
+    {
+        return await CopyOrMoveAsync(targetFolderId, fileIds, move: true, cancellationToken);
+    }
+
+    private async Task<IActionResult> CopyOrMoveAsync(
+        int targetFolderId, int[] fileIds, bool move, CancellationToken cancellationToken)
+    {
+        var redirect = await LoadAsync(targetFolderId, cancellationToken);
+
+        if (redirect is not null)
+        {
+            return redirect;
+        }
+
+        if (Current is null || Access < FolderAccess.Write)
+        {
+            return Forbid();
+        }
+
+        var files = await _db.Files.AsTracking()
+            .Where(f => fileIds.Contains(f.Id) && f.DeletedAt == null)
+            .ToListAsync(cancellationToken);
+
+        var done = 0;
+        var problems = new List<string>();
+        var used = UsedBytes;
+
+        foreach (var file in files)
+        {
+            if (file.FolderId == targetFolderId)
+            {
+                // Вставка в ту же папку, откуда копировали, — ничего не делаем.
+                continue;
+            }
+
+            var source = _tree.Get(file.FolderId);
+
+            if (source is null || !_tree.CanRead(User, source))
+            {
+                problems.Add($"«{file.OriginalName}» — нет прав на исходную папку");
+                continue;
+            }
+
+            // Перемещение — это ещё и удаление из исходной папки,
+            // поэтому прав на чтение мало: нужно управление либо своё авторство.
+            if (move)
+            {
+                var isOwner = string.Equals(
+                    file.UploadedByUserName, User.Identity?.Name, StringComparison.OrdinalIgnoreCase);
+
+                if (!_tree.CanManage(User, source) && !(isOwner && _tree.CanWrite(User, source)))
+                {
+                    problems.Add($"«{file.OriginalName}» — нет прав убрать файл из исходной папки");
+                    continue;
+                }
+            }
+
+            // Ограничения целевой папки действуют и здесь: иначе через копирование
+            // можно было бы обойти и предел размера, и квоту, и запрет расширений.
+            var rejection = _validator.Validate(
+                file.OriginalName, file.SizeBytes, MaxFileSizeBytes, QuotaBytes, used);
+
+            if (rejection is not null)
+            {
+                problems.Add($"«{rejection.FileName}» — {rejection.Reason}");
+                continue;
+            }
+
+            try
+            {
+                if (move)
+                {
+                    _storage.Move(file.FolderId, targetFolderId, file.StorageName);
+
+                    _audit.Add(AuditAction.Move, file.OriginalName,
+                        $"из «{_tree.DisplayPath(source)}» в «{_tree.DisplayPath(Current)}»");
+
+                    file.FolderId = targetFolderId;
+                }
+                else
+                {
+                    var newStorageName = _storage.Copy(file.FolderId, targetFolderId, file.StorageName);
+
+                    _db.Files.Add(new StoredFile
+                    {
+                        FolderId = targetFolderId,
+                        OriginalName = file.OriginalName,
+                        StorageName = newStorageName,
+                        SizeBytes = file.SizeBytes,
+                        ContentType = file.ContentType,
+                        UploadedAt = _time.GetUtcNow().UtcDateTime,
+                        UploadedByUserName = User.Identity?.Name ?? "",
+                        UploadedByDisplayName =
+                            User.FindFirstValue(ClaimTypes.GivenName) ?? User.Identity?.Name ?? ""
+                    });
+
+                    _audit.Add(AuditAction.Copy, file.OriginalName,
+                        $"из «{_tree.DisplayPath(source)}» в «{_tree.DisplayPath(Current)}»");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Не удалось {Operation} файл {File}.",
+                    move ? "переместить" : "скопировать", file.OriginalName);
+
+                problems.Add($"«{file.OriginalName}» — ошибка при работе с диском");
+                continue;
+            }
+
+            used += file.SizeBytes;
+            done++;
+        }
+
+        if (done > 0)
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+
+            StatusMessage = move
+                ? $"Перемещено файлов: {done}."
+                : $"Скопировано файлов: {done}.";
+        }
+
+        if (problems.Count > 0)
+        {
+            ErrorMessage = string.Join("; ", problems);
+        }
+
+        return RedirectToPage(new { id = targetFolderId });
+    }
+
+    /// <summary>Удаление нескольких выделенных файлов сразу — клавишей Delete.</summary>
+    public async Task<IActionResult> OnPostDeleteFilesAsync(
+        int folderId, int[] fileIds, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        var files = await _db.Files.AsTracking()
+            .Where(f => fileIds.Contains(f.Id) && f.DeletedAt == null)
+            .ToListAsync(cancellationToken);
+
+        var done = 0;
+        var refused = 0;
+
+        foreach (var file in files)
+        {
+            var folder = _tree.Get(file.FolderId);
+
+            if (folder is null)
+            {
+                continue;
+            }
+
+            var isOwner = string.Equals(
+                file.UploadedByUserName, User.Identity?.Name, StringComparison.OrdinalIgnoreCase);
+
+            if (!_tree.CanManage(User, folder) && !(isOwner && _tree.CanWrite(User, folder)))
+            {
+                refused++;
+                continue;
+            }
+
+            file.DeletedAt = _time.GetUtcNow().UtcDateTime;
+            file.DeletedByUserName = User.Identity?.Name ?? "";
+
+            _audit.Add(AuditAction.MoveToTrash, file.OriginalName, $"папка «{_tree.DisplayPath(folder)}»");
+
+            done++;
+        }
+
+        if (done > 0)
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+            StatusMessage = done == 1 ? "Файл перемещён в корзину." : $"В корзину перемещено файлов: {done}.";
+        }
+
+        if (refused > 0)
+        {
+            ErrorMessage = $"Не хватило прав удалить файлов: {refused}.";
+        }
+
+        return RedirectToPage(new { id = folderId });
+    }
+
+    /// <summary>Запрос пришёл из кода страницы, а не из обычной формы.</summary>
+    private bool IsAjax() =>
+        string.Equals(Request.Headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase);
 
     public async Task<IActionResult> OnPostCreateFolderAsync(
         int? parentId, CancellationToken cancellationToken)
@@ -418,6 +648,8 @@ public class IndexModel : PageModel
                 .Where(f => _tree.IsVisible(User, f))
                 .ToList();
 
+            await LoadFolderSizesAsync(cancellationToken);
+
             return null;
         }
 
@@ -463,7 +695,57 @@ public class IndexModel : PageModel
                 .ToListAsync(cancellationToken)
             : [];
 
+        await LoadFolderSizesAsync(cancellationToken);
+
         return null;
+    }
+
+    /// <summary>
+    /// Считает объём каждой видимой подпапки вместе со всем вложенным.
+    ///
+    /// Один запрос группировки на всё хранилище вместо запроса на каждую папку:
+    /// папок немного, а по одному запросу на строку списка — это классический
+    /// способ незаметно посадить страницу.
+    /// </summary>
+    private async Task LoadFolderSizesAsync(CancellationToken cancellationToken)
+    {
+        if (!ShowSizes || Subfolders.Count == 0)
+        {
+            return;
+        }
+
+        var own = await _db.Files
+            .GroupBy(f => f.FolderId)
+            .Select(g => new { FolderId = g.Key, Size = g.Sum(f => f.SizeBytes) })
+            .ToDictionaryAsync(x => x.FolderId, x => x.Size, cancellationToken);
+
+        var sizes = new Dictionary<int, long>();
+
+        foreach (var subfolder in Subfolders)
+        {
+            sizes[subfolder.Id] = SumRecursive(subfolder, own);
+        }
+
+        FolderSizes = sizes;
+    }
+
+    private static long SumRecursive(StorageFolder folder, IReadOnlyDictionary<int, long> own, int depth = 0)
+    {
+        // Ограничение глубины — та же защита от испорченного дерева,
+        // что и в вычислении прав: цикл в данных не должен вешать страницу.
+        if (depth > 64)
+        {
+            return 0;
+        }
+
+        var total = own.TryGetValue(folder.Id, out var size) ? size : 0;
+
+        foreach (var child in folder.Children)
+        {
+            total += SumRecursive(child, own, depth + 1);
+        }
+
+        return total;
     }
 
     public string FormatSize(long bytes) => UploadValidator.Format(bytes);

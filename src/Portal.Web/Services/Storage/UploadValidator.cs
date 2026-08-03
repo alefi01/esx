@@ -155,6 +155,17 @@ public sealed class UploadValidator
             ? contentType
             : "application/octet-stream";
 
+    /// <summary>
+    /// Язык, по правилам которого показываются числа.
+    ///
+    /// Задан явно, а не взят из настроек системы. Иначе разделитель дробной
+    /// части зависел бы от того, какая локаль оказалась у потока, который
+    /// обрабатывает запрос: на сервере вышло бы «2.9 МБ», а рядом в другом
+    /// месте «2,9 МБ». Интерфейс портала русский — значит и запятая.
+    /// </summary>
+    private static readonly System.Globalization.CultureInfo DisplayCulture =
+        System.Globalization.CultureInfo.GetCultureInfo("ru-RU");
+
     /// <summary>Человекочитаемый размер: «12,3 МБ» вместо «12897485».</summary>
     public static string Format(long bytes)
     {
@@ -170,7 +181,7 @@ public sealed class UploadValidator
         }
 
         return unit == 0
-            ? $"{bytes} {units[unit]}"
-            : $"{value:0.#} {units[unit]}";
+            ? string.Format(DisplayCulture, "{0} {1}", bytes, units[unit])
+            : string.Format(DisplayCulture, "{0:0.#} {1}", value, units[unit]);
     }
 }

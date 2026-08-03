@@ -3,207 +3,249 @@
 @model Portal.Web.Pages.Files.IndexModel
 @{
     ViewData["Title"] = Model.Current is null ? "Файлы" : Model.Current.Name;
+
+    var canWrite = Model.Current is not null && Model.Access >= FolderAccess.Write;
+    var canManage = Model.Current is not null && Model.Access >= FolderAccess.Manage;
+    var canCreateFolder = Model.Current is null ? Model.IsAdmin : canWrite;
 }
 
-<div class="page-header">
-    <h1>
-        @if (Model.Current is null)
-        {
-            <text>Файлы</text>
-        }
-        else
-        {
-            @Model.Current.Name
-        }
-    </h1>
+@*
+    Данные для кода страницы передаём через data-атрибуты, а не через
+    вставленный в разметку <script>: политика безопасности (CSP) запрещает
+    исполнять встроенные скрипты, и это правильно — так на страницу
+    не попадёт чужой код.
+*@
+<div class="explorer"
+     data-explorer
+     data-folder-id="@(Model.Current?.Id.ToString() ?? "")"
+     data-can-write="@canWrite.ToString().ToLowerInvariant()"
+     data-can-manage="@canManage.ToString().ToLowerInvariant()"
+     data-can-create-folder="@canCreateFolder.ToString().ToLowerInvariant()"
+     data-max-size="@Model.MaxFileSizeBytes">
 
-    <a class="button button--inline" asp-page="Trash">Корзина</a>
-</div>
-
-@if (Model.Breadcrumbs.Count > 0)
-{
-    <nav class="breadcrumbs">
-        <a asp-page="Index">Файлы</a>
-        @foreach (var crumb in Model.Breadcrumbs)
-        {
-            <span>/</span>
-            @if (crumb.Id == Model.Current!.Id)
+    @* ---------- Верхняя панель папки ---------- *@
+    <div class="toolbar">
+        <nav class="crumbs" aria-label="Путь">
+            <a asp-page="Index">Файлы</a>
+            @foreach (var crumb in Model.Breadcrumbs)
             {
-                <strong>@crumb.Name</strong>
-            }
-            else
-            {
-                <a asp-page="Index" asp-route-id="@crumb.Id">@crumb.Name</a>
-            }
-        }
-    </nav>
-}
-
-@if (!string.IsNullOrEmpty(Model.StatusMessage))
-{
-    <div class="alert alert--ok" role="status">@Model.StatusMessage</div>
-}
-
-@if (!string.IsNullOrEmpty(Model.ErrorMessage))
-{
-    <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
-}
-
-@if (!Model.StorageConfigured)
-{
-    <div class="alert alert--error" role="alert">
-        <strong>Хранилище не настроено.</strong>
-        Не задан путь <code>Storage:RootPath</code>. Загрузка и скачивание работать не будут.
-        @if (Model.IsAdmin)
-        {
-            <span>См. <code>docs/08-этап-3-файлы.md</code>.</span>
-        }
-    </div>
-}
-
-@* ---------- Папки ---------- *@
-<div class="card">
-    <h2>Папки</h2>
-
-    @if (Model.Subfolders.Count == 0)
-    {
-        <p class="hint">Вложенных папок нет.</p>
-    }
-    else
-    {
-        <ul class="folder-list">
-            @foreach (var folder in Model.Subfolders)
-            {
-                <li>
-                    <a asp-page="Index" asp-route-id="@folder.Id">📁 @folder.Name</a>
-
-                    @if (!folder.InheritPermissions)
-                    {
-                        <span class="badge" title="Права родительской папки не наследуются">закрытая</span>
-                    }
-
-                    @if (folder.RetentionDays is { } days)
-                    {
-                        <span class="badge badge--warn" title="Файлы старше срока уходят в корзину">
-                            автоочистка: @days дн.
-                        </span>
-                    }
-                </li>
-            }
-        </ul>
-    }
-
-    @if (Model.Current is null ? Model.IsAdmin : Model.Access >= FolderAccess.Write)
-    {
-        <form method="post" asp-page-handler="CreateFolder" asp-route-parentId="@Model.Current?.Id" class="row-form">
-            <input asp-for="NewFolderName" placeholder="Название новой папки" maxlength="100" />
-            <button type="submit" class="button button--inline">Создать папку</button>
-        </form>
-    }
-    else if (Model.Current is null)
-    {
-        <p class="hint">Папки верхнего уровня создаёт администратор портала.</p>
-    }
-</div>
-
-@* ---------- Файлы ---------- *@
-@if (Model.Current is not null && Model.Access >= FolderAccess.Read)
-{
-    <div class="card">
-        <h2>Файлы</h2>
-
-        @if (Model.FilesInFolder.Count == 0)
-        {
-            <p class="hint">В этой папке пока нет файлов.</p>
-        }
-        else
-        {
-            <table class="table">
-                <thead>
-                <tr>
-                    <th>Имя</th>
-                    <th>Размер</th>
-                    <th>Загрузил</th>
-                    <th>Когда</th>
-                    <th></th>
-                </tr>
-                </thead>
-                <tbody>
-                @foreach (var file in Model.FilesInFolder)
+                <svg class="icon icon--xs crumbs__sep"><use href="#i-chevron"></use></svg>
+                @if (crumb.Id == Model.Current!.Id)
                 {
-                    <tr>
-                        <td>
-                            <a asp-page="Index" asp-page-handler="Download" asp-route-fileId="@file.Id">
-                                @file.OriginalName
-                            </a>
-                        </td>
-                        <td>@Model.FormatSize(file.SizeBytes)</td>
-                        <td>@file.UploadedByDisplayName</td>
-                        <td>@file.UploadedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</td>
-                        <td>
-                            @if (Model.CanDelete(file))
-                            {
-                                <form method="post" asp-page-handler="DeleteFile"
-                                      asp-route-fileId="@file.Id" class="inline-form">
-                                    <button type="submit" class="button button--link link--danger">В корзину</button>
-                                </form>
-                            }
-                        </td>
-                    </tr>
-                }
-                </tbody>
-            </table>
-        }
-    </div>
-}
-
-@* ---------- Загрузка ---------- *@
-@if (Model.Current is not null && Model.Access >= FolderAccess.Write && Model.StorageConfigured)
-{
-    <div class="card">
-        <h2>Загрузить файлы</h2>
-
-        @* enctype обязателен: без него браузер пришлёт только имена файлов, а не их содержимое. *@
-        <form method="post" asp-page-handler="Upload" asp-route-folderId="@Model.Current.Id"
-              enctype="multipart/form-data">
-            <div class="field">
-                <input type="file" name="uploads" multiple required />
-            </div>
-
-            <p class="hint">
-                Предел на один файл: <strong>@Model.FormatSize(Model.MaxFileSizeBytes)</strong>.
-                @if (Model.QuotaBytes is { } quota)
-                {
-                    <text>
-                        Занято в папке: @Model.FormatSize(Model.UsedBytes) из @Model.FormatSize(quota).
-                    </text>
+                    <span class="crumbs__current">@crumb.Name</span>
                 }
                 else
                 {
-                    <text>Занято в папке: @Model.FormatSize(Model.UsedBytes), квота не задана.</text>
+                    <a asp-page="Index" asp-route-id="@crumb.Id">@crumb.Name</a>
                 }
-            </p>
+            }
+        </nav>
 
-            <button type="submit" class="button button--primary button--inline">Загрузить</button>
-        </form>
-    </div>
-}
+        <div class="toolbar__actions">
+            @if (canWrite && Model.StorageConfigured)
+            {
+                @* Настоящее поле выбора файлов спрятано: нажатие на кнопку
+                   пробрасывается на него из кода страницы. *@
+                <input type="file" id="file-input" name="uploads" multiple hidden />
 
-@* ---------- Управление папкой ---------- *@
-@if (Model.Current is not null && Model.Access >= FolderAccess.Manage)
-{
-    <div class="card">
-        <h2>Управление папкой</h2>
+                <button type="button" class="btn btn--primary" data-action="pick-files">
+                    <svg class="icon"><use href="#i-upload"></use></svg>
+                    Загрузить
+                </button>
+            }
 
-        <p>
-            <a class="button button--inline" asp-page="Settings" asp-route-id="@Model.Current.Id">
-                Настройки и права доступа
+            @if (canCreateFolder)
+            {
+                <button type="button" class="btn" data-action="new-folder">
+                    <svg class="icon"><use href="#i-new-folder"></use></svg>
+                    Создать папку
+                </button>
+            }
+
+            @if (canManage)
+            {
+                <a class="btn" asp-page="Settings" asp-route-id="@Model.Current!.Id">
+                    <svg class="icon"><use href="#i-settings"></use></svg>
+                    Управление
+                </a>
+            }
+
+            <a class="btn btn--quiet" asp-page="Trash">
+                <svg class="icon"><use href="#i-trash"></use></svg>
+                Корзина
             </a>
-        </p>
+        </div>
 
-        <form method="post" asp-page-handler="DeleteFolder" asp-route-folderId="@Model.Current.Id">
-            <button type="submit" class="button button--danger button--inline">Удалить папку</button>
-            <span class="hint">Удалить можно только пустую папку — без подпапок и файлов, включая корзину.</span>
+        @if (Model.Current is not null && Model.Access >= FolderAccess.Read)
+        {
+            <div class="toolbar__meta">
+                <span>Предел файла: <strong>@Model.FormatSize(Model.MaxFileSizeBytes)</strong></span>
+
+                @if (Model.QuotaBytes is { } quota)
+                {
+                    var percent = quota > 0 ? Math.Min(100, Model.UsedBytes * 100 / quota) : 0;
+
+                    <span class="quota">
+                        Занято @Model.FormatSize(Model.UsedBytes) из @Model.FormatSize(quota)
+                        <span class="quota__bar"><span class="quota__fill" data-percent="@percent"></span></span>
+                    </span>
+                }
+                else if (Model.ShowSizes)
+                {
+                    <span>Занято: <strong>@Model.FormatSize(Model.UsedBytes)</strong></span>
+                }
+            </div>
+        }
+    </div>
+
+    @* ---------- Сообщения ---------- *@
+    @if (!string.IsNullOrEmpty(Model.StatusMessage))
+    {
+        <div class="alert alert--ok" role="status">@Model.StatusMessage</div>
+    }
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
+    }
+
+    @if (!Model.StorageConfigured)
+    {
+        <div class="alert alert--error" role="alert">
+            <strong>Хранилище не настроено.</strong>
+            Не задан путь <code>Storage:RootPath</code>, загрузка и скачивание работать не будут.
+        </div>
+    }
+
+    @* ---------- Содержимое папки ---------- *@
+    <div class="pane" data-drop-zone tabindex="0">
+
+        @if (Model.Subfolders.Count == 0 && Model.FilesInFolder.Count == 0)
+        {
+            <div class="empty">
+                <svg class="icon icon--xl"><use href="#i-folder"></use></svg>
+                <p>Здесь пока пусто</p>
+                @if (canWrite)
+                {
+                    <p class="muted">Перетащите файлы сюда или нажмите «Загрузить»</p>
+                }
+                else if (canCreateFolder)
+                {
+                    <p class="muted">Нажмите правой кнопкой, чтобы создать папку</p>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="grid">
+                @foreach (var folder in Model.Subfolders)
+                {
+                    <a class="tile tile--folder"
+                       asp-page="Index" asp-route-id="@folder.Id"
+                       data-folder="@folder.Id"
+                       data-name="@folder.Name"
+                       data-drop-target="@folder.Id">
+
+                        <span class="tile__icon">
+                            <svg class="icon icon--lg">
+                                <use href="@(folder.InheritPermissions ? "#i-folder" : "#i-folder-locked")"></use>
+                            </svg>
+                        </span>
+
+                        <span class="tile__name" title="@folder.Name">@folder.Name</span>
+
+                        <span class="tile__sub">
+                            @* Пустую папку не подписываем «0 Б» — лишний шум в списке. *@
+                            @if (Model.ShowSizes && Model.FolderSizes.TryGetValue(folder.Id, out var size) && size > 0)
+                            {
+                                <span>@Model.FormatSize(size)</span>
+                            }
+                            @if (folder.RetentionDays is { } days)
+                            {
+                                <span class="chip chip--warn" title="Файлы старше срока уходят в корзину">@days дн.</span>
+                            }
+                            @if (!folder.InheritPermissions)
+                            {
+                                <span class="chip" title="Права родительской папки не наследуются">закрытая</span>
+                            }
+                        </span>
+                    </a>
+                }
+
+                @foreach (var file in Model.FilesInFolder)
+                {
+                    <a class="tile tile--file"
+                       asp-page="Index" asp-page-handler="Download" asp-route-fileId="@file.Id"
+                       data-file="@file.Id"
+                       data-name="@file.OriginalName"
+                       data-can-delete="@Model.CanDelete(file).ToString().ToLowerInvariant()">
+
+                        <span class="tile__icon">
+                            <svg class="icon icon--lg"><use href="#i-file"></use></svg>
+                            <span class="tile__ext">@FileExtension(file.OriginalName)</span>
+                        </span>
+
+                        <span class="tile__name" title="@file.OriginalName">@file.OriginalName</span>
+
+                        <span class="tile__sub">
+                            @Model.FormatSize(file.SizeBytes)
+                            · @file.UploadedAt.ToLocalTime().ToString("dd.MM.yyyy")
+                        </span>
+                    </a>
+                }
+            </div>
+        }
+
+        @* Подсказка, всплывающая при перетаскивании файлов из проводника. *@
+        <div class="dropveil" data-drop-veil hidden>
+            <svg class="icon icon--xl"><use href="#i-upload"></use></svg>
+            <p>Отпустите, чтобы загрузить</p>
+        </div>
+    </div>
+</div>
+
+@* ---------- Контекстное меню ---------- *@
+<div class="menu" data-context-menu hidden role="menu"></div>
+
+@* ---------- Окно создания папки ---------- *@
+<div class="modal" data-modal="new-folder" hidden>
+    <div class="modal__backdrop" data-modal-close></div>
+
+    <div class="modal__window" role="dialog" aria-modal="true" aria-labelledby="new-folder-title">
+        <h2 id="new-folder-title">Создать папку</h2>
+
+        <form method="post" asp-page-handler="CreateFolder" asp-route-parentId="@Model.Current?.Id" data-busy-form>
+            <div class="field">
+                <label asp-for="NewFolderName">Название</label>
+                <input asp-for="NewFolderName" maxlength="100" autocomplete="off" data-autofocus />
+            </div>
+
+            <div class="modal__actions">
+                <button type="button" class="btn" data-modal-close>Отмена</button>
+                <button type="submit" class="btn btn--primary">Создать</button>
+            </div>
         </form>
     </div>
+</div>
+
+@* ---------- Скрытые формы для действий из меню и с клавиатуры ---------- *@
+<form method="post" asp-page-handler="DeleteFiles" asp-route-folderId="@Model.Current?.Id"
+      data-form="delete-files" hidden></form>
+
+<form method="post" asp-page-handler="Copy" data-form="copy" hidden></form>
+
+<form method="post" asp-page-handler="Move" data-form="move" hidden></form>
+
+<form method="post" asp-page-handler="DeleteFolder" data-form="delete-folder" hidden></form>
+
+@functions {
+    // Расширение для подписи на значке файла: «PDF», «DOCX» и т.п.
+    // Комментарий обычный, а не /// с тегами: внутри @@functions разметка
+    // вроде <summary> сбивает разбор Razor-страницы.
+    static string FileExtension(string name)
+    {
+        var extension = System.IO.Path.GetExtension(name).TrimStart('.').ToUpperInvariant();
+
+        return extension.Length is 0 or > 4 ? "" : extension;
+    }
 }

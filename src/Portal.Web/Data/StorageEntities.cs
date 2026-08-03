@@ -182,7 +182,9 @@ public enum AuditAction
     DeleteFolder = 6,
     ChangeFolderSettings = 7,
     ChangePermissions = 8,
-    RetentionCleanup = 9
+    RetentionCleanup = 9,
+    Copy = 10,
+    Move = 11
 }
 
 /// <summary>

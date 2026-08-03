@@ -3,28 +3,44 @@
 @inject IOptions<ActiveDirectoryOptions> AdOptions
 @{
     var adminGroup = AdOptions.Value.AdminGroup;
+
+    // Подсветка текущего раздела в меню. Сравниваем по началу пути,
+    // чтобы «Файлы» оставались выделенными и внутри вложенных папок.
+    var path = Context.Request.Path.Value ?? "/";
+
+    string NavClass(string prefix) =>
+        prefix == "/"
+            ? (path == "/" ? "is-active" : "")
+            : (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? "is-active" : "");
 }
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>@ViewData["Title"] — Портал</title>
-    @* Файл стилей один и лежит локально: внешние CDN в вашей сети недоступны. *@
+    @* Стили и код лежат локально: внешние CDN в вашей сети недоступны. *@
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
 <body>
+@* Набор значков подключается один раз и дальше используется по ссылке. *@
+<partial name="_Icons" />
+
 <header class="topbar">
-    <a class="topbar__brand" asp-page="/Index">Портал</a>
+    <a class="topbar__brand" asp-page="/Index">
+        <svg class="icon"><use href="#i-folder"></use></svg>
+        Портал
+    </a>
 
     <nav class="topbar__nav">
-        <a asp-page="/Index">Главная</a>
-        <a asp-page="/Announcements/Index">Объявления</a>
-        <a asp-page="/Files/Index">Файлы</a>
+        <a class="@NavClass("/")" asp-page="/Index">Главная</a>
+        <a class="@NavClass("/Announcements")" asp-page="/Announcements/Index">Объявления</a>
+        <a class="@NavClass("/Files")" asp-page="/Files/Index">Файлы</a>
         @if (User.IsInRole(adminGroup))
         {
-            <a asp-page="/Admin/Audit">Журнал</a>
-            <a asp-page="/Admin/Diagnostics">Диагностика</a>
+            <a class="@NavClass("/Admin/Audit")" asp-page="/Admin/Audit">Журнал</a>
+            <a class="@NavClass("/Admin/Diagnostics")" asp-page="/Admin/Diagnostics">Диагностика</a>
         }
     </nav>
 
@@ -44,8 +60,26 @@
 </main>
 
 <footer class="footer">
-    Корпоративный портал · этап 1 (аутентификация)
+    Корпоративный портал · этап 3 (файловое хранилище)
 </footer>
+
+@* Окно подтверждения: используется вместо системного окна браузера,
+   чтобы опасные действия выглядели одинаково на всех страницах. *@
+<div class="modal" data-modal="confirm" hidden>
+    <div class="modal__backdrop" data-modal-close></div>
+
+    <div class="modal__window" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+        <h2 id="confirm-title" data-confirm-title>Подтвердите действие</h2>
+        <p data-confirm-text></p>
+
+        <div class="modal__actions">
+            <button type="button" class="btn" data-modal-close>Отмена</button>
+            <button type="button" class="btn btn--danger" data-confirm-ok>Удалить</button>
+        </div>
+    </div>
+</div>
+
+<script src="~/js/app.js" asp-append-version="true"></script>
 
 @await RenderSectionAsync("Scripts", required: false)
 </body>

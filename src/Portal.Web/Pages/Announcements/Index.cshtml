@@ -45,7 +45,13 @@
 
 @foreach (var item in Model.Items)
 {
-    <article class="card">
+    @* Здесь <div>, а не <article>, хотя по смыслу подошёл бы именно article.
+       Причина техническая: в Razor из .NET 10 теги article, section, header,
+       footer и figure нельзя ставить самым внешним элементом внутри блока
+       кода (@@if, @@foreach) — разбор страницы ломается, а ошибка при этом
+       показывается совсем в другой строке. Внутри <div> они работают,
+       вне блоков кода — тоже (см. header и footer в _Layout.cshtml). *@
+    <div class="card">
         <h2>@item.Title</h2>
 
         <p class="meta">
@@ -71,7 +77,7 @@
                 <a asp-page="Delete" asp-route-id="@item.Id" class="link--danger">Удалить</a>
             </p>
         }
-    </article>
+    </div>
 }
 
 @if (Model.TotalPages > 1)
