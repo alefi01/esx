@@ -1,95 +1,17 @@
 using System.Net;
-using System.Text.RegularExpressions;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Portal.Web.Services.ActiveDirectory;
 
 namespace Portal.Web.Tests;
 
-/// <summary>
-/// Заглушка вместо настоящего Active Directory.
-///
-/// Благодаря ей тесты проходят на любой машине — без домена и без сети.
-/// Проверяется вся логика портала выше уровня LDAP: выдача cookie,
-/// разграничение прав по группам, выход, защита форм от подделки.
-/// Сам обмен по LDAP тут не проверяется — для него нужен живой контроллер домена
-/// (это делается вручную по инструкции docs/04-проверка-этапа-1.md).
-/// </summary>
-public sealed class FakeAdAuthenticationService : IAdAuthenticationService
-{
-    /// <summary>Группы, которые «вернёт» AD при следующем входе. Тест задаёт их перед вызовом.</summary>
-    public static List<string> Groups { get; set; } = ["WebUsers"];
-
-    /// <summary>Единственный «правильный» пароль в тестах.</summary>
-    public const string CorrectPassword = "good";
-
-    public Task<AdAuthenticationResult> AuthenticateAsync(
-        string userName, string password, string? officeCode, CancellationToken ct = default)
-    {
-        if (password != CorrectPassword)
-        {
-            return Task.FromResult(AdAuthenticationResult.Failure(
-                AdAuthenticationStatus.InvalidCredentials, "192.168.96.3", "тестовая заглушка"));
-        }
-
-        var user = new AdUserInfo(
-            userName, "Иван Иванов", "ivanov@domen.pro", "CN=Ivanov,DC=domen,DC=pro", Groups);
-
-        return Task.FromResult(AdAuthenticationResult.Success(user, "192.168.96.3"));
-    }
-}
-
-/// <summary>
-/// Поднимает приложение целиком в памяти — без IIS и без сетевого порта —
-/// и подменяет только сервис аутентификации. Всё остальное настоящее:
-/// та же конфигурация, те же политики, тот же конвейер обработки запроса.
-/// </summary>
-public sealed class PortalFactory : WebApplicationFactory<Program>
-{
-    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
-        builder.ConfigureServices(services =>
-            services.Replace(ServiceDescriptor.Scoped<IAdAuthenticationService, FakeAdAuthenticationService>()));
-}
-
 public class AuthFlowTests
 {
-    // Скрытое поле формы с antiforgery-токеном. Без него POST-запросы отклоняются.
-    private static readonly Regex TokenRegex =
-        new(@"name=""__RequestVerificationToken""[^>]*value=""(?<token>[^""]+)""", RegexOptions.Compiled);
-
-    private static HttpClient CreateClient(PortalFactory factory) =>
-        factory.CreateClient(new WebApplicationFactoryClientOptions
-        {
-            // Перенаправления не выполняем автоматически: нам важно проверить,
-            // КУДА именно приложение отправляет пользователя.
-            AllowAutoRedirect = false,
-            HandleCookies = true
-        });
-
-    private static async Task<string> GetTokenAsync(HttpClient client, string page) =>
-        TokenRegex.Match(await client.GetStringAsync(page)).Groups["token"].Value;
-
-    private static Task<HttpResponseMessage> LoginAsync(
-        HttpClient client, string token, string userName, string password, string url = "/Account/Login") =>
-        client.PostAsync(url, new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["__RequestVerificationToken"] = token,
-            ["Input.UserName"] = userName,
-            ["Input.Password"] = password
-        }));
-
     [Fact]
     public async Task Успешный_вход_приводит_на_главную_с_именем_и_группами()
     {
-        FakeAdAuthenticationService.Groups = ["WebUsers", "Domain Users"];
-
         using var factory = new PortalFactory();
-        var client = CreateClient(factory);
+        factory.Ad.Groups = ["WebUsers", "Domain Users"];
+        var client = factory.CreateTestClient();
 
-        var token = await GetTokenAsync(client, "/Account/Login");
-        var login = await LoginAsync(client, token, "ivanov", FakeAdAuthenticationService.CorrectPassword);
+        var login = await client.LoginAsync("ivanov");
 
         Assert.Equal(HttpStatusCode.Redirect, login.StatusCode);
         Assert.Equal("/", login.Headers.Location!.ToString());
@@ -98,20 +20,18 @@ public class AuthFlowTests
         var html = await home.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, home.StatusCode);
-        Assert.Contains("Иван Иванов", html);
+        Assert.Contains("Пользователь ivanov", html);
         Assert.Contains("WebUsers", html);
     }
 
     [Fact]
     public async Task Неверный_пароль_не_пускает_и_не_раскрывает_причину()
     {
-        FakeAdAuthenticationService.Groups = ["WebUsers"];
-
         using var factory = new PortalFactory();
-        var client = CreateClient(factory);
+        factory.Ad.Groups = ["WebUsers"];
+        var client = factory.CreateTestClient();
 
-        var token = await GetTokenAsync(client, "/Account/Login");
-        var login = await LoginAsync(client, token, "ivanov", "неверный");
+        var login = await client.LoginAsync("ivanov", "неверный");
         var html = await login.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
@@ -126,13 +46,11 @@ public class AuthFlowTests
     public async Task Пользователь_вне_группы_доступа_не_получает_сессию()
     {
         // Пароль верный, но членства в WebUsers нет.
-        FakeAdAuthenticationService.Groups = ["Domain Users"];
-
         using var factory = new PortalFactory();
-        var client = CreateClient(factory);
+        factory.Ad.Groups = ["Domain Users"];
+        var client = factory.CreateTestClient();
 
-        var token = await GetTokenAsync(client, "/Account/Login");
-        var login = await LoginAsync(client, token, "sidorov", FakeAdAuthenticationService.CorrectPassword);
+        var login = await client.LoginAsync("sidorov");
         var html = await login.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
@@ -146,13 +64,11 @@ public class AuthFlowTests
     [Fact]
     public async Task Обычный_пользователь_не_попадает_в_раздел_администратора()
     {
-        FakeAdAuthenticationService.Groups = ["WebUsers"];
-
         using var factory = new PortalFactory();
-        var client = CreateClient(factory);
+        factory.Ad.Groups = ["WebUsers"];
+        var client = factory.CreateTestClient();
 
-        var token = await GetTokenAsync(client, "/Account/Login");
-        await LoginAsync(client, token, "ivanov", FakeAdAuthenticationService.CorrectPassword);
+        await client.LoginAsync("ivanov");
 
         var page = await client.GetAsync("/Admin/Diagnostics");
 
@@ -163,13 +79,11 @@ public class AuthFlowTests
     [Fact]
     public async Task Администратор_видит_раздел_диагностики()
     {
-        FakeAdAuthenticationService.Groups = ["WebUsers", "WebAdmins"];
-
         using var factory = new PortalFactory();
-        var client = CreateClient(factory);
+        factory.Ad.Groups = ["WebUsers", "WebAdmins"];
+        var client = factory.CreateTestClient();
 
-        var token = await GetTokenAsync(client, "/Account/Login");
-        await LoginAsync(client, token, "admin", FakeAdAuthenticationService.CorrectPassword);
+        await client.LoginAsync("admin");
 
         var page = await client.GetAsync("/Admin/Diagnostics");
         var html = await page.Content.ReadAsStringAsync();
@@ -183,19 +97,16 @@ public class AuthFlowTests
     [Fact]
     public async Task Выход_завершает_сессию()
     {
-        FakeAdAuthenticationService.Groups = ["WebUsers"];
-
         using var factory = new PortalFactory();
-        var client = CreateClient(factory);
+        factory.Ad.Groups = ["WebUsers"];
+        var client = factory.CreateTestClient();
 
-        var token = await GetTokenAsync(client, "/Account/Login");
-        await LoginAsync(client, token, "ivanov", FakeAdAuthenticationService.CorrectPassword);
+        await client.LoginAsync("ivanov");
 
         // Токен для выхода берём с главной: форма выхода живёт в шапке страницы.
-        var logoutToken = await GetTokenAsync(client, "/");
+        var logoutToken = await client.GetTokenAsync("/");
 
-        var logout = await client.PostAsync("/Account/Logout", new FormUrlEncodedContent(
-            new Dictionary<string, string> { ["__RequestVerificationToken"] = logoutToken }));
+        var logout = await client.PostFormAsync("/Account/Logout", logoutToken, []);
 
         Assert.Equal(HttpStatusCode.Redirect, logout.StatusCode);
 
@@ -210,14 +121,13 @@ public class AuthFlowTests
         // Защита от «открытого редиректа»: ссылка вида
         // http://ftp.domen.pro/Account/Login?returnUrl=https://зловред/
         // после успешного входа не должна уводить пользователя наружу.
-        FakeAdAuthenticationService.Groups = ["WebUsers"];
-
         using var factory = new PortalFactory();
-        var client = CreateClient(factory);
+        factory.Ad.Groups = ["WebUsers"];
+        var client = factory.CreateTestClient();
 
-        var token = await GetTokenAsync(client, "/Account/Login");
-        var login = await LoginAsync(
-            client, token, "ivanov", FakeAdAuthenticationService.CorrectPassword,
+        var login = await client.LoginAsync(
+            "ivanov",
+            FakeAdAuthenticationService.CorrectPassword,
             "/Account/Login?returnUrl=https://evil.example/");
 
         Assert.Equal("/", login.Headers.Location!.ToString());
@@ -227,7 +137,7 @@ public class AuthFlowTests
     public async Task Отправка_формы_без_antiforgery_токена_отклоняется()
     {
         using var factory = new PortalFactory();
-        var client = CreateClient(factory);
+        var client = factory.CreateTestClient();
 
         await client.GetAsync("/Account/Login");
 
@@ -245,7 +155,7 @@ public class AuthFlowTests
     public async Task Проверка_живости_открыта_без_входа()
     {
         using var factory = new PortalFactory();
-        var client = CreateClient(factory);
+        var client = factory.CreateTestClient();
 
         var response = await client.GetAsync("/healthz");
 

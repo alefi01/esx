@@ -1,0 +1,41 @@
+@page
+@model Portal.Web.Pages.Announcements.CreateModel
+@{
+    ViewData["Title"] = "Новое объявление";
+}
+
+<div class="card">
+    <h1>Новое объявление</h1>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
+    }
+
+    <form method="post">
+        <div asp-validation-summary="ModelOnly" class="alert alert--error"></div>
+
+        <div class="field">
+            <label asp-for="Input.Title">Заголовок</label>
+            <input asp-for="Input.Title" autofocus maxlength="200" />
+            <span asp-validation-for="Input.Title" class="field-error"></span>
+        </div>
+
+        <div class="field">
+            <label asp-for="Input.Body">Текст</label>
+            <textarea asp-for="Input.Body" rows="12" maxlength="10000"></textarea>
+            <span asp-validation-for="Input.Body" class="field-error"></span>
+            <p class="hint">
+                Обычный текст. Переносы строк сохраняются, ссылки вида
+                <code>https://…</code> станут кликабельными автоматически.
+                Разметка HTML не поддерживается намеренно — так объявление
+                не сможет содержать вредоносный код.
+            </p>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="button button--primary button--inline">Опубликовать</button>
+            <a class="button" asp-page="Index">Отмена</a>
+        </div>
+    </form>
+</div>

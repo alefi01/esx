@@ -1,0 +1,92 @@
+@page
+@using Portal.Web.Services.Text
+@inject PlainTextFormatter TextFormatter
+@model Portal.Web.Pages.Announcements.IndexModel
+@{
+    ViewData["Title"] = "Объявления";
+}
+
+<div class="page-header">
+    <h1>Объявления</h1>
+
+    @if (Model.CanPublish)
+    {
+        <a class="button button--primary button--inline" asp-page="Create">Написать объявление</a>
+    }
+</div>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert--ok" role="status">@Model.StatusMessage</div>
+}
+
+@if (Model.DatabaseUnavailable)
+{
+    <div class="alert alert--error" role="alert">
+        <strong>Объявления сейчас недоступны.</strong>
+        Не удалось получить данные — сообщите администратору.
+        Остальные разделы портала работают.
+
+        @if (Model.DatabaseErrorDetail is not null)
+        {
+            <br />
+            <span class="hint">Техническая подробность (видна только администраторам):</span>
+            <code>@Model.DatabaseErrorDetail</code>
+        }
+    </div>
+}
+
+@if (Model.Items.Count == 0 && !Model.DatabaseUnavailable)
+{
+    <div class="card">
+        <p class="hint">Объявлений пока нет.</p>
+    </div>
+}
+
+@foreach (var item in Model.Items)
+{
+    <article class="card">
+        <h2>@item.Title</h2>
+
+        <p class="meta">
+            @item.AuthorDisplayName ·
+            <time datetime="@item.CreatedAt.ToString("O")">
+                @item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+            </time>
+            @if (item.UpdatedAt is not null)
+            {
+                <span class="hint">(изменено @item.UpdatedAt.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm"))</span>
+            }
+        </p>
+
+        @* Текст объявления хранится как обычный текст. PlainTextFormatter
+           экранирует его и превращает переносы строк в разметку —
+           вставить в объявление скрипт таким образом нельзя. *@
+        <div class="announcement-body">@TextFormatter.ToHtml(item.Body)</div>
+
+        @if (Model.CanModify(item))
+        {
+            <p class="actions">
+                <a asp-page="Edit" asp-route-id="@item.Id">Изменить</a>
+                <a asp-page="Delete" asp-route-id="@item.Id" class="link--danger">Удалить</a>
+            </p>
+        }
+    </article>
+}
+
+@if (Model.TotalPages > 1)
+{
+    <nav class="pager">
+        @if (Model.PageNumber > 1)
+        {
+            <a asp-page="Index" asp-route-pageNumber="@(Model.PageNumber - 1)">← Новее</a>
+        }
+
+        <span class="hint">Страница @Model.PageNumber из @Model.TotalPages</span>
+
+        @if (Model.PageNumber < Model.TotalPages)
+        {
+            <a asp-page="Index" asp-route-pageNumber="@(Model.PageNumber + 1)">Старее →</a>
+        }
+    </nav>
+}

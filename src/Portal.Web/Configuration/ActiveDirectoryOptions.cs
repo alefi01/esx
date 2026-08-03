@@ -56,6 +56,13 @@ public sealed class ActiveDirectoryOptions
     /// <summary>Группа AD, дающая административные права в портале.</summary>
     public string AdminGroup { get; set; } = "WebAdmins";
 
+    /// <summary>
+    /// Группа AD, члены которой могут публиковать объявления.
+    /// Читать ленту могут все, у кого есть доступ к порталу;
+    /// писать — только эта группа и администраторы.
+    /// </summary>
+    public string PublisherGroup { get; set; } = "WebPublishers";
+
     /// <summary>См. <see cref="LdapAuthMode"/>.</summary>
     public LdapAuthMode AuthMode { get; set; } = LdapAuthMode.Negotiate;
 

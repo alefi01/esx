@@ -3,12 +3,15 @@ using Microsoft.AspNetCore.Authorization;
 using System.Text.Encodings.Web;
 using System.Text.Unicode;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.WebEncoders;
+using Portal.Web.Data;
 using Portal.Web.Configuration;
 using Portal.Web.Security;
 using Portal.Web.Services;
 using Portal.Web.Services.ActiveDirectory;
 using Portal.Web.Services.Offices;
+using Portal.Web.Services.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -123,6 +126,11 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy(PortalPolicies.Admin, policy => policy
         .RequireAuthenticatedUser()
         .RequireRole(adOptions.AdminGroup))
+    // Публиковать объявления могут «издатели» и администраторы.
+    // RequireRole с несколькими значениями означает «любая из перечисленных групп».
+    .AddPolicy(PortalPolicies.PublishAnnouncements, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireRole(adOptions.PublisherGroup, adOptions.AdminGroup))
     // Политика по умолчанию для всех страниц, где явно не сказано иное.
     // Так безопаснее: забыть закрыть новую страницу нельзя — она закрыта сама,
     // открывать надо осознанно, атрибутом AllowAnonymous.
@@ -137,8 +145,51 @@ builder.Services.AddAuthorizationBuilder()
 builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.AddSingleton<IOfficeResolver, OfficeResolver>();
+
+// Форматирование текста объявлений. Синглтон: состояния нет, только логика.
+// Кодировщик HtmlEncoder ему подставит контейнер — тот самый, что настроен
+// выше на вывод кириллицы как есть.
+builder.Services.AddSingleton<PlainTextFormatter>();
 builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddScoped<IAdAuthenticationService, LdapAdAuthenticationService>();
+
+// ---------------------------------------------------------------------------
+// 5а. База данных (PostgreSQL)
+//
+// Строка подключения содержит пароль, поэтому её НЕТ в appsettings.json,
+// который лежит в репозитории. Она берётся из appsettings.Production.json
+// (этот файл создаётся на сервере вручную и в репозиторий не попадает)
+// либо из переменной окружения ConnectionStrings__Portal.
+// Подробности — в docs/07-этап-2-объявления.md.
+// ---------------------------------------------------------------------------
+
+var databaseOptions = builder.Configuration
+    .GetSection(DatabaseOptions.SectionName).Get<DatabaseOptions>() ?? new DatabaseOptions();
+
+builder.Services.Configure<DatabaseOptions>(
+    builder.Configuration.GetSection(DatabaseOptions.SectionName));
+
+// Состояние базы на момент запуска — одно на всё приложение.
+builder.Services.AddSingleton<DatabaseStatus>();
+
+builder.Services.AddDbContext<PortalDbContext>(options =>
+{
+    var connectionString = builder.Configuration.GetConnectionString("Portal");
+
+    options.UseNpgsql(connectionString, npgsql =>
+    {
+        npgsql.CommandTimeout(databaseOptions.CommandTimeoutSeconds);
+
+        // Повтор при кратковременных сбоях связи с базой. Полезно, если
+        // PostgreSQL перезапускается или сеть моргнула: пользователь увидит
+        // задержку вместо ошибки.
+        npgsql.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorCodesToAdd: null);
+    });
+
+    // Запросы только на чтение (лента) не нужно отслеживать на изменения —
+    // так EF не строит лишние структуры в памяти.
+    options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+});
 
 // По умолчанию Razor кодирует все символы вне латиницы числовыми ссылками:
 // «Вход» превращается в «&#x412;&#x445;&#x43E;&#x434;». Работает это правильно,
@@ -161,12 +212,73 @@ builder.Services.AddRazorPages(options =>
 
     // Раздел администратора — отдельная политика поверх базовой.
     options.Conventions.AuthorizeFolder("/Admin", PortalPolicies.Admin);
+
+    // Ленту объявлений читают все, у кого есть доступ к порталу (политика по умолчанию).
+    // А вот писать, править и удалять — только публикаторы и администраторы.
+    // Внутри страниц правки есть ещё одна проверка: своё объявление или чужое.
+    options.Conventions.AuthorizePage("/Announcements/Create", PortalPolicies.PublishAnnouncements);
+    options.Conventions.AuthorizePage("/Announcements/Edit", PortalPolicies.PublishAnnouncements);
+    options.Conventions.AuthorizePage("/Announcements/Delete", PortalPolicies.PublishAnnouncements);
 });
 
 var app = builder.Build();
 
 // ---------------------------------------------------------------------------
-// 6. Конвейер обработки запроса. Порядок middleware здесь имеет значение.
+// 6. Приведение схемы базы данных к нужному виду
+//
+// Выполняются миграции, которых ещё нет в базе: создаются недостающие
+// таблицы и колонки. Так на сервере не нужен отдельный инструмент dotnet-ef,
+// который в сети без интернета пришлось бы переносить руками.
+//
+// Отдельно оговорим поведение при недоступной базе: приложение НЕ падает.
+// Вход в портал работает через Active Directory и от PostgreSQL не зависит,
+// поэтому правильнее пустить людей внутрь и показать администратору,
+// что именно сломалось, чем не запуститься вовсе.
+// ---------------------------------------------------------------------------
+
+using (var scope = app.Services.CreateScope())
+{
+    var status = scope.ServiceProvider.GetRequiredService<DatabaseStatus>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    try
+    {
+        var database = scope.ServiceProvider.GetRequiredService<PortalDbContext>().Database;
+
+        if (databaseOptions.ApplyMigrationsOnStartup)
+        {
+            var pending = (await database.GetPendingMigrationsAsync()).ToList();
+
+            if (pending.Count > 0)
+            {
+                logger.LogInformation(
+                    "Применяю миграции базы данных: {Migrations}", string.Join(", ", pending));
+
+                await database.MigrateAsync();
+            }
+        }
+        else
+        {
+            // Миграции отключены — проверим хотя бы, что база отвечает.
+            await database.CanConnectAsync();
+        }
+
+        status.MarkReady();
+        logger.LogInformation("База данных готова к работе.");
+    }
+    catch (Exception ex)
+    {
+        status.MarkFailed(ex.Message);
+
+        logger.LogCritical(ex,
+            "База данных недоступна. Портал запустится, вход будет работать, " +
+            "но разделы, которым нужна база (объявления), выдадут ошибку. " +
+            "Проверьте службу PostgreSQL и строку подключения ConnectionStrings:Portal.");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 7. Конвейер обработки запроса. Порядок middleware здесь имеет значение.
 // ---------------------------------------------------------------------------
 
 if (!app.Environment.IsDevelopment())

@@ -1,8 +1,11 @@
 using System.Diagnostics;
 using System.Net.Sockets;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Portal.Web.Configuration;
+using Portal.Web.Data;
+using Portal.Web.Services;
 using Portal.Web.Services.Offices;
 
 namespace Portal.Web.Pages.Admin;
@@ -28,11 +31,19 @@ public class DiagnosticsModel : PageModel
 {
     private readonly IOfficeResolver _offices;
     private readonly ActiveDirectoryOptions _ad;
+    private readonly DatabaseStatus _databaseStatus;
+    private readonly PortalDbContext _db;
 
-    public DiagnosticsModel(IOfficeResolver offices, IOptions<ActiveDirectoryOptions> ad)
+    public DiagnosticsModel(
+        IOfficeResolver offices,
+        IOptions<ActiveDirectoryOptions> ad,
+        DatabaseStatus databaseStatus,
+        PortalDbContext db)
     {
         _offices = offices;
         _ad = ad.Value;
+        _databaseStatus = databaseStatus;
+        _db = db;
     }
 
     public sealed record DcProbe(string Host, int Port, bool Reachable, long ElapsedMs, string? Error);
@@ -43,6 +54,18 @@ public class DiagnosticsModel : PageModel
     public List<DcProbe> Probes { get; } = [];
     public ActiveDirectoryOptions AdOptions => _ad;
     public IReadOnlyList<OfficeDefinition> Offices => _offices.All;
+
+    /// <summary>Состояние базы данных на момент запуска приложения.</summary>
+    public DatabaseStatus Database => _databaseStatus;
+
+    /// <summary>Отвечает ли база прямо сейчас (проверяется при открытии страницы).</summary>
+    public bool DatabaseRespondsNow { get; private set; }
+
+    /// <summary>Ошибка текущей проверки базы, если она не прошла.</summary>
+    public string? DatabaseLiveError { get; private set; }
+
+    /// <summary>Сколько объявлений лежит в базе — заодно подтверждает, что таблица создана.</summary>
+    public int? AnnouncementCount { get; private set; }
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
@@ -57,6 +80,30 @@ public class DiagnosticsModel : PageModel
         foreach (var host in DomainControllerOrder)
         {
             Probes.Add(await ProbeAsync(host, _ad.Port, _ad.TimeoutSeconds, cancellationToken));
+        }
+
+        await ProbeDatabaseAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Состояние на момент запуска могло устареть: базу могли починить или,
+    /// наоборот, остановить уже после старта приложения. Поэтому проверяем ещё и сейчас.
+    /// </summary>
+    private async Task ProbeDatabaseAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            DatabaseRespondsNow = await _db.Database.CanConnectAsync(cancellationToken);
+
+            if (DatabaseRespondsNow)
+            {
+                AnnouncementCount = await _db.Announcements.CountAsync(cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            DatabaseRespondsNow = false;
+            DatabaseLiveError = ex.Message;
         }
     }
 

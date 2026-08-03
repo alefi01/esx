@@ -11,6 +11,12 @@ public static class PortalPolicies
 
     /// <summary>Административные права: членство в группе ActiveDirectory:AdminGroup.</summary>
     public const string Admin = "PortalAdmin";
+
+    /// <summary>
+    /// Право публиковать объявления: членство в группе ActiveDirectory:PublisherGroup
+    /// либо в группе администраторов. Читать ленту могут все, у кого есть доступ к порталу.
+    /// </summary>
+    public const string PublishAnnouncements = "PublishAnnouncements";
 }
 
 /// <summary>Собственные типы claim'ов, которых нет в стандартном наборе.</summary>

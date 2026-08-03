@@ -1,0 +1,37 @@
+@page "{id:int}"
+@using Portal.Web.Services.Text
+@inject PlainTextFormatter TextFormatter
+@model Portal.Web.Pages.Announcements.DeleteModel
+@{
+    ViewData["Title"] = "Удаление объявления";
+}
+
+<div class="card">
+    <h1>Удалить объявление?</h1>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
+    }
+
+    @if (Model.Announcement is not null)
+    {
+        <div class="preview">
+            <h2>@Model.Announcement.Title</h2>
+            <p class="meta">
+                @Model.Announcement.AuthorDisplayName ·
+                @Model.Announcement.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+            </p>
+            <div class="announcement-body">@TextFormatter.ToHtml(Model.Announcement.Body)</div>
+        </div>
+
+        <p class="hint">Действие необратимо: восстановить объявление будет нельзя.</p>
+
+        <form method="post">
+            <div class="form-actions">
+                <button type="submit" class="button button--danger button--inline">Удалить</button>
+                <a class="button" asp-page="Index">Отмена</a>
+            </div>
+        </form>
+    }
+</div>

@@ -78,6 +78,47 @@
 </div>
 
 <div class="card">
+    <h2>База данных</h2>
+
+    <dl class="facts">
+        <dt>Состояние при запуске приложения</dt>
+        <dd>
+            @if (Model.Database.IsReady)
+            {
+                <span class="badge badge--ok">схема в порядке</span>
+            }
+            else
+            {
+                <span class="badge badge--error">ошибка</span>
+                <span class="hint">@Model.Database.Error</span>
+            }
+        </dd>
+
+        <dt>Отвечает сейчас</dt>
+        <dd>
+            @if (Model.DatabaseRespondsNow)
+            {
+                <span class="badge badge--ok">да</span>
+            }
+            else
+            {
+                <span class="badge badge--error">нет</span>
+                <span class="hint">@Model.DatabaseLiveError</span>
+            }
+        </dd>
+
+        <dt>Объявлений в базе</dt>
+        <dd>@(Model.AnnouncementCount?.ToString() ?? "—")</dd>
+    </dl>
+
+    <p class="hint">
+        Если «при запуске» ошибка, а «сейчас» всё в порядке — базу подняли уже
+        после старта портала. Перезапустите пул приложений, чтобы применились
+        миграции: <code>Restart-WebAppPool -Name "PortalPool"</code>
+    </p>
+</div>
+
+<div class="card">
     <h2>Настроенные офисы</h2>
 
     <table class="table">
