@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -91,6 +92,12 @@ public sealed class PortalFactory : WebApplicationFactory<Program>
             services.AddSingleton(Ad);
             services.Replace(ServiceDescriptor.Scoped<IAdAuthenticationService, FakeAdAuthenticationService>());
 
+            // Тестовый сервер работает без сети и адрес клиента не заполняет,
+            // а от него зависят определение офиса и доступ к аварийной странице.
+            // Подставляем адрес: по умолчанию «с самого сервера», а если тест
+            // прислал заголовок X-Test-Remote-Ip — указанный в нём.
+            services.AddSingleton<IStartupFilter, TestRemoteIpStartupFilter>();
+
             RemovePostgreSqlRegistrations(services);
 
             services.AddDbContext<PortalDbContext>(options => options
@@ -158,4 +165,39 @@ public sealed class PortalFactory : WebApplicationFactory<Program>
             File.Delete(_databasePath);
         }
     }
+}
+
+/// <summary>
+/// Подставляет адрес клиента в тестовых запросах.
+///
+/// TestServer сетевого соединения не имеет и RemoteIpAddress оставляет пустым,
+/// а от этого адреса в портале зависят две вещи: определение офиса
+/// и доступ к аварийной странице проверки входа. Без подстановки такие
+/// проверки написать нельзя.
+///
+/// IStartupFilter позволяет вклиниться в самое начало конвейера обработки
+/// запроса, не переписывая конвейер приложения.
+/// </summary>
+public sealed class TestRemoteIpStartupFilter : IStartupFilter
+{
+    /// <summary>Заголовок, которым тест задаёт «откуда» пришёл запрос.</summary>
+    public const string HeaderName = "X-Test-Remote-Ip";
+
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+        app =>
+        {
+            app.Use(async (context, nextMiddleware) =>
+            {
+                var value = context.Request.Headers[HeaderName].ToString();
+
+                context.Connection.RemoteIpAddress =
+                    !string.IsNullOrEmpty(value) && System.Net.IPAddress.TryParse(value, out var address)
+                        ? address
+                        : System.Net.IPAddress.Loopback;
+
+                await nextMiddleware();
+            });
+
+            next(app);
+        };
 }

@@ -125,12 +125,36 @@ public class LoginModel : PageModel
                     "Обратитесь к администратору.",
                 AdAuthenticationStatus.ServerUnavailable =>
                     "Контроллер домена сейчас недоступен. Попробуйте позже или сообщите администратору.",
+
+                // Отдельная формулировка для технического сбоя.
+                // Раньше здесь тоже говорилось «неверный логин или пароль», и это
+                // сбивало с толку: при неправильно настроенном BaseDn пароль
+                // проверяется УСПЕШНО, а пользователя не находят в каталоге —
+                // и администратор сутки ищет проблему в паролях.
+                // Пользователю подробности по-прежнему не показываем,
+                // но говорим честно, что дело не в нём.
+                AdAuthenticationStatus.Error =>
+                    "Вход не удался из-за ошибки настройки портала. Пароль здесь ни при чём — " +
+                    "сообщите администратору, подробности записаны в журнал.",
+
                 _ => "Неверный логин или пароль."
             };
 
-            _logger.LogWarning(
-                "Неудачный вход {User} с {Ip}: {Status}. Подробности: {Detail}",
-                Input.UserName, remoteIp, result.Status, result.TechnicalDetail);
+            // Технический сбой — это не «пользователь ошибся», а «сломана настройка».
+            // Уровень записи в журнале должен это отражать, иначе такая строка
+            // теряется среди обычных опечаток в паролях.
+            if (result.Status == AdAuthenticationStatus.Error)
+            {
+                _logger.LogError(
+                    "ОШИБКА НАСТРОЙКИ при входе {User} с {Ip}. Контроллер: {Dc}. Подробности: {Detail}",
+                    Input.UserName, remoteIp, result.DomainController, result.TechnicalDetail);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Неудачный вход {User} с {Ip}: {Status}. Подробности: {Detail}",
+                    Input.UserName, remoteIp, result.Status, result.TechnicalDetail);
+            }
 
             return Page();
         }

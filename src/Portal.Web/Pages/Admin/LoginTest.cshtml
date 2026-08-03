@@ -1,0 +1,145 @@
+@page
+@model Portal.Web.Pages.Admin.LoginTestModel
+@{
+    ViewData["Title"] = "Проверка входа";
+    // Разметка без шапки: страницей пользуются в том числе тогда,
+    // когда войти в портал невозможно и меню показывать не от чьего имени.
+    Layout = "_LayoutBare";
+}
+
+<div class="card">
+    <h1>Проверка входа</h1>
+
+    <p class="hint">
+        Служебная страница. Делает то же, что форма входа, но показывает,
+        на каком шаге всё останавливается. Открывается только с самого сервера
+        либо администратором портала. Введённый пароль никуда не сохраняется.
+    </p>
+
+    @if (Model.Blocked is not null)
+    {
+        <div class="alert alert--error" role="alert">@Model.Blocked</div>
+    }
+
+    <form method="post">
+        <div class="field">
+            <label asp-for="Input.UserName">Логин</label>
+            <input asp-for="Input.UserName" autofocus autocomplete="off" />
+            <span asp-validation-for="Input.UserName" class="field-error"></span>
+        </div>
+
+        <div class="field">
+            <label asp-for="Input.Password">Пароль</label>
+            <input asp-for="Input.Password" type="password" autocomplete="off" />
+            <span asp-validation-for="Input.Password" class="field-error"></span>
+        </div>
+
+        <button type="submit" class="button button--primary">Проверить</button>
+    </form>
+</div>
+
+@if (Model.Result is not null)
+{
+    var verdict = Model.Verdict();
+
+    <div class="card">
+        <h2>
+            Результат
+            <span class="badge @verdict.Badge">@Model.Result.Status</span>
+        </h2>
+
+        <p><strong>@verdict.Title</strong></p>
+        <p>@verdict.Explanation</p>
+
+        <dl class="facts">
+            <dt>Контроллер, который ответил</dt>
+            <dd><code>@(Model.Result.DomainController ?? "—")</code></dd>
+
+            <dt>Техническая подробность</dt>
+            <dd><code>@(Model.Result.TechnicalDetail ?? "нет")</code></dd>
+        </dl>
+
+        @if (Model.Result.User is not null)
+        {
+            <h3>Что вернул каталог</h3>
+
+            <dl class="facts">
+                <dt>Учётная запись</dt>
+                <dd><code>@Model.Result.User.SamAccountName</code></dd>
+
+                <dt>Отображаемое имя</dt>
+                <dd>@Model.Result.User.DisplayName</dd>
+
+                <dt>DN в каталоге</dt>
+                <dd><code>@Model.Result.User.DistinguishedName</code></dd>
+
+                <dt>Группа доступа «@Model.AdOptions.AccessGroup»</dt>
+                <dd>
+                    @if (Model.HasAccessGroup)
+                    {
+                        <span class="badge badge--ok">состоит</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge--error">НЕ состоит — на портал не пустят</span>
+                    }
+                </dd>
+
+                <dt>Группа администраторов «@Model.AdOptions.AdminGroup»</dt>
+                <dd>@(Model.HasAdminGroup ? "состоит" : "не состоит")</dd>
+
+                <dt>Группа публикаторов «@Model.AdOptions.PublisherGroup»</dt>
+                <dd>@(Model.HasPublisherGroup ? "состоит" : "не состоит")</dd>
+            </dl>
+
+            <h3>Все группы (@Model.Result.User.Groups.Count)</h3>
+            <ul class="tags">
+                @foreach (var group in Model.Result.User.Groups)
+                {
+                    <li><code>@group</code></li>
+                }
+            </ul>
+        }
+    </div>
+}
+
+<div class="card">
+    <h2>Настройки, с которыми работает приложение</h2>
+
+    <p class="hint">
+        Это фактические значения из конфигурации, а не то, что написано в файле,
+        который вы редактировали. Если они не совпадают с ожидаемыми, значит
+        правки не подхватились: перезапустите пул приложений либо проверьте,
+        не затёрся ли <code>appsettings.json</code> при обновлении.
+    </p>
+
+    <dl class="facts">
+        <dt>Домен (DomainFqdn)</dt>
+        <dd><code>@Model.AdOptions.DomainFqdn</code></dd>
+
+        <dt>Корень поиска (BaseDn)</dt>
+        <dd><code>@Model.AdOptions.BaseDn</code></dd>
+
+        <dt>Короткое имя домена</dt>
+        <dd><code>@(string.IsNullOrEmpty(Model.AdOptions.DomainNetBios) ? "не задано" : Model.AdOptions.DomainNetBios)</code></dd>
+
+        <dt>Режим проверки пароля</dt>
+        <dd><code>@Model.AdOptions.AuthMode</code>, порт @Model.AdOptions.Port, TLS: @(Model.AdOptions.UseSsl ? "да" : "нет")</dd>
+
+        <dt>Группы: доступ / админ / публикация</dt>
+        <dd>
+            <code>@Model.AdOptions.AccessGroup</code> /
+            <code>@Model.AdOptions.AdminGroup</code> /
+            <code>@Model.AdOptions.PublisherGroup</code>
+        </dd>
+
+        <dt>Ваш адрес</dt>
+        <dd><code>@(Model.RemoteIp ?? "неизвестен")</code></dd>
+
+        <dt>Определённый офис</dt>
+        <dd>@Model.DetectedOffice</dd>
+
+        <dt>Порядок обхода контроллеров</dt>
+        <dd><code>@string.Join(" → ", Model.DomainControllerOrder)</code></dd>
+    </dl>
+</div>
