@@ -18,7 +18,7 @@
 
 ## Шаг 1. Получить сертификат
 
-Домен внутренний, публичные центры сертификации на `web.domen.pro`
+Домен внутренний, публичные центры сертификации на `ftp.domen.pro`
 сертификат не выдадут. Варианты:
 
 **Вариант А — служба сертификации Active Directory (рекомендуется).**
@@ -34,16 +34,28 @@
 плохая привычка.
 
 ```powershell
-# Вариант Б, если AD CS нет
-New-SelfSignedCertificate -DnsName "web.domen.pro" `
+# Вариант Б, если AD CS нет.
+# Оба имени перечислены намеренно — см. пояснение ниже.
+New-SelfSignedCertificate -DnsName "ftp.domen.pro", "ftp" `
     -CertStoreLocation "cert:\LocalMachine\My" `
-    -FriendlyName "Portal web.domen.pro" `
+    -FriendlyName "Portal ftp.domen.pro" `
     -NotAfter (Get-Date).AddYears(3)
 ```
 
 Что бы вы ни выбрали, в сертификате обязательно должно быть поле
-**Subject Alternative Name** с `web.domen.pro`. Современные браузеры
-поле Common Name больше не смотрят — сертификат без SAN будет отвергнут.
+**Subject Alternative Name**, и в нём — **оба** имени: `ftp.domen.pro`
+и короткое `ftp`. Современные браузеры поле Common Name больше не смотрят,
+а имя, которого нет в SAN, считают несовпадением: пользователь, набравший
+`https://ftp/`, получит предупреждение о недоверенном сертификате.
+
+Если сертификат выпускается через AD CS, укажите оба имени в запросе
+(в шаблоне — «Alternative name», тип DNS, две записи).
+
+Проверить, что попало в готовый сертификат:
+
+```powershell
+(Get-ChildItem cert:\LocalMachine\My | Where-Object Subject -like "*ftp.domen.pro*").DnsNameList
+```
 
 ---
 
@@ -53,22 +65,31 @@ New-SelfSignedCertificate -DnsName "web.domen.pro" `
 Import-Module WebAdministration
 
 # отпечаток нужного сертификата
-Get-ChildItem cert:\LocalMachine\My | Where-Object Subject -like "*web.domen.pro*"
+Get-ChildItem cert:\LocalMachine\My | Where-Object Subject -like "*ftp.domen.pro*"
 
-New-WebBinding -Name "Portal" -Protocol https -Port 443 -HostHeader "web.domen.pro" -SslFlags 1
+$cert = Get-ChildItem cert:\LocalMachine\My | Where-Object Subject -like "*ftp.domen.pro*"
 
-$cert = Get-ChildItem cert:\LocalMachine\My | Where-Object Subject -like "*web.domen.pro*"
-New-Item -Path "IIS:\SslBindings\!443!web.domen.pro" -Value $cert -SSLFlags 1
+# Привязка для полного имени
+New-WebBinding -Name "Portal" -Protocol https -Port 443 -HostHeader "ftp.domen.pro" -SslFlags 1
+New-Item -Path "IIS:\SslBindings\!443!ftp.domen.pro" -Value $cert -SSLFlags 1
+
+# И для короткого — так же, как на порту 80
+New-WebBinding -Name "Portal" -Protocol https -Port 443 -HostHeader "ftp" -SslFlags 1
+New-Item -Path "IIS:\SslBindings\!443!ftp" -Value $cert -SSLFlags 1
 ```
+
+`-SslFlags 1` включает SNI — без него IIS не даст привязать два имени
+к порту 443 на одном адресе.
 
 **Проверьте, что HTTPS работает, ДО того как что-то менять в приложении:**
 
 ```powershell
-Invoke-WebRequest https://web.domen.pro/healthz -UseBasicParsing
+Invoke-WebRequest https://ftp.domen.pro/healthz -UseBasicParsing
+Invoke-WebRequest https://ftp/healthz -UseBasicParsing
 ```
 
-Должно вернуть `ok` без ошибок сертификата. Если тут проблема — решайте её
-сейчас. Дальше идти нельзя.
+Оба запроса должны вернуть `ok` без ошибок сертификата. Если тут проблема —
+решайте её сейчас. Дальше идти нельзя.
 
 ---
 
@@ -94,7 +115,7 @@ Restart-WebAppPool -Name "PortalPool"
 
 Проверьте:
 
-- [ ] `http://web.domen.pro/` перенаправляет на `https://web.domen.pro/`
+- [ ] `http://ftp.domen.pro/` перенаправляет на `https://ftp.domen.pro/`
 - [ ] Вход работает
 - [ ] В инструментах разработчика (F12 → Application → Cookies)
       у `Portal.Auth` появился флаг `Secure`
@@ -163,6 +184,6 @@ options.Cookie.Name = "__Host-Portal.Auth";
 
 ```powershell
 Get-ChildItem cert:\LocalMachine\My |
-    Where-Object Subject -like "*web.domen.pro*" |
+    Where-Object Subject -like "*ftp.domen.pro*" |
     Select-Object Subject, NotAfter
 ```

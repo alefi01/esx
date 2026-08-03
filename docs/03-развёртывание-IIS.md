@@ -6,7 +6,9 @@
 Обозначения:
 - `C:\inetpub\portal` — куда ставим приложение
 - `C:\build\portal` — куда скопированы исходники
-- `web.domen.pro` — DNS-имя сайта (уже настроено)
+- `ftp.domen.pro` — DNS-имя сайта (уже настроено).
+  Пользователи будут заходить и по короткому имени `ftp` — под это
+  на шаге 5 настраивается отдельная привязка.
 
 ---
 
@@ -151,9 +153,37 @@ Set-ItemProperty IIS:\AppPools\PortalPool -Name recycling.periodicRestart.time -
 New-Website -Name "Portal" `
             -PhysicalPath "C:\inetpub\portal" `
             -ApplicationPool "PortalPool" `
-            -HostHeader "web.domen.pro" `
+            -HostHeader "ftp.domen.pro" `
             -Port 80
 ```
+
+### Короткое имя `ftp` — нужна вторая привязка
+
+Пользователи будут набирать в адресной строке просто `ftp`, без домена.
+Браузер при этом отправит заголовок `Host: ftp`, а привязка выше настроена
+на `ftp.domen.pro` — IIS такой запрос не узнает и вернёт ошибку
+«Invalid Hostname». Поэтому добавьте вторую привязку:
+
+```powershell
+New-WebBinding -Name "Portal" -Protocol http -Port 80 -HostHeader "ftp"
+```
+
+Проверить, что обе на месте:
+
+```powershell
+Get-WebBinding -Name "Portal" | Select-Object protocol, bindingInformation
+```
+
+Ожидается две строки: `*:80:ftp.domen.pro` и `*:80:ftp`.
+
+> Короткое имя работает только у тех, у кого `domen.pro` прописан в списке
+> DNS-суффиксов — у машин в домене это обычно так по умолчанию.
+> Проверить на клиенте: `nslookup ftp` должен вернуть адрес веб-сервера.
+>
+> Если хотите вообще не думать о заголовке `Host`, можно создать привязку
+> с пустым именем узла (`-HostHeader ""`) — тогда сайт отвечает на любое имя.
+> Годится, пока на этом сервере один сайт; при появлении второго так делать
+> уже нельзя.
 
 **Отключите Windows-аутентификацию IIS и включите анонимную.** Это важно:
 портал аутентифицирует пользователей сам, своей формой. Если оставить
@@ -202,10 +232,10 @@ Start-WebAppPool -Name "PortalPool"
 Start-Website -Name "Portal"
 
 # Проверка живости — должно вернуть "ok"
-Invoke-WebRequest http://web.domen.pro/healthz -UseBasicParsing | Select-Object -Expand Content
+Invoke-WebRequest http://ftp.domen.pro/healthz -UseBasicParsing | Select-Object -Expand Content
 ```
 
-Затем откройте `http://web.domen.pro/` в браузере — должна появиться форма входа.
+Затем откройте `http://ftp.domen.pro/` в браузере — должна появиться форма входа.
 
 Полный сценарий проверки: [04-проверка-этапа-1.md](04-проверка-этапа-1.md).
 

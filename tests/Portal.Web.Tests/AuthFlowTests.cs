@@ -15,7 +15,7 @@ namespace Portal.Web.Tests;
 /// Проверяется вся логика портала выше уровня LDAP: выдача cookie,
 /// разграничение прав по группам, выход, защита форм от подделки.
 /// Сам обмен по LDAP тут не проверяется — для него нужен живой контроллер домена
-/// (это делается вручную по инструкции docs/05-проверка-этапа-1.md).
+/// (это делается вручную по инструкции docs/04-проверка-этапа-1.md).
 /// </summary>
 public sealed class FakeAdAuthenticationService : IAdAuthenticationService
 {
@@ -208,7 +208,7 @@ public class AuthFlowTests
     public async Task Параметр_returnUrl_не_уводит_на_чужой_сайт()
     {
         // Защита от «открытого редиректа»: ссылка вида
-        // http://web.domen.pro/Account/Login?returnUrl=https://зловред/
+        // http://ftp.domen.pro/Account/Login?returnUrl=https://зловред/
         // после успешного входа не должна уводить пользователя наружу.
         FakeAdAuthenticationService.Groups = ["WebUsers"];
 
