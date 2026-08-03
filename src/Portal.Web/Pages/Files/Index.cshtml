@@ -5,7 +5,12 @@
     ViewData["Title"] = Model.Current is null ? "Файлы" : Model.Current.Name;
 
     var canWrite = Model.Current is not null && Model.Access >= FolderAccess.Write;
-    var canManage = Model.Current is not null && Model.Access >= FolderAccess.Manage;
+
+    // Права на ТЕКУЩУЮ папку. Для папок в списке права считаются отдельно,
+    // по каждой своей (Model.CanManageFolder) — на верхнем уровне текущей
+    // папки нет, и одно общее значение здесь давало бы ложный ответ.
+    var canManageCurrent = Model.Current is not null && Model.Access >= FolderAccess.Manage;
+
     var canCreateFolder = Model.Current is null ? Model.IsAdmin : canWrite;
 }
 
@@ -19,9 +24,10 @@
      data-explorer
      data-folder-id="@(Model.Current?.Id.ToString() ?? "")"
      data-can-write="@canWrite.ToString().ToLowerInvariant()"
-     data-can-manage="@canManage.ToString().ToLowerInvariant()"
+     data-can-manage="@canManageCurrent.ToString().ToLowerInvariant()"
      data-can-create-folder="@canCreateFolder.ToString().ToLowerInvariant()"
-     data-max-size="@Model.MaxFileSizeBytes">
+     data-max-size="@Model.MaxFileSizeBytes"
+     data-max-text-preview="@Portal.Web.Pages.Files.IndexModel.MaxTextPreviewBytes">
 
     @* ---------- Верхняя панель папки ---------- *@
     <div class="toolbar">
@@ -42,6 +48,30 @@
         </nav>
 
         <div class="toolbar__actions">
+            @* Поиск. Обычная форма методом GET: результат получает свой адрес,
+               его можно послать коллеге и вернуть кнопкой «назад». Поле id
+               сохраняет папку — поиск ведётся только внутри неё. *@
+            <form method="get" class="search" role="search">
+                @if (Model.Current is not null)
+                {
+                    <input type="hidden" name="id" value="@Model.Current.Id" />
+                }
+
+                <svg class="icon icon--xs search__icon"><use href="#i-search"></use></svg>
+
+                <input type="search" name="q" value="@Model.Query" autocomplete="off"
+                       placeholder="@(Model.Current is null ? "Поиск по всему" : "Поиск в папке")"
+                       aria-label="Поиск файлов" />
+
+                @if (Model.IsSearching)
+                {
+                    <a class="search__clear" asp-page="Index" asp-route-id="@Model.Current?.Id"
+                       title="Очистить поиск">
+                        <svg class="icon icon--xs"><use href="#i-close"></use></svg>
+                    </a>
+                }
+            </form>
+
             @if (canWrite && Model.StorageConfigured)
             {
                 @* Настоящее поле выбора файлов спрятано: нажатие на кнопку
@@ -62,7 +92,7 @@
                 </button>
             }
 
-            @if (canManage)
+            @if (canManageCurrent)
             {
                 <a class="btn" asp-page="Settings" asp-route-id="@Model.Current!.Id">
                     <svg class="icon"><use href="#i-settings"></use></svg>
@@ -117,92 +147,175 @@
         </div>
     }
 
-    @* ---------- Содержимое папки ---------- *@
-    <div class="pane" data-drop-zone tabindex="0">
-
-        @if (Model.Subfolders.Count == 0 && Model.FilesInFolder.Count == 0)
-        {
-            <div class="empty">
-                <svg class="icon icon--xl"><use href="#i-folder"></use></svg>
-                <p>Здесь пока пусто</p>
-                @if (canWrite)
+    @if (Model.IsSearching)
+    {
+        @* ---------- Результаты поиска ----------
+           Отдельный вид, а не подмешивание в общий список: у найденного файла
+           главное — где он лежит, поэтому показываем путь, а не значок. *@
+        <div class="pane">
+            <div class="searchhead">
+                Найдено: <strong>@Model.SearchResults.Count</strong>
+                @if (Model.SearchResults.Count >= 200)
                 {
-                    <p class="muted">Перетащите файлы сюда или нажмите «Загрузить»</p>
+                    <span class="muted">(показаны первые 200 — уточните запрос)</span>
                 }
-                else if (canCreateFolder)
-                {
-                    <p class="muted">Нажмите правой кнопкой, чтобы создать папку</p>
-                }
+                <span class="muted">
+                    по запросу «@Model.Query»
+                    @(Model.Current is null ? "во всём хранилище" : $"в папке «{Model.Current.Name}» и вложенных")
+                </span>
             </div>
-        }
-        else
-        {
-            <div class="grid">
-                @foreach (var folder in Model.Subfolders)
-                {
-                    <a class="tile tile--folder"
-                       asp-page="Index" asp-route-id="@folder.Id"
-                       data-folder="@folder.Id"
-                       data-name="@folder.Name"
-                       data-drop-target="@folder.Id">
 
-                        <span class="tile__icon">
-                            <svg class="icon icon--lg">
-                                <use href="@(folder.InheritPermissions ? "#i-folder" : "#i-folder-locked")"></use>
-                            </svg>
-                        </span>
+            @if (Model.SearchResults.Count == 0)
+            {
+                <div class="empty">
+                    <svg class="icon icon--xl"><use href="#i-search"></use></svg>
+                    <p>Ничего не найдено</p>
+                    <p class="muted">Поиск идёт по имени файла и только там, куда у вас есть доступ.</p>
+                </div>
+            }
+            else
+            {
+                <ul class="hits">
+                    @foreach (var hit in Model.SearchResults)
+                    {
+                        <li class="hit">
+                            <a class="hit__main"
+                               asp-page="Index" asp-page-handler="Download" asp-route-fileId="@hit.File.Id">
+                                <svg class="icon"><use href="#i-file"></use></svg>
+                                <span class="hit__name">@hit.File.OriginalName</span>
+                            </a>
 
-                        <span class="tile__name" title="@folder.Name">@folder.Name</span>
+                            <span class="hit__meta">
+                                @Model.FormatSize(hit.File.SizeBytes)
+                                · @hit.File.UploadedAt.ToLocalTime().ToString("dd.MM.yyyy")
+                            </span>
 
-                        <span class="tile__sub">
-                            @* Пустую папку не подписываем «0 Б» — лишний шум в списке. *@
-                            @if (Model.ShowSizes && Model.FolderSizes.TryGetValue(folder.Id, out var size) && size > 0)
-                            {
-                                <span>@Model.FormatSize(size)</span>
-                            }
-                            @if (folder.RetentionDays is { } days)
-                            {
-                                <span class="chip chip--warn" title="Файлы старше срока уходят в корзину">@days дн.</span>
-                            }
-                            @if (!folder.InheritPermissions)
-                            {
-                                <span class="chip" title="Права родительской папки не наследуются">закрытая</span>
-                            }
-                        </span>
-                    </a>
-                }
-
-                @foreach (var file in Model.FilesInFolder)
-                {
-                    <a class="tile tile--file"
-                       asp-page="Index" asp-page-handler="Download" asp-route-fileId="@file.Id"
-                       data-file="@file.Id"
-                       data-name="@file.OriginalName"
-                       data-can-delete="@Model.CanDelete(file).ToString().ToLowerInvariant()">
-
-                        <span class="tile__icon">
-                            <svg class="icon icon--lg"><use href="#i-file"></use></svg>
-                            <span class="tile__ext">@FileExtension(file.OriginalName)</span>
-                        </span>
-
-                        <span class="tile__name" title="@file.OriginalName">@file.OriginalName</span>
-
-                        <span class="tile__sub">
-                            @Model.FormatSize(file.SizeBytes)
-                            · @file.UploadedAt.ToLocalTime().ToString("dd.MM.yyyy")
-                        </span>
-                    </a>
-                }
-            </div>
-        }
-
-        @* Подсказка, всплывающая при перетаскивании файлов из проводника. *@
-        <div class="dropveil" data-drop-veil hidden>
-            <svg class="icon icon--xl"><use href="#i-upload"></use></svg>
-            <p>Отпустите, чтобы загрузить</p>
+                            <a class="hit__path" asp-page="Index" asp-route-id="@hit.FolderId"
+                               title="Открыть папку">@hit.FolderPath</a>
+                        </li>
+                    }
+                </ul>
+            }
         </div>
-    </div>
+    }
+    else
+    {
+        @* ---------- Содержимое папки ---------- *@
+        <div class="pane" data-drop-zone tabindex="0">
+
+            @if (Model.Subfolders.Count == 0 && Model.FilesInFolder.Count == 0)
+            {
+                <div class="empty">
+                    <svg class="icon icon--xl"><use href="#i-folder"></use></svg>
+                    <p>Здесь пока пусто</p>
+                    @if (canWrite)
+                    {
+                        <p class="muted">Перетащите файлы сюда или нажмите «Загрузить»</p>
+                    }
+                    else if (canCreateFolder)
+                    {
+                        <p class="muted">Нажмите правой кнопкой, чтобы создать папку</p>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="grid">
+                    @foreach (var folder in Model.Subfolders)
+                    {
+                        <a class="tile tile--folder"
+                           asp-page="Index" asp-route-id="@folder.Id"
+                           data-folder="@folder.Id"
+                           data-name="@folder.Name"
+                           data-can-manage="@Model.CanManageFolder(folder).ToString().ToLowerInvariant()"
+                           data-drop-target="@folder.Id">
+
+                            <span class="tile__icon">
+                                <svg class="icon icon--lg">
+                                    <use href="@(folder.InheritPermissions ? "#i-folder" : "#i-folder-locked")"></use>
+                                </svg>
+                            </span>
+
+                            <span class="tile__name" title="@folder.Name">@folder.Name</span>
+
+                            <span class="tile__sub">
+                                @* Пустую папку не подписываем «0 Б» — лишний шум в списке. *@
+                                @if (Model.ShowSizes && Model.FolderSizes.TryGetValue(folder.Id, out var size) && size > 0)
+                                {
+                                    <span>@Model.FormatSize(size)</span>
+                                }
+                                @if (folder.RetentionDays is { } days)
+                                {
+                                    <span class="chip chip--warn" title="Файлы старше срока уходят в корзину">@days дн.</span>
+                                }
+                                @if (!folder.InheritPermissions)
+                                {
+                                    <span class="chip" title="Права родительской папки не наследуются">закрытая</span>
+                                }
+                            </span>
+                        </a>
+                    }
+
+                    @foreach (var file in Model.FilesInFolder)
+                    {
+                        <a class="tile tile--file"
+                           asp-page="Index" asp-page-handler="Download" asp-route-fileId="@file.Id"
+                           data-file="@file.Id"
+                           data-name="@file.OriginalName"
+                           data-size="@file.SizeBytes"
+                           data-preview-kind="@Portal.Web.Pages.Files.IndexModel.PreviewKindOf(file)"
+                           data-can-delete="@Model.CanDelete(file).ToString().ToLowerInvariant()">
+
+                            <span class="tile__icon">
+                                <svg class="icon icon--lg"><use href="#i-file"></use></svg>
+                                <span class="tile__ext">@FileExtension(file.OriginalName)</span>
+                            </span>
+
+                            <span class="tile__name" title="@file.OriginalName">@file.OriginalName</span>
+
+                            <span class="tile__sub">
+                                @Model.FormatSize(file.SizeBytes)
+                                · @file.UploadedAt.ToLocalTime().ToString("dd.MM.yyyy")
+                            </span>
+                        </a>
+                    }
+                </div>
+            }
+
+            @* Прямоугольник выделения мышью. Пустой: размеры ему задаёт код страницы. *@
+            <div class="rubber" data-rubber hidden></div>
+
+            @* Подсказка, всплывающая при перетаскивании файлов из проводника. *@
+            <div class="dropveil" data-drop-veil hidden>
+                <svg class="icon icon--xl"><use href="#i-upload"></use></svg>
+                <p>Отпустите, чтобы загрузить</p>
+            </div>
+        </div>
+    }
 </div>
+
+@* ---------- Панель предпросмотра ----------
+
+   Лежит поверх страницы справа и выезжает при открытии файла; рабочая
+   область в это время сдвигается влево (класс на <body>, стили в site.css).
+   Пустая заготовка — содержимое подставляет код страницы. *@
+<aside class="preview" data-preview hidden aria-label="Предпросмотр файла">
+    <div class="preview__head">
+        <svg class="icon preview__kind"><use href="#i-file"></use></svg>
+
+        <span class="preview__name" data-preview-name></span>
+
+        <a class="iconbtn" data-preview-download title="Скачать" download>
+            <svg class="icon"><use href="#i-download"></use></svg>
+        </a>
+
+        <button type="button" class="iconbtn" data-preview-close title="Закрыть (Esc)">
+            <svg class="icon"><use href="#i-close"></use></svg>
+        </button>
+    </div>
+
+    <div class="preview__body" data-preview-body></div>
+</aside>
 
 @* ---------- Контекстное меню ---------- *@
 <div class="menu" data-context-menu hidden role="menu"></div>
@@ -228,6 +341,47 @@
     </div>
 </div>
 
+@* ---------- Окно переименования ----------
+   Одно на файлы и папки: адрес отправки и скрытый номер подставляет
+   код страницы, в зависимости от того, по чему нажали правой кнопкой. *@
+<div class="modal" data-modal="rename" hidden>
+    <div class="modal__backdrop" data-modal-close></div>
+
+    <div class="modal__window" role="dialog" aria-modal="true" aria-labelledby="rename-title">
+        <h2 id="rename-title" data-rename-title>Переименовать</h2>
+
+        <form method="post" data-rename-form data-busy-form>
+            <input type="hidden" name="fileId" data-rename-file-id disabled />
+            <input type="hidden" name="folderId" data-rename-folder-id disabled />
+
+            <div class="field">
+                <label for="rename-input">Новое название</label>
+                <input id="rename-input" name="newName" maxlength="255" autocomplete="off" data-autofocus />
+            </div>
+
+            <div class="modal__actions">
+                <button type="button" class="btn" data-modal-close>Отмена</button>
+                <button type="submit" class="btn btn--primary">Переименовать</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@* ---------- Окно свойств ---------- *@
+<div class="modal" data-modal="properties" hidden>
+    <div class="modal__backdrop" data-modal-close></div>
+
+    <div class="modal__window" role="dialog" aria-modal="true" aria-labelledby="properties-title">
+        <h2 id="properties-title" data-properties-title>Свойства</h2>
+
+        <dl class="facts" data-properties-rows></dl>
+
+        <div class="modal__actions">
+            <button type="button" class="btn" data-modal-close>Закрыть</button>
+        </div>
+    </div>
+</div>
+
 @* ---------- Скрытые формы для действий из меню и с клавиатуры ---------- *@
 <form method="post" asp-page-handler="DeleteFiles" asp-route-folderId="@Model.Current?.Id"
       data-form="delete-files" hidden></form>
@@ -237,6 +391,12 @@
 <form method="post" asp-page-handler="Move" data-form="move" hidden></form>
 
 <form method="post" asp-page-handler="DeleteFolder" data-form="delete-folder" hidden></form>
+
+@* Адреса обработчиков переименования собирает не код страницы, а сервер:
+   так они переживут любую смену маршрутов. *@
+<form method="post" asp-page-handler="RenameFile" data-form="rename-file" hidden></form>
+
+<form method="post" asp-page-handler="RenameFolder" data-form="rename-folder" hidden></form>
 
 @functions {
     // Расширение для подписи на значке файла: «PDF», «DOCX» и т.п.

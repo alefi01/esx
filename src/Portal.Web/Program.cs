@@ -11,6 +11,7 @@ using Portal.Web.Configuration;
 using Portal.Web.Security;
 using Portal.Web.Services;
 using Portal.Web.Services.ActiveDirectory;
+using Portal.Web.Services.Notifications;
 using Portal.Web.Services.Offices;
 using Portal.Web.Services.Storage;
 using Portal.Web.Services.Text;
@@ -202,6 +203,7 @@ builder.Services.AddSingleton<UploadValidator>();
 // Дерево папок читается из базы один раз за запрос, поэтому Scoped.
 builder.Services.AddScoped<FolderTree>();
 builder.Services.AddScoped<AuditLog>();
+builder.Services.AddScoped<NotificationService>();
 
 // AuditLog нужно знать, кто выполняет действие и с какого адреса.
 builder.Services.AddHttpContextAccessor();
@@ -369,8 +371,13 @@ app.Use(async (context, next) =>
     // браузер может исполнить как скрипт. Это пригодится на этапе файлохранилища.
     headers["X-Content-Type-Options"] = "nosniff";
 
-    // Запрет встраивания портала в чужой iframe (защита от кликджекинга).
-    headers["X-Frame-Options"] = "DENY";
+    // Запрет встраивания портала в ЧУЖОЙ iframe (защита от кликджекинга).
+    //
+    // Именно «в чужой», а не «в любой»: предпросмотр файлов показывает PDF
+    // во встроенном окне на нашей же странице, и полный запрет (DENY)
+    // ломал бы его. SAMEORIGIN разрешает встраивание только с нашего адреса —
+    // защита от кликджекинга при этом сохраняется.
+    headers["X-Frame-Options"] = "SAMEORIGIN";
 
     // Не утекать полный адрес страницы во внешние ссылки.
     headers["Referrer-Policy"] = "same-origin";
@@ -378,8 +385,12 @@ app.Use(async (context, next) =>
     // Минимальный CSP: скрипты и стили только свои, никаких внешних источников.
     // Это заодно страхует от случайной ссылки на CDN, которая в вашей сети
     // всё равно не загрузится.
+    //
+    // frame-ancestors 'self' — та же причина, что и у X-Frame-Options выше.
+    // Этот заголовок современнее и в спорных случаях главнее, поэтому оба
+    // должны говорить одно и то же, иначе поведение зависит от браузера.
     headers["Content-Security-Policy"] =
-        "default-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'";
+        "default-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'";
 
     await next();
 });
@@ -392,6 +403,42 @@ app.UseAuthentication();   // разбирает cookie и наполняет Ht
 app.UseAuthorization();    // проверяет политики
 
 app.MapRazorPages();
+
+// ---------------------------------------------------------------------------
+// Уведомления. Страница раз в минуту спрашивает, нет ли нового,
+// и показывает колокольчик со счётчиком плюс всплывающее сообщение.
+//
+// Обе точки закрыты обычной политикой доступа к порталу — она действует
+// по умолчанию для всего, где не сказано иное.
+// ---------------------------------------------------------------------------
+
+app.MapGet("/api/notifications", async (
+    NotificationService notifications, HttpContext http, CancellationToken cancellationToken) =>
+{
+    var user = http.User.Identity?.Name;
+
+    if (string.IsNullOrEmpty(user))
+    {
+        return Results.Unauthorized();
+    }
+
+    return Results.Ok(await notifications.GetAsync(user, cancellationToken));
+});
+
+app.MapPost("/api/notifications/seen", async (
+    NotificationService notifications, HttpContext http, CancellationToken cancellationToken) =>
+{
+    var user = http.User.Identity?.Name;
+
+    if (string.IsNullOrEmpty(user))
+    {
+        return Results.Unauthorized();
+    }
+
+    await notifications.MarkAllSeenAsync(user, cancellationToken);
+
+    return Results.NoContent();
+});
 
 // Простая точка проверки живости — открывается без входа.
 // Удобна для мониторинга и для проверки, что сайт вообще поднялся.

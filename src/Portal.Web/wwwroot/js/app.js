@@ -15,7 +15,10 @@
  *   3. Всплывающие сообщения
  *   4. Модальные окна
  *   5. Контекстное меню
- *   6. Файловый менеджер: выделение, буфер обмена, перетаскивание, загрузка
+ *   6. Панель предпросмотра
+ *   7. Файловый менеджер: выделение, буфер обмена, перетаскивание, загрузка
+ *   8. Переключатель светлой и тёмной темы
+ *   9. Колокольчик уведомлений
  */
 
 (function () {
@@ -52,6 +55,44 @@
     function antiforgeryToken() {
         const field = $('input[name="__RequestVerificationToken"]');
         return field ? field.value : '';
+    }
+
+    /**
+     * Кладёт строку в буфер обмена Windows.
+     *
+     * Основной способ (navigator.clipboard) работает только на защищённом
+     * соединении — по HTTPS или на localhost. Портал пока работает по HTTP,
+     * поэтому там его просто нет, и нужен запасной путь: невидимое поле
+     * ввода и старая команда copy. Способ древний, но работает везде.
+     * После перехода на HTTPS сработает первый вариант, менять ничего не надо.
+     */
+    function copyText(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text);
+        }
+
+        return new Promise((resolve, reject) => {
+            const field = document.createElement('textarea');
+            field.value = text;
+            // Уводим поле за экран, но не через display: none —
+            // у скрытого элемента нельзя выделить содержимое.
+            field.style.position = 'fixed';
+            field.style.left = '-9999px';
+            document.body.appendChild(field);
+            field.select();
+
+            let ok = false;
+
+            try {
+                ok = document.execCommand('copy');
+            } catch (error) {
+                ok = false;
+            }
+
+            field.remove();
+
+            return ok ? resolve() : reject(new Error('копирование недоступно'));
+        });
     }
 
     /** Отправляет скрытую форму, добавив в неё нужные поля. */
@@ -364,7 +405,188 @@
     window.addEventListener('scroll', hideMenu, true);
 
     // ======================================================================
-    // 6. Файловый менеджер
+    // 6. Панель предпросмотра
+    //
+    // Показывает файл справа, не уводя человека со страницы. Сама панель
+    // лежит в разметке пустой; сюда же вписано и то, что делать с файлами,
+    // которые браузер показать не умеет, — вместо пустоты человек получает
+    // объяснение и кнопку «Скачать».
+    //
+    // Содержимое подставляется тремя способами:
+    //   картинка — тегом img;
+    //   PDF      — встроенным окном (iframe), его рисует сам браузер;
+    //   текст    — забираем содержимое и выводим как текст, не как разметку.
+    //
+    // Отдаёт файлы обработчик Preview: он проверяет права заново и отдаёт
+    // только то, что есть в белом списке (см. PreviewSupport.cs).
+    // ======================================================================
+
+    const preview = (function () {
+        const panel = $('[data-preview]');
+
+        if (!panel) {
+            return { open() {}, close() {}, isOpen() { return false; } };
+        }
+
+        const body = $('[data-preview-body]', panel);
+        const nameField = $('[data-preview-name]', panel);
+        const downloadLink = $('[data-preview-download]', panel);
+
+        let currentId = null;
+
+        function note(text, icon) {
+            body.innerHTML = '';
+
+            const box = document.createElement('div');
+            box.className = 'preview__note';
+
+            if (icon) {
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('class', 'icon icon--xl');
+                const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+                use.setAttribute('href', '#' + icon);
+                svg.appendChild(use);
+                box.appendChild(svg);
+            }
+
+            const paragraph = document.createElement('p');
+            paragraph.textContent = text;
+            box.appendChild(paragraph);
+
+            body.appendChild(box);
+
+            return box;
+        }
+
+        function spinner() {
+            const box = note('Загрузка…');
+            const dial = document.createElement('div');
+            dial.className = 'preview__spinner';
+            box.insertBefore(dial, box.firstChild);
+        }
+
+        return {
+            isOpen() {
+                return document.body.classList.contains('has-preview');
+            },
+
+            currentId() {
+                return currentId;
+            },
+
+            /**
+             * file: { id, name, kind, size, downloadUrl }
+             * kind — "image" | "pdf" | "text" | "" (показать нельзя)
+             */
+            open(file, maxTextBytes) {
+                currentId = file.id;
+
+                nameField.textContent = file.name;
+                nameField.title = file.name;
+                downloadLink.href = file.downloadUrl;
+
+                panel.hidden = false;
+                // Панель должна попасть в разметку до того, как начнётся
+                // движение, иначе браузер покажет её сразу на месте.
+                requestAnimationFrame(() => document.body.classList.add('has-preview'));
+
+                const source = '/Files?handler=Preview&fileId=' + file.id;
+
+                if (file.kind === 'image') {
+                    body.innerHTML = '';
+
+                    const image = document.createElement('img');
+                    image.alt = file.name;
+                    image.src = source;
+                    image.addEventListener('error', () => note('Не удалось показать изображение.', 'i-warning'));
+
+                    body.appendChild(image);
+                    return;
+                }
+
+                if (file.kind === 'pdf') {
+                    body.innerHTML = '';
+
+                    const frame = document.createElement('iframe');
+                    frame.title = file.name;
+                    frame.src = source;
+
+                    body.appendChild(frame);
+                    return;
+                }
+
+                if (file.kind === 'text') {
+                    if (maxTextBytes > 0 && file.size > maxTextBytes) {
+                        note('Файл слишком большой для просмотра — откройте его после скачивания.', 'i-warning');
+                        return;
+                    }
+
+                    spinner();
+
+                    fetch(source, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                        .then(response => (response.ok ? response.text() : Promise.reject(response.status)))
+                        .then(text => {
+                            // Только если за время загрузки не открыли другой файл.
+                            if (currentId !== file.id) {
+                                return;
+                            }
+
+                            body.innerHTML = '';
+
+                            const block = document.createElement('pre');
+                            // textContent, а не innerHTML: содержимое файла —
+                            // это данные, и разметкой оно становиться не должно.
+                            block.textContent = text;
+
+                            body.appendChild(block);
+                        })
+                        .catch(() => note('Не удалось прочитать файл.', 'i-warning'));
+
+                    return;
+                }
+
+                // Всё остальное — Word, Excel, архивы и прочее. Браузер такое
+                // не показывает: для этого нужен отдельный преобразователь
+                // на сервере (см. документацию, раздел про предпросмотр).
+                note(
+                    'Такой файл браузер показать не умеет. Нажмите «Скачать» вверху панели, ' +
+                    'и файл откроется в своей программе.',
+                    'i-file');
+            },
+
+            close() {
+                currentId = null;
+
+                document.body.classList.remove('has-preview');
+
+                setTimeout(() => {
+                    // Содержимое убираем ПОСЛЕ движения: иначе панель
+                    // уезжает пустой, и это заметно.
+                    if (!document.body.classList.contains('has-preview')) {
+                        panel.hidden = true;
+                        body.innerHTML = '';
+                    }
+                }, 250);
+            }
+        };
+    })();
+
+    document.addEventListener('click', event => {
+        if (event.target.closest('[data-preview-close]')) {
+            preview.close();
+        }
+    });
+
+    document.addEventListener('keydown', event => {
+        // Esc закрывает предпросмотр, но только если нет открытого окна:
+        // у окна на Esc своё поведение, и перебивать его не надо.
+        if (event.key === 'Escape' && preview.isOpen() && !$('[data-modal].is-open')) {
+            preview.close();
+        }
+    });
+
+    // ======================================================================
+    // 7. Файловый менеджер
     // ======================================================================
 
     const explorer = $('[data-explorer]');
@@ -379,9 +601,11 @@
         const canManage = root.dataset.canManage === 'true';
         const canCreateFolder = root.dataset.canCreateFolder === 'true';
         const maxSize = parseInt(root.dataset.maxSize, 10) || 0;
+        const maxTextPreview = parseInt(root.dataset.maxTextPreview, 10) || 0;
 
         const pane = $('[data-drop-zone]', root);
         const veil = $('[data-drop-veil]', root);
+        const rubber = $('[data-rubber]', root);
         const fileInput = $('#file-input');
 
         // Ширину полосы квоты задаём здесь, а не в разметке: встроенные
@@ -390,10 +614,26 @@
             fill.style.width = (fill.dataset.percent || 0) + '%';
         });
 
+        wireUpload();
+        wireRenameForm();
+
+        // На странице результатов поиска списка папки нет — значит нет
+        // ни выделения, ни перетаскивания, ни меню. Всё, что можно было
+        // подключить (загрузка, создание папки), уже подключено выше.
+        if (!pane) {
+            return;
+        }
+
         // ---------- Выделение ----------
 
         let selection = new Set();
         let lastClicked = null;
+
+        // Признак «только что выделяли рамкой». Нужен потому, что после
+        // протягивания браузер всё равно шлёт обычное нажатие по пустому
+        // месту, а оно сбрасывает выделение — то самое, которое мы только
+        // что и сделали.
+        let rubberDragged = false;
 
         function tiles() {
             return $$('.tile', pane);
@@ -437,6 +677,11 @@
         // Одиночное нажатие выделяет файл, а не открывает его: так же,
         // как в проводнике Windows. Открывается файл двойным нажатием.
         pane.addEventListener('click', event => {
+            if (rubberDragged) {
+                rubberDragged = false;
+                return;
+            }
+
             const tile = event.target.closest('.tile--file');
 
             if (!tile) {
@@ -462,19 +707,128 @@
             } else {
                 selection = new Set([id]);
                 lastClicked = tile;
+
+                // Если панель предпросмотра открыта, она следует за выделением —
+                // так же, как область просмотра в проводнике Windows.
+                if (preview.isOpen() && tile.dataset.previewKind) {
+                    showPreview(tile);
+                }
             }
 
             repaintSelection();
         });
 
-        // Двойное нажатие — открыть: скачать файл или зайти в папку.
+        // Двойное нажатие — открыть.
+        //
+        // Папка открывается переходом, файл — предпросмотром, если портал
+        // умеет его показать. Всё остальное скачивается: показать такое
+        // браузер не может, а значит «открыть» для него и есть «скачать».
         pane.addEventListener('dblclick', event => {
             const tile = event.target.closest('.tile');
 
-            if (tile) {
-                window.location.href = tile.href;
+            if (!tile) {
+                return;
             }
+
+            if (tile.classList.contains('tile--file') && tile.dataset.previewKind) {
+                showPreview(tile);
+                return;
+            }
+
+            window.location.href = tile.href;
         });
+
+        // ---------- Выделение рамкой («резинка») ----------
+        //
+        // Нажали на пустом месте и потянули — рисуется прямоугольник,
+        // и всё, чего он коснулся, выделяется. Как в проводнике.
+        //
+        // События pointer*, а не mouse*: они одинаково работают и мышью,
+        // и пером, и пальцем, и нам не приходится писать три набора кода.
+        // Захват указателя (setPointerCapture) нужен, чтобы рамка не «терялась»,
+        // если курсор ушёл за пределы области.
+
+        if (rubber) {
+            let origin = null;
+
+            pane.addEventListener('pointerdown', event => {
+                // Только левая кнопка и только по пустому месту:
+                // нажатие на плитке — это выделение или перетаскивание.
+                if (event.button !== 0 || event.target.closest('.tile')) {
+                    return;
+                }
+
+                const bounds = pane.getBoundingClientRect();
+
+                origin = { x: event.clientX, y: event.clientY, box: bounds };
+
+                if (!event.ctrlKey && !event.metaKey) {
+                    clearSelection();
+                }
+
+                pane.setPointerCapture(event.pointerId);
+            });
+
+            pane.addEventListener('pointermove', event => {
+                if (!origin) {
+                    return;
+                }
+
+                const left = Math.min(origin.x, event.clientX);
+                const top = Math.min(origin.y, event.clientY);
+                const width = Math.abs(event.clientX - origin.x);
+                const height = Math.abs(event.clientY - origin.y);
+
+                // Пока не потянули хотя бы несколько точек, рамку не показываем:
+                // иначе она мигает при обычном нажатии по пустому месту.
+                if (width < 4 && height < 4) {
+                    return;
+                }
+
+                rubber.hidden = false;
+                rubberDragged = true;
+
+                // Координаты у нас экранные, а рамка лежит внутри области —
+                // поэтому вычитаем её положение и учитываем прокрутку.
+                rubber.style.left = (left - origin.box.left + pane.scrollLeft) + 'px';
+                rubber.style.top = (top - origin.box.top + pane.scrollTop) + 'px';
+                rubber.style.width = width + 'px';
+                rubber.style.height = height + 'px';
+
+                const frame = { left: left, top: top, right: left + width, bottom: top + height };
+
+                fileTiles().forEach(tile => {
+                    const box = tile.getBoundingClientRect();
+
+                    const touches = box.left < frame.right && box.right > frame.left
+                        && box.top < frame.bottom && box.bottom > frame.top;
+
+                    if (touches) {
+                        selection.add(parseInt(tile.dataset.file, 10));
+                    }
+                });
+
+                repaintSelection();
+
+                // Без этого браузер начинает выделять текст на странице.
+                event.preventDefault();
+            });
+
+            ['pointerup', 'pointercancel'].forEach(name => {
+                pane.addEventListener(name, event => {
+                    if (!origin) {
+                        return;
+                    }
+
+                    origin = null;
+                    rubber.hidden = true;
+
+                    if (pane.hasPointerCapture(event.pointerId)) {
+                        pane.releasePointerCapture(event.pointerId);
+                    }
+                });
+            });
+        }
 
         // ---------- Контекстное меню ----------
 
@@ -510,9 +864,17 @@
         function fileMenuItems(tile) {
             const ids = selectedFileIds();
             const canDelete = tile.dataset.canDelete === 'true';
+            const one = ids.length === 1;
             const items = [];
 
-            if (ids.length === 1) {
+            if (one && tile.dataset.previewKind) {
+                items.push({
+                    label: 'Просмотр', icon: 'i-eye',
+                    onClick: () => showPreview(tile)
+                });
+            }
+
+            if (one) {
                 items.push({
                     label: 'Скачать', icon: 'i-download',
                     onClick: () => { window.location.href = tile.href; }
@@ -529,7 +891,37 @@
                     label: 'Вырезать' + countSuffix(ids.length), icon: 'i-cut',
                     onClick: () => putToClipboard('cut', ids)
                 });
+            }
 
+            if (one) {
+                items.push({ separator: true });
+
+                // Ссылку кладём в буфер обмена Windows: её можно вставить
+                // в письмо или в сообщение — открывший её увидит файл,
+                // если у него есть на это право.
+                items.push({
+                    label: 'Копировать ссылку', icon: 'i-link',
+                    onClick: () => {
+                        copyText(new URL(tile.getAttribute('href'), location.href).href)
+                            .then(() => toasts.show('Ссылка на файл скопирована.', 'info'))
+                            .catch(() => toasts.show('Браузер не дал скопировать ссылку.', 'error'));
+                    }
+                });
+
+                if (canDelete) {
+                    items.push({
+                        label: 'Переименовать', icon: 'i-rename',
+                        onClick: () => openRename('file', parseInt(tile.dataset.file, 10), tile.dataset.name)
+                    });
+                }
+
+                items.push({
+                    label: 'Свойства', icon: 'i-info',
+                    onClick: () => openProperties('fileId=' + tile.dataset.file)
+                });
+            }
+
+            if (canDelete) {
                 items.push({ separator: true });
 
                 items.push({
@@ -541,8 +933,18 @@
             return items;
         }
 
+        /**
+         * Меню для папки.
+         *
+         * Права берём из атрибута САМОЙ плитки, а не из общего значения
+         * для страницы. Именно из-за этого раньше не удалялись папки верхнего
+         * уровня: на верхнем уровне «текущей папки» нет, права страницы там
+         * равны нулю — и пункты управления не появлялись даже у администратора.
+         */
         function folderMenuItems(tile) {
             const id = parseInt(tile.dataset.folder, 10);
+            const canManageThis = tile.dataset.canManage === 'true';
+
             const items = [
                 {
                     label: 'Открыть', icon: 'i-open',
@@ -550,12 +952,24 @@
                 }
             ];
 
-            if (canManage) {
+            if (canManageThis) {
+                items.push({
+                    label: 'Переименовать', icon: 'i-rename',
+                    onClick: () => openRename('folder', id, tile.dataset.name)
+                });
+
                 items.push({
                     label: 'Управление папкой', icon: 'i-settings',
                     onClick: () => { window.location.href = '/Files/Settings/' + id; }
                 });
+            }
 
+            items.push({
+                label: 'Свойства', icon: 'i-info',
+                onClick: () => openProperties('folderId=' + id)
+            });
+
+            if (canManageThis) {
                 items.push({ separator: true });
 
                 items.push({
@@ -606,15 +1020,37 @@
                 });
             }
 
-            if (canManage) {
+            // Пункты про «эту папку» имеют смысл, только когда мы внутри
+            // папки. На верхнем уровне текущей папки нет — и предлагать
+            // её свойства или управление ею нечего.
+            if (folderId !== null) {
                 items.push({ separator: true });
+
                 items.push({
-                    label: 'Управление папкой', icon: 'i-settings',
-                    onClick: () => { window.location.href = '/Files/Settings/' + folderId; }
+                    label: 'Свойства папки', icon: 'i-info',
+                    onClick: () => openProperties('folderId=' + folderId)
                 });
+
+                if (canManage) {
+                    items.push({
+                        label: 'Управление папкой', icon: 'i-settings',
+                        onClick: () => { window.location.href = '/Files/Settings/' + folderId; }
+                    });
+                }
             }
 
             return items;
+        }
+
+        /** Открыть файл в правой панели. */
+        function showPreview(tile) {
+            preview.open({
+                id: parseInt(tile.dataset.file, 10),
+                name: tile.dataset.name,
+                kind: tile.dataset.previewKind || '',
+                size: parseInt(tile.dataset.size, 10) || 0,
+                downloadUrl: tile.getAttribute('href')
+            }, maxTextPreview);
         }
 
         function countSuffix(count) {
@@ -741,6 +1177,36 @@
             if (event.key === 'Delete' && selection.size > 0) {
                 event.preventDefault();
                 deleteSelected();
+                return;
+            }
+
+            // F2 — переименовать, как в проводнике.
+            if (event.key === 'F2' && selection.size === 1) {
+                const tile = fileTiles().find(
+                    item => parseInt(item.dataset.file, 10) === selectedFileIds()[0]);
+
+                if (tile && tile.dataset.canDelete === 'true') {
+                    event.preventDefault();
+                    openRename('file', parseInt(tile.dataset.file, 10), tile.dataset.name);
+                }
+
+                return;
+            }
+
+            // Пробел — показать выделенный файл в панели справа.
+            if (event.key === ' ' && selection.size === 1) {
+                const tile = fileTiles().find(
+                    item => parseInt(item.dataset.file, 10) === selectedFileIds()[0]);
+
+                if (tile && tile.dataset.previewKind) {
+                    event.preventDefault();
+
+                    if (preview.isOpen() && preview.currentId() === parseInt(tile.dataset.file, 10)) {
+                        preview.close();
+                    } else {
+                        showPreview(tile);
+                    }
+                }
             }
         });
 
@@ -823,28 +1289,55 @@
             setTimeout(() => { veil.hidden = true; }, 200);
         }
 
-        // ---------- Перетаскивание файлов на папку = перемещение ----------
+        // ---------- Перетаскивание файлов ----------
+        //
+        // Два разных перетаскивания одним движением:
+        //   внутрь портала, на другую папку — перемещение (наш формат данных);
+        //   наружу, в проводник Windows — скачивание (формат DownloadURL).
+        //
+        // Второе — это и есть ответ на «Ctrl+V не работает с сайта на компьютер».
+        // Положить настоящий файл в буфер обмена Windows страница не может:
+        // браузеры такого не разрешают никому, иначе любой открытый сайт
+        // подменял бы содержимое буфера. А вот отдать файл перетаскиванием
+        // можно — это работает в Edge и Chrome, то есть на ваших машинах.
 
-        if (canWrite) {
-            fileTiles().forEach(tile => {
-                tile.draggable = true;
+        fileTiles().forEach(tile => {
+            tile.draggable = true;
 
-                tile.addEventListener('dragstart', event => {
-                    const id = parseInt(tile.dataset.file, 10);
+            tile.addEventListener('dragstart', event => {
+                const id = parseInt(tile.dataset.file, 10);
 
-                    if (!selection.has(id)) {
-                        selection = new Set([id]);
-                        repaintSelection();
-                    }
+                if (!selection.has(id)) {
+                    selection = new Set([id]);
+                    repaintSelection();
+                }
 
-                    event.dataTransfer.setData('application/x-portal-files', JSON.stringify(selectedFileIds()));
-                    event.dataTransfer.effectAllowed = 'move';
-                    tile.classList.add('is-dragging');
-                });
+                if (canWrite) {
+                    event.dataTransfer.setData(
+                        'application/x-portal-files', JSON.stringify(selectedFileIds()));
+                }
 
-                tile.addEventListener('dragend', () => tile.classList.remove('is-dragging'));
+                // «тип:имя:адрес» — формат, по которому проводник понимает,
+                // что от него хотят скачивания. Адрес обязан быть полным.
+                const url = new URL(tile.getAttribute('href'), location.href).href;
+
+                event.dataTransfer.setData(
+                    'DownloadURL',
+                    'application/octet-stream:' + tile.dataset.name + ':' + url);
+
+                // На всякий случай кладём и обычную ссылку: её понимают
+                // почтовые программы и текстовые редакторы.
+                event.dataTransfer.setData('text/uri-list', url);
+                event.dataTransfer.setData('text/plain', url);
+
+                event.dataTransfer.effectAllowed = canWrite ? 'copyMove' : 'copy';
+                tile.classList.add('is-dragging');
             });
 
+            tile.addEventListener('dragend', () => tile.classList.remove('is-dragging'));
+        });
+
+        if (canWrite) {
             $$('[data-drop-target]', pane).forEach(target => {
                 target.addEventListener('dragover', event => {
                     if (Array.from(event.dataTransfer.types).indexOf('application/x-portal-files') !== -1) {
@@ -877,27 +1370,132 @@
 
         // ---------- Загрузка с показом хода выполнения ----------
 
-        if (fileInput) {
-            $$('[data-action="pick-files"]').forEach(button => {
-                button.addEventListener('click', () => fileInput.click());
-            });
+        function wireUpload() {
+            if (fileInput) {
+                $$('[data-action="pick-files"]').forEach(button => {
+                    button.addEventListener('click', () => fileInput.click());
+                });
 
-            fileInput.addEventListener('change', () => {
-                const files = Array.from(fileInput.files || []);
+                fileInput.addEventListener('change', () => {
+                    const files = Array.from(fileInput.files || []);
 
-                if (files.length > 0) {
-                    upload(files);
-                }
+                    if (files.length > 0) {
+                        upload(files);
+                    }
 
-                // Сбрасываем, иначе повторный выбор того же файла
-                // не вызовет события change.
-                fileInput.value = '';
+                    // Сбрасываем, иначе повторный выбор того же файла
+                    // не вызовет события change.
+                    fileInput.value = '';
+                });
+            }
+
+            $$('[data-action="new-folder"]').forEach(button => {
+                button.addEventListener('click', () => openModal('new-folder'));
             });
         }
 
-        $$('[data-action="new-folder"]').forEach(button => {
-            button.addEventListener('click', () => openModal('new-folder'));
-        });
+        // ---------- Переименование ----------
+        //
+        // Окно одно на файлы и папки. Куда отправлять форму, известно только
+        // в момент нажатия, поэтому адрес берём у соответствующей скрытой
+        // формы — её сформировал сервер, и она переживёт смену маршрутов.
+
+        function wireRenameForm() {
+            const form = $('[data-rename-form]');
+
+            if (!form) {
+                return;
+            }
+
+            form.addEventListener('submit', event => {
+                // Пустое имя сервер отвергнет, но лучше не доводить до запроса.
+                const field = $('input[name="newName"]', form);
+
+                if (!field.value.trim()) {
+                    event.preventDefault();
+                    field.focus();
+                }
+            });
+        }
+
+        function openRename(kind, id, currentName) {
+            const form = $('[data-rename-form]');
+            const source = $('[data-form="rename-' + kind + '"]');
+
+            if (!form || !source) {
+                return;
+            }
+
+            form.action = source.action;
+
+            $('[data-rename-title]').textContent =
+                kind === 'folder' ? 'Переименовать папку' : 'Переименовать файл';
+
+            // Включаем только нужное поле: отключённые поля не отправляются,
+            // и сервер получит ровно один номер, а не оба сразу.
+            const fileField = $('[data-rename-file-id]', form);
+            const folderField = $('[data-rename-folder-id]', form);
+
+            fileField.disabled = kind !== 'file';
+            folderField.disabled = kind !== 'folder';
+            fileField.value = id;
+            folderField.value = id;
+
+            const field = $('input[name="newName"]', form);
+            field.value = currentName;
+
+            openModal('rename');
+
+            // Выделяем имя без расширения — как в проводнике: меняют обычно
+            // имя, а точку с расширением задевать не хотят. openModal уже
+            // выделил всё, здесь сужаем выделение.
+            const dot = currentName.lastIndexOf('.');
+
+            if (kind === 'file' && dot > 0) {
+                field.setSelectionRange(0, dot);
+            }
+        }
+
+        // ---------- Свойства ----------
+
+        function openProperties(query) {
+            const modal = $('[data-modal="properties"]');
+
+            if (!modal) {
+                return;
+            }
+
+            const rows = $('[data-properties-rows]', modal);
+
+            rows.innerHTML = '';
+            $('[data-properties-title]', modal).textContent = 'Свойства';
+
+            openModal('properties');
+
+            fetch('/Files?handler=Properties&' + query, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(response => (response.ok ? response.json() : Promise.reject(response.status)))
+                .then(data => {
+                    $('[data-properties-title]', modal).textContent = data.title;
+
+                    data.rows.forEach(row => {
+                        const name = document.createElement('dt');
+                        name.textContent = row.name;
+
+                        const value = document.createElement('dd');
+                        value.textContent = row.value;
+
+                        rows.appendChild(name);
+                        rows.appendChild(value);
+                    });
+                })
+                .catch(() => {
+                    const value = document.createElement('dd');
+                    value.textContent = 'Не удалось получить сведения.';
+                    rows.appendChild(value);
+                });
+        }
 
         function upload(files) {
             if (folderId === null) {
@@ -1011,4 +1609,188 @@
             };
         }
     }
+
+    // ======================================================================
+    // 8. Переключатель светлой и тёмной темы
+    //
+    // Сам выбор темы делает theme.js, подключённый в самом верху страницы.
+    // Здесь только кнопка: показать текущий режим и переключить на следующий.
+    // ======================================================================
+
+    (function () {
+        const button = $('[data-theme-toggle]');
+
+        if (!button || !window.portalTheme) {
+            return;
+        }
+
+        const icons = {
+            auto: { icon: '#i-theme-auto', title: 'Тема: как в системе' },
+            light: { icon: '#i-theme-light', title: 'Тема: светлая' },
+            dark: { icon: '#i-theme-dark', title: 'Тема: тёмная' }
+        };
+
+        function repaint(mode) {
+            const view = icons[mode] || icons.auto;
+
+            $('[data-theme-icon]', button).setAttribute('href', view.icon);
+            button.title = view.title + ' (нажмите, чтобы сменить)';
+            button.setAttribute('aria-label', view.title);
+        }
+
+        repaint(window.portalTheme.current());
+
+        button.addEventListener('click', () => repaint(window.portalTheme.cycle()));
+    })();
+
+    // ======================================================================
+    // 9. Колокольчик уведомлений
+    //
+    // Раз в минуту спрашиваем сервер, нет ли нового объявления. Постоянного
+    // соединения нет намеренно: между офисами канал с урезанным MTU, и рвущийся
+    // WebSocket выглядел бы как «портал завис». Один короткий запрос в минуту
+    // на двадцать человек — это ничто.
+    //
+    // Что делаем с ответом:
+    //   • число непрочитанного — на значок колокольчика;
+    //   • список — в выпадающую панель под ним;
+    //   • про то, что появилось ПРИ ОТКРЫТОЙ странице, — всплывающее
+    //     сообщение справа внизу (только один раз на каждое событие).
+    // ======================================================================
+
+    (function () {
+        const host = $('[data-bell]');
+
+        if (!host) {
+            return;
+        }
+
+        const toggle = $('[data-bell-toggle]', host);
+        const badge = $('[data-bell-badge]', host);
+        const panel = $('[data-bell-panel]', host);
+        const list = $('[data-bell-list]', host);
+        const clearButton = $('[data-bell-clear]', host);
+
+        const POLL_MS = 60000;
+
+        // Что уже показывали всплывающим сообщением — чтобы не показывать
+        // одно и то же каждую минуту. Живёт до перезагрузки страницы.
+        const announced = new Set();
+        let first = true;
+
+        function render(data) {
+            const unread = data.unread || 0;
+
+            badge.hidden = unread === 0;
+            badge.textContent = unread > 99 ? '99+' : String(unread);
+
+            toggle.classList.toggle('is-active', unread > 0);
+
+            list.innerHTML = '';
+
+            if (!data.items || data.items.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'bell__empty';
+                empty.textContent = 'Нового нет';
+                list.appendChild(empty);
+                return;
+            }
+
+            data.items.forEach(item => {
+                const link = document.createElement('a');
+                link.className = 'bell__item';
+                link.href = item.url;
+
+                const title = document.createElement('strong');
+                title.textContent = item.title;
+
+                const meta = document.createElement('span');
+                meta.textContent = item.author + ' · ' + formatWhen(item.at);
+
+                link.appendChild(title);
+                link.appendChild(meta);
+                list.appendChild(link);
+            });
+
+            // При первой проверке всплывающих сообщений не показываем:
+            // человек только что открыл страницу, и непрочитанное для него
+            // не новость, а просто счётчик на колокольчике.
+            if (!first) {
+                data.items.forEach(item => {
+                    const key = item.kind + ':' + item.id;
+
+                    if (!announced.has(key)) {
+                        announced.add(key);
+                        toasts.show('Новое объявление: ' + item.title, 'info');
+                    }
+                });
+            } else {
+                data.items.forEach(item => announced.add(item.kind + ':' + item.id));
+                first = false;
+            }
+        }
+
+        /** «Сегодня, 14:05» вместо полной даты — так читается быстрее. */
+        function formatWhen(value) {
+            const when = new Date(value);
+
+            if (isNaN(when.getTime())) {
+                return '';
+            }
+
+            const time = when.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            const sameDay = when.toDateString() === new Date().toDateString();
+
+            return sameDay
+                ? 'сегодня, ' + time
+                : when.toLocaleDateString('ru-RU') + ', ' + time;
+        }
+
+        function poll() {
+            fetch('/api/notifications', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(response => (response.ok ? response.json() : Promise.reject(response.status)))
+                .then(render)
+                .catch(() => {
+                    // Молча: связь могла моргнуть, а ругаться на это
+                    // всплывающим сообщением раз в минуту — издевательство.
+                });
+        }
+
+        toggle.addEventListener('click', event => {
+            event.stopPropagation();
+
+            const open = panel.hidden;
+
+            panel.hidden = !open;
+            toggle.setAttribute('aria-expanded', String(open));
+        });
+
+        // Нажатие мимо панели её закрывает.
+        document.addEventListener('click', event => {
+            if (!panel.hidden && !event.target.closest('[data-bell]')) {
+                panel.hidden = true;
+                toggle.setAttribute('aria-expanded', 'false');
+            }
+        });
+
+        clearButton.addEventListener('click', () => {
+            fetch('/api/notifications/seen', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            }).then(() => {
+                panel.hidden = true;
+                poll();
+            });
+        });
+
+        poll();
+        setInterval(poll, POLL_MS);
+
+        // Вернулись на вкладку — проверяем сразу, не дожидаясь минуты.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                poll();
+            }
+        });
+    })();
 })();

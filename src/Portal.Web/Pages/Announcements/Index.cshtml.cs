@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Portal.Web.Configuration;
 using Portal.Web.Data;
 using Portal.Web.Security;
+using Portal.Web.Services.Notifications;
 
 namespace Portal.Web.Pages.Announcements;
 
@@ -16,17 +17,20 @@ public class IndexModel : PageModel
     private readonly PortalDbContext _db;
     private readonly ActiveDirectoryOptions _adOptions;
     private readonly DatabaseOptions _databaseOptions;
+    private readonly NotificationService _notifications;
     private readonly ILogger<IndexModel> _logger;
 
     public IndexModel(
         PortalDbContext db,
         IOptions<ActiveDirectoryOptions> adOptions,
         IOptions<DatabaseOptions> databaseOptions,
+        NotificationService notifications,
         ILogger<IndexModel> logger)
     {
         _db = db;
         _adOptions = adOptions.Value;
         _databaseOptions = databaseOptions.Value;
+        _notifications = notifications;
         _logger = logger;
     }
 
@@ -85,6 +89,19 @@ public class IndexModel : PageModel
                 .Skip((PageNumber - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync(cancellationToken);
+
+            // Человек открыл ленту — значит всё новое он увидел.
+            // Отметку ставим только на первой странице: на второй и дальше
+            // лежит старое, и объявлять его прочитанным было бы неправдой.
+            if (PageNumber == 1)
+            {
+                var userName = User.Identity?.Name;
+
+                if (!string.IsNullOrEmpty(userName))
+                {
+                    await _notifications.MarkAllSeenAsync(userName, cancellationToken);
+                }
+            }
         }
         catch (Exception ex)
         {

@@ -184,7 +184,9 @@ public enum AuditAction
     ChangePermissions = 8,
     RetentionCleanup = 9,
     Copy = 10,
-    Move = 11
+    Move = 11,
+    Rename = 12,
+    Preview = 13
 }
 
 /// <summary>

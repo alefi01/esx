@@ -24,6 +24,7 @@ public class PortalDbContext : DbContext
     public DbSet<FolderPermission> FolderPermissions => Set<FolderPermission>();
     public DbSet<StoredFile> Files => Set<StoredFile>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<UserSeenState> SeenStates => Set<UserSeenState>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -86,6 +87,15 @@ public class PortalDbContext : DbContext
 
             // Вычисляемое свойство, в базе его быть не должно.
             entity.Ignore(f => f.IsDeleted);
+        });
+
+        modelBuilder.Entity<UserSeenState>(entity =>
+        {
+            // Один человек — одна строка. Уникальность на уровне базы,
+            // а не только в коде: две строки на одного пользователя
+            // означали бы, что счётчик непрочитанного зависит от того,
+            // какая из них попалась первой.
+            entity.HasIndex(s => s.UserName).IsUnique();
         });
 
         modelBuilder.Entity<AuditEntry>(entity =>

@@ -79,6 +79,26 @@ public class IndexModel : PageModel
     /// </summary>
     public bool ShowSizes => IsAdmin || Access >= FolderAccess.Manage;
 
+    /// <summary>
+    /// Права на КОНКРЕТНУЮ папку из списка, а не на текущую.
+    ///
+    /// Отдельный метод нужен потому, что на верхнем уровне текущей папки нет,
+    /// и права «текущей папки» там равны нулю. Раньше из-за этого меню
+    /// управления не появлялось у папок верхнего уровня даже у администратора.
+    /// </summary>
+    public bool CanManageFolder(StorageFolder folder) => _tree.CanManage(User, folder);
+
+    /// <summary>Поисковый запрос по текущей папке и всему, что в ней вложено.</summary>
+    [BindProperty(SupportsGet = true, Name = "q")]
+    public string? Query { get; set; }
+
+    /// <summary>Найденный файл вместе с путём до папки, в которой он лежит.</summary>
+    public sealed record SearchHit(StoredFile File, string FolderPath, int FolderId);
+
+    public IReadOnlyList<SearchHit> SearchResults { get; private set; } = [];
+
+    public bool IsSearching => !string.IsNullOrWhiteSpace(Query);
+
     [TempData]
     public string? StatusMessage { get; set; }
 
@@ -650,6 +670,13 @@ public class IndexModel : PageModel
 
             await LoadFolderSizesAsync(cancellationToken);
 
+            if (IsSearching)
+            {
+                // На верхнем уровне «текущей папки» нет, поэтому ищем
+                // сразу по всем видимым корневым папкам.
+                await SearchAsync(Subfolders, cancellationToken);
+            }
+
             return null;
         }
 
@@ -696,6 +723,11 @@ public class IndexModel : PageModel
             : [];
 
         await LoadFolderSizesAsync(cancellationToken);
+
+        if (IsSearching)
+        {
+            await SearchAsync([folder], cancellationToken);
+        }
 
         return null;
     }
@@ -748,7 +780,337 @@ public class IndexModel : PageModel
         return total;
     }
 
+    /// <summary>
+    /// Отдача файла «на просмотр»: с заголовком inline вместо attachment,
+    /// чтобы браузер показал его, а не предложил сохранить.
+    ///
+    /// Тип содержимого берётся из белого списка (PreviewSupport), а НЕ из того,
+    /// что записано в базе при загрузке. Иначе файл, притворившийся картинкой,
+    /// мог бы выполниться в браузере как страница нашего портала.
+    /// </summary>
+    public async Task<IActionResult> OnGetPreviewAsync(int fileId, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        var file = await _db.Files.FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken);
+
+        if (file is null || file.DeletedAt is not null)
+        {
+            return NotFound();
+        }
+
+        var folder = _tree.Get(file.FolderId);
+
+        if (folder is null || !_tree.CanRead(User, folder))
+        {
+            return NotFound();
+        }
+
+        var contentType = PreviewSupport.ContentTypeFor(file.OriginalName);
+
+        if (contentType is null || !_storage.Exists(file.FolderId, file.StorageName))
+        {
+            return NotFound();
+        }
+
+        await _audit.WriteAsync(
+            AuditAction.Preview, file.OriginalName,
+            $"папка «{_tree.DisplayPath(folder)}»", cancellationToken);
+
+        var stream = _storage.OpenRead(file.FolderId, file.StorageName);
+
+        // Content-Disposition: inline — «покажи, а не сохраняй».
+        // Имя всё равно указываем: браузер подставит его в заголовок окна
+        // просмотра PDF и в кнопку «Сохранить» внутри него.
+        //
+        // Заголовок X-Content-Type-Options: nosniff ставится для всех ответов
+        // в Program.cs — и именно он здесь главный: браузеру запрещено
+        // «додумывать» тип содержимого, поэтому файл будет разобран ровно как
+        // указано в белом списке, а не как страница с кодом внутри.
+        // SetHttpFileName, а не просто FileName: у нас имена по-русски,
+        // а в заголовках HTTP допустима только латиница. Этот метод запишет
+        // имя дважды — упрощённое для старых браузеров и полное в кодировке
+        // UTF-8 (filename*=), которое понимают все нынешние.
+        var disposition = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue("inline");
+        disposition.SetHttpFileName(file.OriginalName);
+
+        Response.Headers.ContentDisposition = disposition.ToString();
+
+        return new FileStreamResult(stream, contentType) { EnableRangeProcessing = true };
+    }
+
+    /// <summary>Сведения о файле или папке для окна «Свойства».</summary>
+    public async Task<IActionResult> OnGetPropertiesAsync(
+        int? fileId, int? folderId, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        if (fileId is { } id)
+        {
+            var file = await _db.Files.FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
+            var parent = file is null ? null : _tree.Get(file.FolderId);
+
+            if (file is null || parent is null || !_tree.CanRead(User, parent))
+            {
+                return NotFound();
+            }
+
+            return new JsonResult(new
+            {
+                kind = "file",
+                title = file.OriginalName,
+                rows = new[]
+                {
+                    new { name = "Тип", value = PreviewSupport.Describe(file.OriginalName) },
+                    new { name = "Размер", value = UploadValidator.Format(file.SizeBytes) },
+                    new { name = "Папка", value = _tree.DisplayPath(parent) },
+                    new { name = "Загрузил", value = file.UploadedByDisplayName },
+                    new { name = "Дата загрузки", value = file.UploadedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm") },
+                    new { name = "Тип содержимого", value = file.ContentType }
+                }
+            });
+        }
+
+        if (folderId is { } fid)
+        {
+            var folder = _tree.Get(fid);
+
+            if (folder is null || !_tree.CanRead(User, folder))
+            {
+                return NotFound();
+            }
+
+            var own = await _db.Files
+                .Where(f => f.FolderId == fid)
+                .GroupBy(f => f.FolderId)
+                .Select(g => new { Size = g.Sum(f => f.SizeBytes), Count = g.Count() })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            var quota = _tree.EffectiveQuotaBytes(folder);
+            var canManage = _tree.CanManage(User, folder);
+
+            var rows = new List<object>
+            {
+                new { name = "Тип", value = "папка" },
+                new { name = "Путь", value = _tree.DisplayPath(folder) },
+                new { name = "Файлов в папке", value = (own?.Count ?? 0).ToString() },
+                new { name = "Занято", value = UploadValidator.Format(own?.Size ?? 0) },
+                new { name = "Подпапок", value = folder.Children.Count.ToString() },
+                new { name = "Предел файла", value = UploadValidator.Format(_tree.EffectiveMaxFileSizeBytes(folder)) },
+                new { name = "Квота", value = quota is null ? "не задана" : UploadValidator.Format(quota.Value) },
+                new { name = "Наследование прав", value = folder.InheritPermissions ? "включено" : "выключено" },
+                new
+                {
+                    name = "Автоочистка",
+                    value = folder.RetentionDays is { } days ? $"файлы старше {days} дн." : "выключена"
+                },
+                new { name = "Создана", value = folder.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm") }
+            };
+
+            // Список групп с правами — сведения чувствительные,
+            // показываем только тем, кто этими правами и управляет.
+            if (canManage && folder.Permissions.Count > 0)
+            {
+                rows.Add(new
+                {
+                    name = "Права выданы",
+                    value = string.Join(", ", folder.Permissions
+                        .OrderBy(x => x.GroupName)
+                        .Select(x => $"{x.GroupName} — {x.Access}"))
+                });
+            }
+
+            return new JsonResult(new { kind = "folder", title = folder.Name, rows });
+        }
+
+        return NotFound();
+    }
+
+    /// <summary>Переименование файла. Менять может тот, кто вправе его удалить.</summary>
+    public async Task<IActionResult> OnPostRenameFileAsync(
+        int fileId, string newName, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        var file = await _db.Files.AsTracking().FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken);
+
+        if (file is null || file.DeletedAt is not null)
+        {
+            return NotFound();
+        }
+
+        var folder = _tree.Get(file.FolderId);
+
+        if (folder is null)
+        {
+            return NotFound();
+        }
+
+        var isOwner = string.Equals(
+            file.UploadedByUserName, User.Identity?.Name, StringComparison.OrdinalIgnoreCase);
+
+        if (!_tree.CanManage(User, folder) && !(isOwner && _tree.CanWrite(User, folder)))
+        {
+            return Forbid();
+        }
+
+        var safeName = UploadValidator.SanitizeName(newName);
+
+        if (string.IsNullOrWhiteSpace(safeName))
+        {
+            ErrorMessage = "Пустое имя файла.";
+            return RedirectToPage(new { id = file.FolderId });
+        }
+
+        // Расширение проверяем заново: иначе переименованием можно было бы
+        // превратить безобидный файл в исполняемый и обойти запрет при загрузке.
+        var rejection = _validator.Validate(
+            safeName, file.SizeBytes,
+            _tree.EffectiveMaxFileSizeBytes(folder), null, 0);
+
+        if (rejection is not null)
+        {
+            ErrorMessage = $"Переименовать не удалось: {rejection.Reason}.";
+            return RedirectToPage(new { id = file.FolderId });
+        }
+
+        var oldName = file.OriginalName;
+
+        file.OriginalName = safeName;
+        file.ContentType = UploadValidator.ResolveContentType(safeName);
+
+        _audit.Add(AuditAction.Rename, safeName, $"было «{oldName}», папка «{_tree.DisplayPath(folder)}»");
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        StatusMessage = $"Файл переименован в «{safeName}».";
+
+        return RedirectToPage(new { id = file.FolderId });
+    }
+
+    /// <summary>Переименование папки. Требует прав управления ею.</summary>
+    public async Task<IActionResult> OnPostRenameFolderAsync(
+        int folderId, string newName, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        var folder = _tree.Get(folderId);
+
+        if (folder is null)
+        {
+            return NotFound();
+        }
+
+        if (!_tree.CanManage(User, folder))
+        {
+            return Forbid();
+        }
+
+        var name = (newName ?? string.Empty).Trim();
+
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 100)
+        {
+            ErrorMessage = "Название папки должно быть от 1 до 100 символов.";
+            return RedirectToPage(new { id = folder.ParentId });
+        }
+
+        var duplicate = await _db.Folders.AnyAsync(
+            f => f.ParentId == folder.ParentId && f.Id != folderId && f.Name.ToLower() == name.ToLower(),
+            cancellationToken);
+
+        if (duplicate)
+        {
+            ErrorMessage = $"Папка «{name}» здесь уже есть.";
+            return RedirectToPage(new { id = folder.ParentId });
+        }
+
+        var tracked = await _db.Folders.AsTracking().FirstAsync(f => f.Id == folderId, cancellationToken);
+        var oldName = tracked.Name;
+
+        tracked.Name = name;
+
+        _audit.Add(AuditAction.Rename, name, $"папка, было «{oldName}»");
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        StatusMessage = $"Папка переименована в «{name}».";
+
+        return RedirectToPage(new { id = folder.ParentId });
+    }
+
+    /// <summary>
+    /// Поиск файлов внутри текущей папки и всех вложенных.
+    /// Ищем только там, куда у человека есть доступ на чтение: иначе поиск
+    /// стал бы способом узнать, что лежит в закрытых папках.
+    /// </summary>
+    private async Task SearchAsync(
+        IEnumerable<StorageFolder> roots, CancellationToken cancellationToken)
+    {
+        var readable = new List<StorageFolder>();
+
+        void Collect(StorageFolder folder, int depth)
+        {
+            if (depth > 64)
+            {
+                return;
+            }
+
+            if (_tree.CanRead(User, folder))
+            {
+                readable.Add(folder);
+            }
+
+            foreach (var child in folder.Children)
+            {
+                Collect(child, depth + 1);
+            }
+        }
+
+        foreach (var root in roots)
+        {
+            Collect(root, 0);
+        }
+
+        if (readable.Count == 0)
+        {
+            return;
+        }
+
+        var ids = readable.Select(f => f.Id).ToList();
+        var pattern = Query!.Trim().ToLower();
+
+        var found = await _db.Files
+            .Where(f => ids.Contains(f.FolderId)
+                        && f.DeletedAt == null
+                        && f.OriginalName.ToLower().Contains(pattern))
+            .OrderBy(f => f.OriginalName)
+            .Take(200)
+            .ToListAsync(cancellationToken);
+
+        SearchResults = found
+            .Select(f => new SearchHit(f, _tree.DisplayPath(_tree.Get(f.FolderId)!), f.FolderId))
+            .ToList();
+    }
+
     public string FormatSize(long bytes) => UploadValidator.Format(bytes);
+
+    /// <summary>
+    /// Как именно показывать файл в правой панели: "image", "pdf", "text"
+    /// либо пустая строка, если предпросмотр невозможен.
+    ///
+    /// Строкой, а не перечислением: значение уходит в data-атрибут плитки,
+    /// и код страницы сравнивает его как есть, без таблицы соответствий.
+    /// </summary>
+    public static string PreviewKindOf(StoredFile file) => PreviewSupport.KindOf(file.OriginalName) switch
+    {
+        PreviewKind.Image => "image",
+        PreviewKind.Pdf => "pdf",
+        PreviewKind.Text => "text",
+        _ => ""
+    };
+
+    /// <summary>Предел размера текстового файла для показа целиком.</summary>
+    public static long MaxTextPreviewBytes => PreviewSupport.MaxTextPreviewBytes;
 
     /// <summary>Может ли текущий пользователь удалить этот файл — для показа кнопки.</summary>
     public bool CanDelete(StoredFile file) =>

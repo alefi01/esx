@@ -64,12 +64,20 @@
 }
 
 /*
- * Тёмная тема включается сама, если она выбрана в системе.
- * Отдельного переключателя нет намеренно: лишняя настройка,
- * о которой всё равно никто не вспомнит.
+ * Тёмная тема.
+ *
+ * Работает в двух режимах:
+ *   • «как в системе» — по настройке Windows (это значение по умолчанию);
+ *   • принудительно — если человек выбрал тему кнопкой в шапке,
+ *     на элементе <html> появляется атрибут data-theme.
+ *
+ * Поэтому набор переменных приходится записать дважды: одинаковых значений
+ * в двух селекторах CSS иначе не добиться — переменных-«миксинов» в нём нет.
+ * Правя цвета, правьте оба места.
  */
 @media (prefers-color-scheme: dark) {
-    :root {
+    /* Системная тёмная действует, только если светлая не выбрана явно. */
+    :root:not([data-theme="light"]) {
         --c-accent: #60a5fa;
         --c-accent-hover: #93c5fd;
         --c-accent-soft: #172554;
@@ -97,6 +105,34 @@
         --shadow-lg: 0 20px 40px rgba(0, 0, 0, .6);
     }
 }
+
+:root[data-theme="dark"] {
+        --c-accent: #60a5fa;
+        --c-accent-hover: #93c5fd;
+        --c-accent-soft: #172554;
+
+        --c-bg: #0f1115;
+        --c-surface: #171a20;
+        --c-surface-2: #1e222a;
+        --c-border: #272b33;
+        --c-border-strong: #3a3f4a;
+
+        --c-text: #e8eaed;
+        --c-text-muted: #9aa2ae;
+
+        --c-ok: #4ade80;
+        --c-ok-bg: #052e16;
+        --c-warn: #fbbf24;
+        --c-warn-bg: #2c1e05;
+        --c-error: #f87171;
+        --c-error-bg: #2c0f0f;
+
+        --c-file: #64748b;
+
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+        --shadow-md: 0 4px 12px rgba(0, 0, 0, .5);
+        --shadow-lg: 0 20px 40px rgba(0, 0, 0, .6);
+    }
 
 /* ====================================================================== */
 /* 2. Основа                                                              */
@@ -244,16 +280,40 @@ code {
     margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     color: var(--c-text-muted);
     font-size: 14px;
 }
+
+.topbar__name { margin-left: 4px; }
+
+/* Круглая кнопка со значком: колокольчик, тема, закрыть панель. */
+.iconbtn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    color: var(--c-text-muted);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    cursor: pointer;
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+.iconbtn:hover { background: var(--c-surface-2); color: var(--c-text); text-decoration: none; }
+.iconbtn.is-active { background: var(--c-accent-soft); color: var(--c-accent); }
 
 .page {
     max-width: var(--page-width);
     margin: 0 auto;
     padding: 24px var(--gap) 40px;
     animation: page-in var(--t-base) var(--ease);
+    /* Сдвиг влево при открытом предпросмотре — см. раздел «Предпросмотр». */
+    transition: margin var(--t-base) var(--ease), max-width var(--t-base) var(--ease);
 }
 
 .page--centered { max-width: 420px; padding-top: 10vh; }
@@ -724,6 +784,96 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .dropveil.is-visible { opacity: 1; }
 .dropveil .icon { animation: bob 1.4s ease-in-out infinite; }
 
+/* ---------- Поиск по папке ---------- */
+
+.search { position: relative; display: flex; align-items: center; }
+
+.search input[type="search"] {
+    width: 210px;
+    padding: 8px 30px 8px 30px;
+    font: inherit;
+    font-size: 14px;
+    color: var(--c-text);
+    background: var(--c-surface-2);
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    outline: none;
+    transition: width var(--t-base) var(--ease),
+                background var(--t-fast) var(--ease),
+                border-color var(--t-fast) var(--ease);
+}
+
+.search input[type="search"]:focus {
+    width: 280px;
+    background: var(--c-surface);
+    border-color: var(--c-accent);
+}
+
+.search__icon {
+    position: absolute;
+    left: 9px;
+    color: var(--c-text-muted);
+    pointer-events: none;
+}
+
+.search__clear {
+    position: absolute;
+    right: 8px;
+    display: flex;
+    color: var(--c-text-muted);
+}
+
+.search__clear:hover { color: var(--c-text); }
+
+.searchhead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    padding-bottom: 12px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--c-border);
+    font-size: 14px;
+}
+
+/* Найденные файлы — списком, а не плитками: у результата поиска
+   главное не значок, а то, в какой папке файл лежит. */
+.hits { list-style: none; margin: 0; padding: 0; }
+
+.hit {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 12px;
+    padding: 10px 8px;
+    border-radius: var(--r-md);
+    transition: background var(--t-fast) var(--ease);
+}
+
+.hit:hover { background: var(--c-surface-2); }
+
+.hit__main { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--c-text); }
+.hit__main .icon { color: var(--c-file); flex: none; }
+.hit__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.hit__meta { color: var(--c-text-muted); font-size: 13px; white-space: nowrap; }
+
+.hit__path {
+    grid-column: 1 / -1;
+    padding-left: 30px;
+    color: var(--c-text-muted);
+    font-size: 12px;
+}
+
+/* Прямоугольник выделения мышью — «резинка», как в проводнике. */
+.rubber {
+    position: absolute;
+    z-index: 6;
+    background: color-mix(in srgb, var(--c-accent) 14%, transparent);
+    border: 1px solid var(--c-accent);
+    border-radius: 2px;
+    pointer-events: none;
+}
+
 /* ====================================================================== */
 /* 7. Наложения                                                           */
 /* ====================================================================== */
@@ -768,6 +918,189 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .menu__item--danger { color: var(--c-error); }
 .menu__item--danger .icon { color: var(--c-error); }
 .menu__sep { height: 1px; margin: 5px 8px; background: var(--c-border); }
+
+/* ---------- Панель предпросмотра ----------
+ *
+ * Требование было такое: предпросмотр открывается справа, рабочая область
+ * при этом уезжает влево, а при закрытии всё возвращается.
+ *
+ * Панель закреплена у правого края (position: fixed) и по умолчанию
+ * отодвинута за экран. Открытие — это класс на <body>: панель въезжает,
+ * а .page и .footer получают отступ справа шириной панели и перестают
+ * держаться середины. Оба движения занимают одно и то же время, поэтому
+ * выглядят как одно.
+ *
+ * Ширина вынесена в переменную: её же использует и панель, и отступ,
+ * и менять её надо в одном месте.
+ */
+:root { --preview-w: 460px; }
+
+.preview {
+    position: fixed;
+    top: 56px;              /* высота верхней панели */
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    width: var(--preview-w);
+    max-width: 100vw;
+    display: flex;
+    flex-direction: column;
+    background: var(--c-surface);
+    border-left: 1px solid var(--c-border);
+    box-shadow: var(--shadow-lg);
+    transform: translateX(100%);
+    transition: transform var(--t-base) var(--ease);
+}
+
+body.has-preview .preview { transform: none; }
+
+body.has-preview .page,
+body.has-preview .footer {
+    margin-left: 0;
+    margin-right: var(--preview-w);
+    max-width: calc(100vw - var(--preview-w) - 2 * var(--gap));
+}
+
+.preview__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: none;
+    padding: 10px 12px 10px 16px;
+    border-bottom: 1px solid var(--c-border);
+}
+
+.preview__kind { color: var(--c-file); flex: none; }
+
+.preview__name {
+    flex: 1;
+    min-width: 0;
+    font-weight: 560;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.preview__body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    background: var(--c-surface-2);
+}
+
+/* Картинка вписывается в панель целиком, на клетчатом фоне —
+   так видно прозрачные края у PNG. */
+.preview__body img {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    margin: auto;
+    padding: 12px;
+}
+
+.preview__body iframe { display: block; width: 100%; height: 100%; border: none; background: #fff; }
+
+.preview__body pre {
+    margin: 0;
+    padding: 14px 16px;
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--c-text);
+}
+
+/* Сообщение «показать нельзя» и полоска ожидания внутри панели. */
+.preview__note {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    height: 100%;
+    padding: 24px;
+    text-align: center;
+    color: var(--c-text-muted);
+}
+
+.preview__note .icon { color: var(--c-border-strong); }
+
+.preview__spinner {
+    width: 26px;
+    height: 26px;
+    border: 2.5px solid var(--c-border-strong);
+    border-top-color: var(--c-accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+}
+
+/* ---------- Колокольчик ---------- */
+
+.bell { position: relative; }
+
+.bell__badge {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    color: #fff;
+    background: var(--c-error);
+    border-radius: 999px;
+    /* Появление «толчком»: заметно, но не мельтешит. */
+    animation: pop var(--t-base) var(--ease);
+}
+
+.bell__panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 120;
+    width: min(360px, calc(100vw - 24px));
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    animation: slide-down var(--t-fast) var(--ease);
+}
+
+.bell__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--c-border);
+    font-size: 14px;
+    color: var(--c-text);
+}
+
+.bell__list { max-height: min(60vh, 420px); overflow: auto; }
+
+.bell__item {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--c-border);
+    color: var(--c-text);
+    font-size: 14px;
+    transition: background var(--t-fast) var(--ease);
+}
+
+.bell__item:last-child { border-bottom: none; }
+.bell__item:hover { background: var(--c-surface-2); text-decoration: none; }
+.bell__item strong { display: block; font-weight: 560; }
+.bell__item span { color: var(--c-text-muted); font-size: 12.5px; }
+
+.bell__empty { padding: 22px 14px; text-align: center; color: var(--c-text-muted); font-size: 14px; }
 
 /* Модальное окно. */
 .modal { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; }
@@ -896,6 +1229,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+@keyframes pop {
+    from { transform: scale(.4); opacity: 0; }
+    to { transform: none; opacity: 1; }
+}
+
 @keyframes bob {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-6px); }
@@ -928,10 +1266,25 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 @media (max-width: 720px) {
     .topbar { height: auto; flex-wrap: wrap; padding: 10px 14px; gap: 10px; }
     .topbar__user { margin-left: auto; }
+    .topbar__name { display: none; }
     .facts { grid-template-columns: 1fr; gap: 4px 0; }
     .facts dd { margin-bottom: 10px; }
     .grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
     .toolbar__actions { margin-left: 0; width: 100%; }
+    .search { flex: 1; }
+    .search input[type="search"],
+    .search input[type="search"]:focus { width: 100%; }
     .table { font-size: 13px; }
     .table th, .table td { padding: 8px 6px; }
+}
+
+/*
+ * Узкий экран и предпросмотр: сдвигать рабочую область некуда,
+ * поэтому панель занимает его целиком и ложится поверх.
+ */
+@media (max-width: 1000px) {
+    .preview { width: 100vw; top: 0; z-index: 210; }
+
+    body.has-preview .page,
+    body.has-preview .footer { margin-right: 0; max-width: var(--page-width); }
 }

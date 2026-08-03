@@ -22,6 +22,11 @@
     <title>@ViewData["Title"] — Портал</title>
     @* Стили и код лежат локально: внешние CDN в вашей сети недоступны. *@
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+
+    @* Выбор темы подключается ЗДЕСЬ, в <head>, а не вместе с остальным кодом
+       внизу страницы. Иначе человек с тёмной темой на долю секунды увидит
+       светлый фон — некрасивая вспышка при каждом переходе. *@
+    <script src="~/js/theme.js" asp-append-version="true"></script>
 </head>
 <body>
 @* Набор значков подключается один раз и дальше используется по ссылке. *@
@@ -45,13 +50,43 @@
     </nav>
 
     <div class="topbar__user">
-        <span>@User.Identity?.Name</span>
+        @if (User.Identity?.IsAuthenticated == true)
+        {
+            @* ---------- Колокольчик ----------
+               Список наполняется кодом страницы: она раз в минуту спрашивает
+               сервер, нет ли нового. В разметке — только пустая заготовка. *@
+            <div class="bell" data-bell>
+                <button type="button" class="iconbtn" data-bell-toggle
+                        aria-haspopup="true" aria-expanded="false" title="Уведомления">
+                    <svg class="icon"><use href="#i-bell"></use></svg>
+                    <span class="bell__badge" data-bell-badge hidden>0</span>
+                </button>
 
-        @* Выход только POST-ом — см. комментарий в Logout.cshtml.cs.
-           Tag helper сам добавит в форму antiforgery-токен. *@
-        <form method="post" asp-page="/Account/Logout" class="inline-form">
-            <button type="submit" class="button button--link">Выйти</button>
-        </form>
+                <div class="bell__panel" data-bell-panel hidden role="menu">
+                    <div class="bell__head">
+                        <strong>Уведомления</strong>
+                        <button type="button" class="button button--link" data-bell-clear>Прочитано</button>
+                    </div>
+
+                    <div class="bell__list" data-bell-list></div>
+                </div>
+            </div>
+
+            @* ---------- Переключатель темы ----------
+               Значок и подпись расставляет код страницы: сервер не знает,
+               какую тему выбрал человек, — выбор хранится в браузере. *@
+            <button type="button" class="iconbtn" data-theme-toggle title="Тема оформления">
+                <svg class="icon"><use href="#i-theme-auto" data-theme-icon></use></svg>
+            </button>
+
+            <span class="topbar__name">@User.Identity?.Name</span>
+
+            @* Выход только POST-ом — см. комментарий в Logout.cshtml.cs.
+               Tag helper сам добавит в форму antiforgery-токен. *@
+            <form method="post" asp-page="/Account/Logout" class="inline-form">
+                <button type="submit" class="button button--link">Выйти</button>
+            </form>
+        }
     </div>
 </header>
 
