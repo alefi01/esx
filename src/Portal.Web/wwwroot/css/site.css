@@ -1,0 +1,256 @@
+/*
+ * Стили портала. Написаны вручную и целиком помещаются на пару экранов —
+ * это сознательный выбор вместо Bootstrap: в сети нет интернета, а разбираться
+ * в чужом фреймворке при доработке интерфейса вам всё равно пришлось бы.
+ *
+ * Организовано просто: переменные -> базовые элементы -> компоненты.
+ */
+
+/* ---------- Переменные: правьте здесь, если нужно поменять оформление ---------- */
+:root {
+    --color-bg: #f4f5f7;
+    --color-surface: #ffffff;
+    --color-border: #d8dbe0;
+    --color-text: #1f2328;
+    --color-muted: #656d76;
+    --color-accent: #1f6feb;
+    --color-accent-dark: #1a5fc8;
+    --color-ok: #1a7f37;
+    --color-warn: #9a6700;
+    --color-error: #c62828;
+
+    --radius: 6px;
+    --gap: 16px;
+    --page-width: 900px;
+}
+
+/* ---------- Базовые элементы ---------- */
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--color-text);
+    background: var(--color-bg);
+}
+
+/* Страницы без шапки (вход, ошибка) центрируем по вертикали. */
+body--centered {
+    display: block;
+}
+
+h1 { font-size: 22px; margin: 0 0 12px; }
+h2 { font-size: 18px; margin: 0 0 12px; }
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.92em;
+    background: #eef0f3;
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+
+/* ---------- Каркас страницы ---------- */
+.page {
+    max-width: var(--page-width);
+    margin: 0 auto;
+    padding: var(--gap);
+}
+
+.page--centered {
+    max-width: 420px;
+    padding-top: 8vh;
+}
+
+.topbar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 0 var(--gap);
+    height: 52px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.topbar__brand {
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--color-text);
+}
+
+.topbar__nav { display: flex; gap: 16px; }
+
+.topbar__user {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--color-muted);
+}
+
+.footer {
+    max-width: var(--page-width);
+    margin: 0 auto;
+    padding: var(--gap);
+    color: var(--color-muted);
+    font-size: 13px;
+}
+
+/* ---------- Компоненты ---------- */
+.card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: var(--gap);
+}
+
+.card--narrow { max-width: 420px; }
+
+.hint {
+    color: var(--color-muted);
+    font-size: 13px;
+    margin: 6px 0 0;
+}
+
+.field { margin-bottom: 14px; }
+
+.field label {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.field input {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 15px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: #fff;
+    color: var(--color-text);
+}
+
+.field input:focus {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -1px;
+    border-color: var(--color-accent);
+}
+
+.field-error { color: var(--color-error); font-size: 13px; }
+
+.button {
+    display: inline-block;
+    padding: 8px 16px;
+    font-size: 15px;
+    font-family: inherit;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.button:hover { background: #eef0f3; text-decoration: none; }
+
+.button--primary {
+    width: 100%;
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: #fff;
+    font-weight: 600;
+}
+
+.button--primary:hover { background: var(--color-accent-dark); }
+
+/* Кнопка, которая выглядит как ссылка: нужна для выхода, потому что выход
+   обязан быть POST-ом, а POST может отправить только кнопка. */
+.button--link {
+    border: none;
+    background: none;
+    color: var(--color-accent);
+    padding: 0;
+    font-size: inherit;
+}
+
+.button--link:hover { background: none; text-decoration: underline; }
+
+.inline-form { display: inline; margin: 0; }
+
+.alert {
+    padding: 10px 12px;
+    border-radius: var(--radius);
+    margin-bottom: 14px;
+    font-size: 14px;
+}
+
+.alert:empty { display: none; }
+
+.alert--error {
+    background: #fdeaea;
+    border: 1px solid #f3c2c2;
+    color: var(--color-error);
+}
+
+.badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    background: #eef0f3;
+    color: var(--color-muted);
+}
+
+.badge--ok { background: #e4f4e7; color: var(--color-ok); }
+.badge--warn { background: #fdf3d8; color: var(--color-warn); }
+.badge--error { background: #fdeaea; color: var(--color-error); }
+
+/* Таблица «свойство — значение». */
+.facts {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 6px 16px;
+    margin: 16px 0 0;
+}
+
+.facts dt { color: var(--color-muted); font-size: 13px; }
+.facts dd { margin: 0; }
+
+.tags {
+    list-style: none;
+    padding: 0;
+    margin: 12px 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+    font-size: 14px;
+}
+
+.table th,
+.table td {
+    text-align: left;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--color-border);
+    vertical-align: top;
+}
+
+.table th { color: var(--color-muted); font-weight: 600; font-size: 13px; }
+
+/* Узкие экраны: колонки «свойство — значение» складываем в одну. */
+@media (max-width: 600px) {
+    .facts { grid-template-columns: 1fr; }
+    .topbar { flex-wrap: wrap; height: auto; padding: 8px var(--gap); }
+}

@@ -1,0 +1,17 @@
+@* Урезанная разметка для страниц, которые видит ещё не вошедший пользователь:
+   форма входа, «доступ запрещён», страница ошибки. Меню и имя пользователя
+   здесь показывать нечего. *@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] — Портал</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body class="body--centered">
+<main class="page page--centered">
+    @RenderBody()
+</main>
+</body>
+</html>

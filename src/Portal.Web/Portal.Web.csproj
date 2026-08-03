@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+
+    <!-- Nullable: компилятор предупреждает о возможных обращениях к null.
+         Ловит целый класс ошибок ещё до запуска. -->
+    <Nullable>enable</Nullable>
+
+    <!-- Не писать using System; и подобное в каждом файле — SDK подставляет их сам. -->
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <RootNamespace>Portal.Web</RootNamespace>
+
+    <!-- Предупреждения компилятора считаются ошибками сборки.
+         Строго, зато не даёт копиться шуму, который потом перестают читать. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Сборка идёт под Windows Server, где приложение и будет работать.
+         Свойство нужно, чтобы анализатор не ругался на вызовы, доступные только в Windows
+         (подпись и шифрование LDAP-трафика). -->
+    <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Единственная внешняя зависимость проекта на этом этапе.
+         Клиент LDAP от Microsoft: bind к контроллеру домена и поиск в каталоге.
+         Транзитивных зависимостей не имеет — при переносе в сеть без интернета
+         достаточно одного файла .nupkg. -->
+    <PackageReference Include="System.DirectoryServices.Protocols" Version="10.0.10" />
+  </ItemGroup>
+
+</Project>

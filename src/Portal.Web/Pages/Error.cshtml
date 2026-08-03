@@ -1,0 +1,22 @@
+@page
+@model Portal.Web.Pages.ErrorModel
+@{
+    ViewData["Title"] = "Ошибка";
+    Layout = "_LayoutBare";
+}
+
+<div class="card card--narrow">
+    <h1>Произошла ошибка</h1>
+
+    <p>Запрос не удалось обработать. Попробуйте повторить действие.</p>
+
+    @if (Model.ShowRequestId)
+    {
+        <p class="hint">
+            Если ошибка повторяется, сообщите администратору этот код:<br />
+            <code>@Model.RequestId</code>
+        </p>
+    }
+
+    <p><a class="button" asp-page="/Index">На главную</a></p>
+</div>

@@ -1,0 +1,49 @@
+@using Microsoft.Extensions.Options
+@using Portal.Web.Configuration
+@inject IOptions<ActiveDirectoryOptions> AdOptions
+@{
+    var adminGroup = AdOptions.Value.AdminGroup;
+}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] — Портал</title>
+    @* Файл стилей один и лежит локально: внешние CDN в вашей сети недоступны. *@
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+<header class="topbar">
+    <a class="topbar__brand" asp-page="/Index">Портал</a>
+
+    <nav class="topbar__nav">
+        <a asp-page="/Index">Главная</a>
+        @if (User.IsInRole(adminGroup))
+        {
+            <a asp-page="/Admin/Diagnostics">Диагностика</a>
+        }
+    </nav>
+
+    <div class="topbar__user">
+        <span>@User.Identity?.Name</span>
+
+        @* Выход только POST-ом — см. комментарий в Logout.cshtml.cs.
+           Tag helper сам добавит в форму antiforgery-токен. *@
+        <form method="post" asp-page="/Account/Logout" class="inline-form">
+            <button type="submit" class="button button--link">Выйти</button>
+        </form>
+    </div>
+</header>
+
+<main class="page">
+    @RenderBody()
+</main>
+
+<footer class="footer">
+    Корпоративный портал · этап 1 (аутентификация)
+</footer>
+
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

@@ -1,0 +1,62 @@
+@page
+@model Portal.Web.Pages.IndexModel
+@{
+    ViewData["Title"] = "Главная";
+}
+
+<div class="card">
+    <h1>Здравствуйте, @Model.DisplayName</h1>
+
+    <p class="hint">
+        Это заглушка главной страницы. На следующих этапах здесь появятся объявления,
+        файловое хранилище и диалоги. Сейчас страница нужна для одного:
+        подтвердить, что вход через доменную учётную запись работает.
+    </p>
+
+    <dl class="facts">
+        <dt>Учётная запись</dt>
+        <dd><code>@Model.UserName</code></dd>
+
+        <dt>Отображаемое имя</dt>
+        <dd>@Model.DisplayName</dd>
+
+        <dt>Почта</dt>
+        <dd>@(string.IsNullOrEmpty(Model.Email) ? "не указана в AD" : Model.Email)</dd>
+
+        <dt>Офис (по IP)</dt>
+        <dd>@Model.OfficeName</dd>
+
+        <dt>Проверено контроллером</dt>
+        <dd><code>@Model.AuthenticatedBy</code></dd>
+
+        <dt>Права администратора</dt>
+        <dd>
+            @if (Model.IsAdmin)
+            {
+                <span class="badge badge--ok">есть</span>
+                <span class="hint">(состоите в группе @Model.AdminGroupName)</span>
+            }
+            else
+            {
+                <span class="badge">нет</span>
+                <span class="hint">(нужна группа @Model.AdminGroupName)</span>
+            }
+        </dd>
+    </dl>
+</div>
+
+<div class="card">
+    <h2>Группы Active Directory (@Model.Groups.Count)</h2>
+
+    <p class="hint">
+        Каждая из этих групп в портале является ролью. Права на разделы будут
+        раздаваться именно по ним — отдельного списка пользователей портал не ведёт.
+    </p>
+
+    <ul class="tags">
+        @foreach (var group in Model.Groups)
+        {
+            <li><code>@group</code></li>
+        }
+    </ul>
+</div>

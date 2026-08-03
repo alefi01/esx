@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ВНИМАНИЕ: этот проект нужен только для запуска автотестов на машине
+         разработки. Для развёртывания портала он не требуется —
+         публикуется всегда src/Portal.Web.
+
+         Пакеты ниже в папку packages/ не положены: они тянут около 100 МБ.
+         Как получить их для сети без интернета — см. docs/03-что-скачать.md. -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.10" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Portal.Web\Portal.Web.csproj" />
+  </ItemGroup>
+
+</Project>

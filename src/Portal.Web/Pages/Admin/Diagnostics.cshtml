@@ -1,0 +1,104 @@
+@page
+@model Portal.Web.Pages.Admin.DiagnosticsModel
+@{
+    ViewData["Title"] = "Диагностика";
+}
+
+<div class="card">
+    <h1>Диагностика подключения</h1>
+    <p class="hint">Раздел виден только членам группы <code>@Model.AdOptions.AdminGroup</code>.</p>
+
+    <dl class="facts">
+        <dt>Ваш адрес глазами приложения</dt>
+        <dd><code>@(Model.RemoteIp ?? "неизвестен")</code></dd>
+
+        <dt>Определённый офис</dt>
+        <dd>@Model.DetectedOffice</dd>
+
+        <dt>Домен</dt>
+        <dd><code>@Model.AdOptions.DomainFqdn</code>, корень поиска <code>@Model.AdOptions.BaseDn</code></dd>
+
+        <dt>Режим проверки пароля</dt>
+        <dd>
+            <code>@Model.AdOptions.AuthMode</code>
+            @if (Model.AdOptions.UseSsl)
+            {
+                <span class="badge badge--ok">LDAPS</span>
+            }
+            else if (Model.AdOptions.AuthMode == Portal.Web.Configuration.LdapAuthMode.Basic)
+            {
+                <span class="badge badge--warn">пароль идёт по сети открытым текстом</span>
+            }
+        </dd>
+
+        <dt>Группа доступа / администраторов</dt>
+        <dd><code>@Model.AdOptions.AccessGroup</code> / <code>@Model.AdOptions.AdminGroup</code></dd>
+    </dl>
+</div>
+
+<div class="card">
+    <h2>Контроллеры домена</h2>
+
+    <p class="hint">
+        Порядок опроса для вашего адреса. Проверяется TCP-подключение к порту LDAP —
+        то есть только доступность узла, без проверки учётных данных.
+    </p>
+
+    <table class="table">
+        <thead>
+        <tr>
+            <th>Узел</th>
+            <th>Порт</th>
+            <th>Состояние</th>
+            <th>Время</th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var probe in Model.Probes)
+        {
+            <tr>
+                <td><code>@probe.Host</code></td>
+                <td>@probe.Port</td>
+                <td>
+                    @if (probe.Reachable)
+                    {
+                        <span class="badge badge--ok">отвечает</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge--error">нет связи</span>
+                        <span class="hint">@probe.Error</span>
+                    }
+                </td>
+                <td>@probe.ElapsedMs мс</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Настроенные офисы</h2>
+
+    <table class="table">
+        <thead>
+        <tr>
+            <th>Код</th>
+            <th>Название</th>
+            <th>Подсети</th>
+            <th>Контроллеры домена</th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var office in Model.Offices)
+        {
+            <tr>
+                <td><code>@office.Code</code></td>
+                <td>@office.Name</td>
+                <td>@string.Join(", ", office.Subnets)</td>
+                <td>@string.Join(", ", office.DomainControllers)</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

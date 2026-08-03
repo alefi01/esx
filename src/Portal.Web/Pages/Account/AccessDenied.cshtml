@@ -1,0 +1,22 @@
+@page
+@model Portal.Web.Pages.Account.AccessDeniedModel
+@{
+    ViewData["Title"] = "Доступ запрещён";
+    Layout = "_LayoutBare";
+}
+
+<div class="card card--narrow">
+    <h1>Доступ запрещён</h1>
+
+    <p>Учётная запись <strong>@(User.Identity?.Name ?? "—")</strong>
+        не имеет прав на этот раздел портала.</p>
+
+    <p class="hint">
+        Права выдаются членством в группах Active Directory. Если доступ вам нужен —
+        обратитесь к администратору и укажите, какой раздел вы пытались открыть.
+    </p>
+
+    <p>
+        <a class="button" asp-page="/Index">На главную</a>
+    </p>
+</div>

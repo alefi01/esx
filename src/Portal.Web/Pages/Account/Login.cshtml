@@ -1,0 +1,43 @@
+@page
+@model Portal.Web.Pages.Account.LoginModel
+@{
+    ViewData["Title"] = "Вход";
+    // Страница входа показывается без общей шапки: пользователь ещё не вошёл,
+    // меню ему показывать нечего.
+    Layout = "_LayoutBare";
+}
+
+<div class="card card--narrow">
+    <h1>Вход на портал</h1>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
+    }
+
+    @* asp-* — это tag helpers ASP.NET Core. Они разворачиваются в обычные атрибуты HTML
+       и, что важнее, автоматически добавляют в форму скрытый antiforgery-токен,
+       без которого POST будет отклонён. *@
+    <form method="post">
+        <div asp-validation-summary="ModelOnly" class="alert alert--error"></div>
+
+        <div class="field">
+            <label asp-for="Input.UserName">Логин</label>
+            <input asp-for="Input.UserName"
+                   autocomplete="username"
+                   autofocus
+                   placeholder="@Model.LoginHint" />
+            <span asp-validation-for="Input.UserName" class="field-error"></span>
+            <p class="hint">Доменная учётная запись. Можно вводить как <code>ivanov</code>,
+                <code>@Model.LoginHint</code> или <code>ivanov@@domen.pro</code>.</p>
+        </div>
+
+        <div class="field">
+            <label asp-for="Input.Password">Пароль</label>
+            <input asp-for="Input.Password" type="password" autocomplete="current-password" />
+            <span asp-validation-for="Input.Password" class="field-error"></span>
+        </div>
+
+        <button type="submit" class="button button--primary">Войти</button>
+    </form>
+</div>
