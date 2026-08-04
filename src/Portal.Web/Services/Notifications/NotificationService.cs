@@ -4,7 +4,7 @@ using Portal.Web.Data;
 namespace Portal.Web.Services.Notifications;
 
 /// <summary>Одно непрочитанное событие для показа в колокольчике и во всплывающем сообщении.</summary>
-/// <param name="Kind">Вид события: пока только "announcement", позже добавятся сообщения.</param>
+/// <param name="Kind">Вид события: "announcement" — объявление, "message" — сообщение в беседе.</param>
 /// <param name="Id">Номер объекта — по нему страница понимает, что уже показывала.</param>
 /// <param name="Title">Заголовок.</param>
 /// <param name="Author">Кто.</param>
@@ -39,6 +39,68 @@ public sealed class NotificationService
         _time = time;
     }
 
+    /// <summary>
+    /// Непрочитанные сообщения из бесед.
+    ///
+    /// Считается тем же приёмом, что и объявления: у каждого участника
+    /// хранится номер последнего прочитанного сообщения, непрочитанное —
+    /// это всё, что новее. Своё написанное в счёт не идёт.
+    /// </summary>
+    private async Task<(int Unread, List<NotificationItem> Items)> MessagesAsync(
+        string userName, CancellationToken cancellationToken)
+    {
+        var mine = await _db.Participants
+            .Where(p => p.UserName.ToLower() == userName.ToLower())
+            .Select(p => new { p.ConversationId, p.LastReadMessageId })
+            .ToListAsync(cancellationToken);
+
+        if (mine.Count == 0)
+        {
+            return (0, []);
+        }
+
+        var ids = mine.Select(m => m.ConversationId).ToList();
+        var marks = mine.ToDictionary(m => m.ConversationId, m => m.LastReadMessageId);
+
+        var fresh = await _db.Messages
+            .Where(m => ids.Contains(m.ConversationId)
+                        && m.DeletedAt == null
+                        && m.AuthorUserName.ToLower() != userName.ToLower())
+            .OrderByDescending(m => m.Id)
+            .Select(m => new
+            {
+                m.Id,
+                m.ConversationId,
+                m.AuthorDisplayName,
+                m.Body,
+                m.CreatedAt,
+                m.Conversation!.IsGroup,
+                m.Conversation.Title
+            })
+            .Take(500)
+            .ToListAsync(cancellationToken);
+
+        var unread = fresh.Where(m => m.Id > marks.GetValueOrDefault(m.ConversationId)).ToList();
+
+        // В списке — по одной строке на беседу, а не на каждое сообщение:
+        // десять сообщений от одного человека это одно событие «вам пишут».
+        var items = unread
+            .GroupBy(m => m.ConversationId)
+            .Select(g => g.OrderByDescending(m => m.Id).First())
+            .OrderByDescending(m => m.Id)
+            .Take(MaxItems)
+            .Select(m => new NotificationItem(
+                "message",
+                m.Id,
+                m.IsGroup && !string.IsNullOrWhiteSpace(m.Title) ? m.Title : m.AuthorDisplayName,
+                m.AuthorDisplayName,
+                m.CreatedAt.ToLocalTime(),
+                "/Messages?id=" + m.ConversationId))
+            .ToList();
+
+        return (unread.Count, items);
+    }
+
     public async Task<NotificationSummary> GetAsync(string userName, CancellationToken cancellationToken)
     {
         var state = await _db.Set<UserSeenState>()
@@ -58,14 +120,18 @@ public sealed class NotificationService
 
             await SaveStateAsync(userName, newest, cancellationToken);
 
-            return new NotificationSummary(0, []);
+            // Сообщения при этом НЕ прячем: их отметка своя, по каждой беседе,
+            // и человек, которому написали до первого входа, должен это увидеть.
+            var firstVisit = await MessagesAsync(userName, cancellationToken);
+
+            return new NotificationSummary(firstVisit.Unread, firstVisit.Items);
         }
 
         var unreadQuery = _db.Announcements.Where(a => a.Id > lastSeen);
 
-        var unread = await unreadQuery.CountAsync(cancellationToken);
+        var unreadAnnouncements = await unreadQuery.CountAsync(cancellationToken);
 
-        var items = await unreadQuery
+        var announcements = await unreadQuery
             .OrderByDescending(a => a.Id)
             .Take(MaxItems)
             .Select(a => new
@@ -77,16 +143,17 @@ public sealed class NotificationService
             })
             .ToListAsync(cancellationToken);
 
-        return new NotificationSummary(
-            unread,
-            items.Select(a => new NotificationItem(
-                    "announcement",
-                    a.Id,
-                    a.Title,
-                    a.AuthorDisplayName,
-                    a.CreatedAt.ToLocalTime(),
-                    "/Announcements"))
-                .ToList());
+        var (unreadMessages, messageItems) = await MessagesAsync(userName, cancellationToken);
+
+        var items = announcements
+            .Select(a => new NotificationItem(
+                "announcement", a.Id, a.Title, a.AuthorDisplayName, a.CreatedAt.ToLocalTime(), "/Announcements"))
+            .Concat(messageItems)
+            .OrderByDescending(i => i.At)
+            .Take(MaxItems)
+            .ToList();
+
+        return new NotificationSummary(unreadAnnouncements + unreadMessages, items);
     }
 
     /// <summary>Отметить всё текущее прочитанным.</summary>
@@ -98,6 +165,35 @@ public sealed class NotificationService
             .FirstOrDefaultAsync(cancellationToken);
 
         await SaveStateAsync(userName, newest, cancellationToken);
+    }
+
+    /// <summary>
+    /// Запоминает, как показывать этого человека.
+    ///
+    /// Нужно для переписок: если контроллер домена недоступен, список
+    /// собеседников собирается из тех, кто уже входил в портал, — и без
+    /// имени в нём были бы одни логины. Вызывается при входе.
+    /// </summary>
+    public async Task RememberUserAsync(
+        string userName, string displayName, CancellationToken cancellationToken)
+    {
+        var state = await _db.Set<UserSeenState>().AsTracking()
+            .FirstOrDefaultAsync(s => s.UserName == userName, cancellationToken);
+
+        if (state is null)
+        {
+            // Строки ещё нет — заведёт её первый же запрос уведомлений,
+            // а пока просто нечего обновлять.
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(displayName) && state.DisplayName != displayName)
+        {
+            state.DisplayName = displayName;
+            state.UpdatedAt = _time.GetUtcNow().UtcDateTime;
+
+            await _db.SaveChangesAsync(cancellationToken);
+        }
     }
 
     private async Task SaveStateAsync(string userName, int announcementId, CancellationToken cancellationToken)

@@ -1,0 +1,343 @@
+@page
+@using Portal.Web.Services.Messaging
+@model Portal.Web.Pages.Messages.IndexModel
+@{
+    ViewData["Title"] = Model.Current is null ? "Переписки" : Model.Title;
+}
+
+@*
+    Данные для кода страницы — через data-атрибуты: встроенные скрипты
+    запрещены политикой безопасности страницы, и это правильно.
+*@
+<div class="chat"
+     data-chat
+     data-conversation="@(Model.Current?.Id.ToString() ?? "")"
+     data-last-message="@(Model.Items.Count > 0 ? Model.Items[^1].Id : 0)">
+
+    @* ---------- Слева: список бесед ---------- *@
+    <aside class="chat__list">
+        <div class="chat__listhead">
+            <strong>Переписки</strong>
+
+            <div class="chat__listactions">
+                <button type="button" class="iconbtn" data-action="new-direct" title="Написать сотруднику">
+                    <svg class="icon"><use href="#i-pen"></use></svg>
+                </button>
+                <button type="button" class="iconbtn" data-action="new-group" title="Создать группу">
+                    <svg class="icon"><use href="#i-group"></use></svg>
+                </button>
+            </div>
+        </div>
+
+        @if (Model.Conversations.Count == 0)
+        {
+            <div class="chat__empty">
+                <p>Переписок пока нет.</p>
+                <p class="muted">Нажмите на значок с пером, чтобы написать сотруднику.</p>
+            </div>
+        }
+        else
+        {
+            <div class="chat__items">
+                @foreach (var item in Model.Conversations)
+                {
+                    <a class="chat__item @(Model.Current?.Id == item.Id ? "is-active" : "")"
+                       asp-page="Index" asp-route-id="@item.Id">
+
+                        <span class="chat__avatar @(item.IsGroup ? "chat__avatar--group" : "")">
+                            <svg class="icon"><use href="@(item.IsGroup ? "#i-group" : "#i-person")"></use></svg>
+                        </span>
+
+                        <span class="chat__itembody">
+                            <span class="chat__itemtop">
+                                <span class="chat__itemname">@item.Title</span>
+                                <span class="chat__itemtime">@item.LastAt.ToLocalTime().ToString("dd.MM HH:mm")</span>
+                            </span>
+
+                            <span class="chat__itemtext">@item.Preview</span>
+                        </span>
+
+                        @if (item.Unread > 0)
+                        {
+                            <span class="chat__unread">@item.Unread</span>
+                        }
+                    </a>
+                }
+            </div>
+        }
+    </aside>
+
+    @* ---------- Справа: выбранная беседа ---------- *@
+    <section class="chat__pane">
+        @if (Model.Current is null)
+        {
+            <div class="chat__placeholder">
+                <svg class="icon icon--xl"><use href="#i-chat"></use></svg>
+                <p>Выберите переписку слева или начните новую</p>
+            </div>
+        }
+        else
+        {
+            <div class="chat__head">
+                <span class="chat__avatar @(Model.Current.IsGroup ? "chat__avatar--group" : "")">
+                    <svg class="icon"><use href="@(Model.Current.IsGroup ? "#i-group" : "#i-person")"></use></svg>
+                </span>
+
+                <div class="chat__headtext">
+                    <strong>@Model.Title</strong>
+                    @if (Model.Current.IsGroup)
+                    {
+                        <span class="muted">Участников: @Model.Current.Participants.Count</span>
+                    }
+                </div>
+
+                @if (Model.Current.IsGroup)
+                {
+                    <button type="button" class="btn btn--quiet" data-action="group-settings">
+                        <svg class="icon"><use href="#i-settings"></use></svg>
+                        Участники
+                    </button>
+                }
+            </div>
+
+            @if (!string.IsNullOrEmpty(Model.StatusMessage))
+            {
+                <div class="alert alert--ok" role="status">@Model.StatusMessage</div>
+            }
+
+            @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+            {
+                <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
+            }
+
+            @if (Model.IsOutsideObserver)
+            {
+                <div class="alert alert--warn" role="status">
+                    Вы смотрите эту переписку как администратор портала.
+                    Писать в неё нельзя.
+                </div>
+            }
+
+            <div class="chat__messages" data-messages>
+                @if (Model.Items.Count == 0)
+                {
+                    <p class="chat__placeholder muted">Сообщений пока нет. Напишите первое.</p>
+                }
+
+                @foreach (var message in Model.Items)
+                {
+                    var mine = string.Equals(message.AuthorUserName, Model.UserName,
+                        StringComparison.OrdinalIgnoreCase);
+
+                    <div class="msg @(mine ? "msg--mine" : "")" data-message="@message.Id">
+                        <div class="msg__bubble">
+                            @if (!mine && Model.Current.IsGroup)
+                            {
+                                <div class="msg__author">@message.AuthorDisplayName</div>
+                            }
+
+                            @if (message.DeletedAt is not null)
+                            {
+                                <div class="msg__deleted">сообщение удалено</div>
+                            }
+                            else
+                            {
+                                @if (!string.IsNullOrWhiteSpace(message.Body))
+                                {
+                                    @* Текст выводится как текст: Razor кодирует его сам,
+                                       и разметка из сообщения на страницу не попадёт.
+                                       Переносы строк сохраняет стиль white-space. *@
+                                    <div class="msg__text">@message.Body</div>
+                                }
+
+                                @foreach (var file in message.Files.Where(f => f.PurgedAt is null))
+                                {
+                                    <a class="msg__file"
+                                       asp-page="Index" asp-page-handler="Attachment" asp-route-fileId="@file.Id">
+                                        <svg class="icon"><use href="#i-file"></use></svg>
+                                        <span class="msg__filename">@file.OriginalName</span>
+                                        <span class="msg__filesize">@Portal.Web.Pages.Messages.IndexModel.FormatSize(file.SizeBytes)</span>
+                                    </a>
+                                }
+                            }
+
+                            <div class="msg__meta">
+                                <span>@message.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</span>
+
+                                @if (message.DeletedAt is null && (mine || Model.IsOutsideObserver))
+                                {
+                                    <button type="button" class="msg__delete"
+                                            data-delete-message="@message.Id" title="Удалить сообщение">
+                                        <svg class="icon icon--xs"><use href="#i-trash"></use></svg>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @if (Model.CanWrite)
+            {
+                <form method="post" asp-page-handler="Send" asp-route-id="@Model.Current.Id"
+                      enctype="multipart/form-data" class="chat__composer" data-composer>
+
+                    <textarea asp-for="Body" rows="1" maxlength="8000"
+                              placeholder="Сообщение… (Enter — отправить, Shift+Enter — новая строка)"
+                              data-composer-text></textarea>
+
+                    <input type="file" name="attachments" multiple hidden data-composer-files />
+
+                    <div class="chat__composeractions">
+                        <button type="button" class="iconbtn" data-action="attach" title="Приложить файл">
+                            <svg class="icon"><use href="#i-clip"></use></svg>
+                        </button>
+
+                        <button type="submit" class="btn btn--primary">
+                            <svg class="icon"><use href="#i-send"></use></svg>
+                            Отправить
+                        </button>
+                    </div>
+
+                    <div class="chat__attached" data-composer-list hidden></div>
+                </form>
+            }
+        }
+    </section>
+</div>
+
+@* ---------- Скрытые формы ---------- *@
+<form method="post" asp-page-handler="DeleteMessage" asp-route-id="@Model.Current?.Id"
+      data-form="delete-message" hidden></form>
+
+<form method="post" asp-page-handler="Start" data-form="start" hidden></form>
+
+<form method="post" asp-page-handler="AddMember" asp-route-id="@Model.Current?.Id"
+      data-form="add-member" hidden></form>
+
+<form method="post" asp-page-handler="RemoveMember" asp-route-id="@Model.Current?.Id"
+      data-form="remove-member" hidden></form>
+
+@* ---------- Окно «Написать сотруднику» ---------- *@
+<div class="modal" data-modal="new-direct" hidden>
+    <div class="modal__backdrop" data-modal-close></div>
+
+    <div class="modal__window" role="dialog" aria-modal="true" aria-labelledby="new-direct-title">
+        <h2 id="new-direct-title">Написать сотруднику</h2>
+
+        <div class="field">
+            <label for="people-search">Кому</label>
+            <input id="people-search" type="search" autocomplete="off" data-autofocus
+                   placeholder="Начните вводить фамилию или логин" data-people-search />
+        </div>
+
+        <div class="people" data-people-list></div>
+
+        <div class="modal__actions">
+            <button type="button" class="btn" data-modal-close>Отмена</button>
+        </div>
+    </div>
+</div>
+
+@* ---------- Окно «Создать группу» ---------- *@
+<div class="modal" data-modal="new-group" hidden>
+    <div class="modal__backdrop" data-modal-close></div>
+
+    <div class="modal__window" role="dialog" aria-modal="true" aria-labelledby="new-group-title">
+        <h2 id="new-group-title">Создать группу</h2>
+
+        <form method="post" asp-page-handler="CreateGroup" data-busy-form data-group-form>
+            <div class="field">
+                <label asp-for="GroupTitle">Название группы</label>
+                <input asp-for="GroupTitle" maxlength="120" autocomplete="off" data-autofocus />
+            </div>
+
+            <div class="field">
+                <label for="group-search">Кого добавить</label>
+                <input id="group-search" type="search" autocomplete="off"
+                       placeholder="Начните вводить фамилию или логин" data-people-search />
+            </div>
+
+            <div class="people" data-people-list data-multi></div>
+
+            <div class="chosen" data-chosen></div>
+
+            <div class="modal__actions">
+                <button type="button" class="btn" data-modal-close>Отмена</button>
+                <button type="submit" class="btn btn--primary">Создать</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@* ---------- Окно «Участники группы» ---------- *@
+@if (Model.Current is { IsGroup: true })
+{
+    <div class="modal" data-modal="group-settings" hidden>
+        <div class="modal__backdrop" data-modal-close></div>
+
+        <div class="modal__window" role="dialog" aria-modal="true" aria-labelledby="group-settings-title">
+            <h2 id="group-settings-title">Группа «@Model.Title»</h2>
+
+            @if (Model.IsOwner)
+            {
+                <form method="post" asp-page-handler="RenameGroup" asp-route-id="@Model.Current.Id"
+                      class="field" data-busy-form>
+                    <label for="group-title">Название</label>
+
+                    <div class="inline-pair">
+                        <input id="group-title" name="newTitle" value="@Model.Current.Title" maxlength="120" />
+                        <button type="submit" class="btn">Сохранить</button>
+                    </div>
+                </form>
+            }
+
+            <h3>Участники</h3>
+
+            <ul class="members">
+                @foreach (var person in Model.Current.Participants.OrderByDescending(p => p.IsOwner)
+                    .ThenBy(p => p.DisplayName))
+                {
+                    <li class="members__item">
+                        <span>
+                            @person.DisplayName
+                            @if (person.IsOwner)
+                            {
+                                <span class="chip">создатель</span>
+                            }
+                        </span>
+
+                        @if (Model.IsOwner && !string.Equals(person.UserName, Model.UserName,
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            <button type="button" class="button button--link"
+                                    data-remove-member="@person.UserName">убрать</button>
+                        }
+                    </li>
+                }
+            </ul>
+
+            @if (Model.IsOwner)
+            {
+                <div class="field">
+                    <label for="member-search">Добавить человека</label>
+                    <input id="member-search" type="search" autocomplete="off"
+                           placeholder="Начните вводить фамилию или логин" data-people-search />
+                </div>
+
+                <div class="people" data-people-list data-add-member></div>
+            }
+
+            <div class="modal__actions">
+                @if (!Model.IsOutsideObserver)
+                {
+                    <button type="button" class="btn btn--danger" data-leave-group="@Model.UserName">
+                        Выйти из группы
+                    </button>
+                }
+
+                <button type="button" class="btn" data-modal-close>Закрыть</button>
+            </div>
+        </div>
+    </div>
+}

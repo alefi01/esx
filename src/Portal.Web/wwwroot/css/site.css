@@ -875,6 +875,311 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 
 /* ====================================================================== */
+/* 6а. Переписки                                                          */
+/* ====================================================================== */
+
+/*
+ * Две колонки: список бесед и сама переписка. Высота задана от окна,
+ * чтобы прокручивался только список сообщений, а поле ввода и шапка
+ * оставались на месте — иначе при длинной переписке до поля ввода
+ * пришлось бы каждый раз доезжать.
+ */
+.chat {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: var(--gap);
+    height: calc(100vh - 56px - 90px);
+    min-height: 420px;
+}
+
+.chat__list,
+.chat__pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+}
+
+.chat__listhead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex: none;
+    padding: 12px 12px 12px 16px;
+    border-bottom: 1px solid var(--c-border);
+}
+
+.chat__listactions { display: flex; gap: 2px; }
+
+.chat__items { flex: 1; min-height: 0; overflow-y: auto; }
+
+.chat__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--c-border);
+    color: var(--c-text);
+    transition: background var(--t-fast) var(--ease);
+}
+
+.chat__item:hover { background: var(--c-surface-2); text-decoration: none; }
+.chat__item.is-active { background: var(--c-accent-soft); }
+
+.chat__avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--c-surface-2);
+    color: var(--c-text-muted);
+}
+
+.chat__avatar--group { color: var(--c-accent); }
+.chat__avatar .icon { width: 18px; height: 18px; }
+
+.chat__itembody { flex: 1; min-width: 0; }
+
+.chat__itemtop { display: flex; align-items: baseline; gap: 8px; }
+.chat__itemname { flex: 1; min-width: 0; font-weight: 560; font-size: 14px; }
+.chat__itemtime { font-size: 11px; color: var(--c-text-muted); white-space: nowrap; }
+
+.chat__itemname,
+.chat__itemtext {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat__itemtext { font-size: 12.5px; color: var(--c-text-muted); }
+
+.chat__unread {
+    flex: none;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+    color: #fff;
+    background: var(--c-accent);
+    border-radius: 999px;
+}
+
+.chat__head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: none;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--c-border);
+}
+
+.chat__headtext { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chat__headtext .muted { margin: 0; font-size: 12px; }
+
+.chat__messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.chat__empty,
+.chat__placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex: 1;
+    padding: 24px;
+    text-align: center;
+    color: var(--c-text-muted);
+}
+
+.chat__placeholder .icon { color: var(--c-border-strong); }
+.chat__empty p, .chat__placeholder p { margin: 0; }
+
+/* Сообщение. Своё — справа и цветное, чужое — слева, как принято. */
+.msg { display: flex; }
+.msg--mine { justify-content: flex-end; }
+
+.msg__bubble {
+    max-width: min(78%, 620px);
+    padding: 8px 12px;
+    background: var(--c-surface-2);
+    border-radius: var(--r-md);
+    font-size: 14px;
+}
+
+.msg--mine .msg__bubble { background: var(--c-accent-soft); }
+
+.msg__author { font-size: 12px; font-weight: 620; color: var(--c-accent); margin-bottom: 2px; }
+
+/* Переносы строк в сообщении сохраняются, длинные слова переносятся. */
+.msg__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.msg__deleted { color: var(--c-text-muted); font-style: italic; }
+
+.msg__file {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 6px 8px;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-sm);
+    color: var(--c-text);
+    font-size: 13px;
+}
+
+.msg__file:hover { background: var(--c-bg); text-decoration: none; }
+.msg__file .icon { color: var(--c-file); }
+.msg__filename { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg__filesize { color: var(--c-text-muted); font-size: 11.5px; white-space: nowrap; }
+
+.msg__meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--c-text-muted);
+}
+
+.msg__delete {
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--c-text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+/* Кнопка удаления появляется при наведении: постоянно висящая корзина
+   у каждого сообщения превращает переписку в панель управления. */
+.msg:hover .msg__delete { opacity: 1; }
+.msg__delete:hover { color: var(--c-error); }
+
+.chat__composer {
+    flex: none;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--c-border);
+}
+
+.chat__composer textarea {
+    width: 100%;
+    min-height: 42px;
+    max-height: 180px;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--c-text);
+    background: var(--c-surface-2);
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    outline: none;
+    resize: none;
+    transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+
+.chat__composer textarea:focus { background: var(--c-surface); border-color: var(--c-accent); }
+
+.chat__composeractions { display: flex; align-items: flex-end; gap: 6px; }
+
+.chat__attached {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--c-text-muted);
+}
+
+/* Список найденных сотрудников в окнах «Написать» и «Создать группу». */
+.people {
+    max-height: 260px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-md);
+}
+
+.people:empty { display: none; }
+
+.people__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 12px;
+    font: inherit;
+    font-size: 14px;
+    color: var(--c-text);
+    text-align: left;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--c-border);
+    cursor: pointer;
+    transition: background var(--t-fast) var(--ease);
+}
+
+.people__item:last-child { border-bottom: none; }
+.people__item:hover { background: var(--c-surface-2); }
+.people__item.is-chosen { background: var(--c-accent-soft); }
+.people__login { margin-left: auto; font-size: 12px; color: var(--c-text-muted); }
+.people__empty { padding: 14px; color: var(--c-text-muted); font-size: 13px; text-align: center; }
+
+.chosen { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.chosen:empty { display: none; }
+
+.members { list-style: none; margin: 0 0 16px; padding: 0; }
+
+.members__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--c-border);
+    font-size: 14px;
+}
+
+.members__item:last-child { border-bottom: none; }
+
+.inline-pair { display: flex; gap: 8px; }
+.inline-pair input { flex: 1; }
+
+@media (max-width: 860px) {
+    /* На узком экране двух колонок не получится: показываем либо список,
+       либо саму переписку — смотря что открыто. */
+    .chat { grid-template-columns: 1fr; height: auto; }
+    .chat__list { max-height: 50vh; }
+    .chat[data-conversation]:not([data-conversation=""]) .chat__list { display: none; }
+    .chat__pane { min-height: 60vh; }
+}
+
+/* ====================================================================== */
 /* 7. Наложения                                                           */
 /* ====================================================================== */
 
@@ -1016,6 +1321,9 @@ body.has-preview .footer {
    Не пытаемся повторить вид документа — задача в том, чтобы содержимое
    читалось: поля, нормальные отступы, видимая сетка таблиц. */
 .doc {
+    /* Тянемся на всю высоту панели: иначе под коротким документом
+       остаётся полоса другого цвета, и это выглядит как обрыв. */
+    min-height: 100%;
     padding: 18px 20px;
     background: var(--c-surface);
     color: var(--c-text);

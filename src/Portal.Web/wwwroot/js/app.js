@@ -19,6 +19,7 @@
  *   7. Файловый менеджер: выделение, буфер обмена, перетаскивание, загрузка
  *   8. Переключатель светлой и тёмной темы
  *   9. Колокольчик уведомлений
+ *  10. Переписки
  */
 
 (function () {
@@ -1479,6 +1480,327 @@
             };
         }
     }
+
+    // ======================================================================
+    // 10. Переписки
+    //
+    // Страница переписок обычная, серверная: отправка сообщения — это отправка
+    // формы, переход в беседу — переход по ссылке. Здесь только то, без чего
+    // пользоваться неудобно:
+    //   • Enter отправляет, Shift+Enter переносит строку;
+    //   • поле ввода растёт под длинный текст;
+    //   • список сообщений прокручивается вниз при открытии;
+    //   • раз в несколько секунд проверяется, не написал ли собеседник;
+    //   • поиск людей для окон «Написать» и «Создать группу».
+    //
+    // Постоянного соединения нет и здесь — по той же причине, что и у
+    // колокольчика: канал между офисами с урезанным MTU рвёт долгие
+    // соединения, и портал выглядел бы зависшим.
+    // ======================================================================
+
+    (function () {
+        const chat = $('[data-chat]');
+
+        if (!chat) {
+            return;
+        }
+
+        const conversationId = chat.dataset.conversation ? parseInt(chat.dataset.conversation, 10) : null;
+        const lastMessageId = parseInt(chat.dataset.lastMessage, 10) || 0;
+
+        // ---------- Прокрутка к последнему сообщению ----------
+
+        const messages = $('[data-messages]', chat);
+
+        if (messages) {
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        // ---------- Поле ввода ----------
+
+        const composer = $('[data-composer]');
+
+        if (composer) {
+            const text = $('[data-composer-text]', composer);
+            const files = $('[data-composer-files]', composer);
+            const chosenFiles = $('[data-composer-list]', composer);
+
+            // Растим поле под текст, но не бесконечно: предел задан в стилях.
+            function grow() {
+                text.style.height = 'auto';
+                text.style.height = Math.min(text.scrollHeight, 180) + 'px';
+            }
+
+            text.addEventListener('input', grow);
+            grow();
+
+            text.addEventListener('keydown', event => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+
+                    if (text.value.trim() || (files.files && files.files.length > 0)) {
+                        composer.requestSubmit();
+                    }
+                }
+            });
+
+            $$('[data-action="attach"]').forEach(button => {
+                button.addEventListener('click', () => files.click());
+            });
+
+            files.addEventListener('change', () => {
+                const names = Array.from(files.files || []).map(f => f.name + ' · ' + formatSize(f.size));
+
+                chosenFiles.textContent = names.length > 0 ? 'Приложено: ' + names.join(', ') : '';
+                chosenFiles.hidden = names.length === 0;
+            });
+
+            // Файл, брошенный на окно переписки, прикладывается к сообщению.
+            ['dragover', 'drop'].forEach(name => {
+                composer.addEventListener(name, event => {
+                    if (!event.dataTransfer || Array.from(event.dataTransfer.types).indexOf('Files') === -1) {
+                        return;
+                    }
+
+                    event.preventDefault();
+
+                    if (name === 'drop') {
+                        files.files = event.dataTransfer.files;
+                        files.dispatchEvent(new Event('change'));
+                    }
+                });
+            });
+        }
+
+        // ---------- Проверка новых сообщений ----------
+
+        if (conversationId !== null) {
+            setInterval(() => {
+                if (document.visibilityState !== 'visible') {
+                    return;
+                }
+
+                fetch('/Messages?handler=New&id=' + conversationId + '&afterId=' + lastMessageId,
+                    { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    .then(response => (response.ok ? response.json() : Promise.reject(response.status)))
+                    .then(data => {
+                        if (data.hasNew) {
+                            // Перезагружаем страницу целиком, а не дорисовываем
+                            // сообщения по одному: так на экране гарантированно
+                            // то же, что в базе, и кода в разы меньше.
+                            location.reload();
+                        }
+                    })
+                    .catch(() => { /* связь моргнула — попробуем в следующий раз */ });
+            }, 7000);
+        }
+
+        // ---------- Удаление сообщения ----------
+
+        document.addEventListener('click', event => {
+            const button = event.target.closest('[data-delete-message]');
+
+            if (!button) {
+                return;
+            }
+
+            confirmDialog(
+                'Удалить сообщение? Оно пропадёт у всех участников, на его месте ' +
+                'останется пометка «сообщение удалено». Вложения будут стёрты с диска.',
+                'Удалить'
+            ).then(ok => {
+                if (ok) {
+                    submitForm($('[data-form="delete-message"]'), {
+                        messageId: button.dataset.deleteMessage
+                    });
+                }
+            });
+        });
+
+        // ---------- Управление группой ----------
+
+        $$('[data-action="group-settings"]').forEach(button => {
+            button.addEventListener('click', () => openPeopleModal('group-settings'));
+        });
+
+        document.addEventListener('click', event => {
+            const remove = event.target.closest('[data-remove-member]');
+
+            if (remove) {
+                submitForm($('[data-form="remove-member"]'), {
+                    memberUserName: remove.dataset.removeMember
+                });
+                return;
+            }
+
+            const leave = event.target.closest('[data-leave-group]');
+
+            if (leave) {
+                confirmDialog(
+                    'Выйти из группы? Новые сообщения приходить перестанут, ' +
+                    'а чтобы вернуться, придётся просить создателя добавить вас снова.',
+                    'Выйти'
+                ).then(ok => {
+                    if (ok) {
+                        submitForm($('[data-form="remove-member"]'), {
+                            memberUserName: leave.dataset.leaveGroup
+                        });
+                    }
+                });
+            }
+        });
+
+        // ---------- Поиск сотрудников ----------
+        //
+        // Один и тот же список используют три окна: «Написать», «Создать
+        // группу» и «Участники». Отличается только то, что делать по нажатию
+        // на человека, — это и задаётся атрибутом на списке.
+
+        // Готовые поиски по окнам: окно → функция «покажи список».
+        // Нужно потому, что список должен наполниться СРАЗУ при открытии окна,
+        // а не после того, как человек догадается щёлкнуть в поле поиска.
+        const searches = new Map();
+
+        $$('[data-people-search]').forEach(field => {
+            const modal = field.closest('[data-modal]');
+            const list = $('[data-people-list]', modal);
+
+            if (!list) {
+                return;
+            }
+
+            const multi = list.hasAttribute('data-multi');
+            const addMember = list.hasAttribute('data-add-member');
+            const chosen = $('[data-chosen]', modal);
+            const picked = new Map();
+
+            let timer = null;
+
+            function repaintChosen() {
+                if (!chosen) {
+                    return;
+                }
+
+                chosen.innerHTML = '';
+
+                picked.forEach((name, login) => {
+                    const chip = document.createElement('span');
+                    chip.className = 'chip';
+                    chip.textContent = name;
+                    chosen.appendChild(chip);
+
+                    // Выбранные уходят на сервер скрытыми полями формы.
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'Members';
+                    input.value = login;
+                    chosen.appendChild(input);
+                });
+            }
+
+            function render(people) {
+                list.innerHTML = '';
+
+                if (people.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'people__empty';
+                    empty.textContent = 'Никого не нашлось';
+                    list.appendChild(empty);
+                    return;
+                }
+
+                people.forEach(person => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'people__item' + (picked.has(person.userName) ? ' is-chosen' : '');
+
+                    const name = document.createElement('span');
+                    name.textContent = person.displayName;
+
+                    const login = document.createElement('span');
+                    login.className = 'people__login';
+                    login.textContent = person.userName;
+
+                    button.appendChild(name);
+                    button.appendChild(login);
+
+                    button.addEventListener('click', () => {
+                        if (multi) {
+                            if (picked.has(person.userName)) {
+                                picked.delete(person.userName);
+                                button.classList.remove('is-chosen');
+                            } else {
+                                picked.set(person.userName, person.displayName);
+                                button.classList.add('is-chosen');
+                            }
+
+                            repaintChosen();
+                            return;
+                        }
+
+                        submitForm(
+                            $('[data-form="' + (addMember ? 'add-member' : 'start') + '"]'),
+                            addMember
+                                ? { memberUserName: person.userName }
+                                : { withUserName: person.userName });
+                    });
+
+                    list.appendChild(button);
+                });
+            }
+
+            function search() {
+                fetch('/Messages?handler=People&q=' + encodeURIComponent(field.value),
+                    { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    .then(response => (response.ok ? response.json() : Promise.reject(response.status)))
+                    .then(render)
+                    .catch(() => {
+                        list.innerHTML = '';
+
+                        const error = document.createElement('div');
+                        error.className = 'people__empty';
+                        error.textContent = 'Не удалось получить список сотрудников.';
+                        list.appendChild(error);
+                    });
+            }
+
+            // Ждём, пока человек допечатает: запрос на каждую букву
+            // означал бы обращение к контроллеру домена на каждое нажатие.
+            field.addEventListener('input', () => {
+                clearTimeout(timer);
+                timer = setTimeout(search, 250);
+            });
+
+            field.addEventListener('focus', () => {
+                if (list.children.length === 0) {
+                    search();
+                }
+            });
+
+            if (modal) {
+                searches.set(modal.dataset.modal, search);
+            }
+        });
+
+        /** Открыть окно и сразу наполнить в нём список сотрудников. */
+        function openPeopleModal(name) {
+            openModal(name);
+
+            const search = searches.get(name);
+
+            if (search) {
+                search();
+            }
+        }
+
+        $$('[data-action="new-direct"]').forEach(button => {
+            button.addEventListener('click', () => openPeopleModal('new-direct'));
+        });
+
+        $$('[data-action="new-group"]').forEach(button => {
+            button.addEventListener('click', () => openPeopleModal('new-group'));
+        });
+    })();
 
     // ======================================================================
     // 8. Переключатель светлой и тёмной темы

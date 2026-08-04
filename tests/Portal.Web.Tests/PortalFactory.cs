@@ -21,6 +21,54 @@ namespace Portal.Web.Tests;
 public sealed class FakeAdState
 {
     public List<string> Groups { get; set; } = ["WebUsers"];
+
+    /// <summary>
+    /// Кто «есть в каталоге» для переписок.
+    ///
+    /// Настоящий справочник ходит в Active Directory, и в тестах это
+    /// означало бы ожидание ответа от несуществующего контроллера домена
+    /// на каждый запрос. Поэтому здесь простой список.
+    /// </summary>
+    public List<DirectoryUser> People { get; set; } =
+    [
+        new("ivanov", "Иванов Иван"),
+        new("petrov", "Петров Пётр"),
+        new("sidorov", "Сидоров Сидор"),
+        new("boss", "Начальников Начальник")
+    ];
+}
+
+/// <summary>Справочник сотрудников без обращения к Active Directory.</summary>
+public sealed class FakeUserDirectory : IUserDirectory
+{
+    private readonly FakeAdState _state;
+
+    public FakeUserDirectory(FakeAdState state) => _state = state;
+
+    public Task<IReadOnlyList<DirectoryUser>> SearchAsync(
+        string? query, string exceptUserName, int take, CancellationToken cancellationToken)
+    {
+        var needle = (query ?? "").Trim();
+
+        IReadOnlyList<DirectoryUser> found = _state.People
+            .Where(p => !string.Equals(p.UserName, exceptUserName, StringComparison.OrdinalIgnoreCase))
+            .Where(p => needle.Length == 0
+                        || p.DisplayName.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                        || p.UserName.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            .Take(take)
+            .ToList();
+
+        return Task.FromResult(found);
+    }
+
+    public Task<string> DisplayNameAsync(string userName, CancellationToken cancellationToken) =>
+        Task.FromResult(_state.People
+            .FirstOrDefault(p => string.Equals(p.UserName, userName, StringComparison.OrdinalIgnoreCase))
+            ?.DisplayName ?? userName);
+
+    public Task<bool> ExistsAsync(string userName, CancellationToken cancellationToken) =>
+        Task.FromResult(_state.People
+            .Any(p => string.Equals(p.UserName, userName, StringComparison.OrdinalIgnoreCase)));
 }
 
 /// <summary>
@@ -102,6 +150,7 @@ public sealed class PortalFactory : WebApplicationFactory<Program>
         {
             services.AddSingleton(Ad);
             services.Replace(ServiceDescriptor.Scoped<IAdAuthenticationService, FakeAdAuthenticationService>());
+            services.Replace(ServiceDescriptor.Scoped<IUserDirectory, FakeUserDirectory>());
 
             // Тестовый сервер работает без сети и адрес клиента не заполняет,
             // а от него зависят определение офиса и доступ к аварийной странице.

@@ -11,6 +11,7 @@ using Portal.Web.Configuration;
 using Portal.Web.Security;
 using Portal.Web.Services;
 using Portal.Web.Services.ActiveDirectory;
+using Portal.Web.Services.Messaging;
 using Portal.Web.Services.Notifications;
 using Portal.Web.Services.Offices;
 using Portal.Web.Services.Storage;
@@ -212,6 +213,13 @@ builder.Services.AddSingleton<UploadValidator>();
 builder.Services.AddScoped<FolderTree>();
 builder.Services.AddScoped<AuditLog>();
 builder.Services.AddScoped<NotificationService>();
+
+// Переписки. Справочник сотрудников и служба бесед живут один запрос:
+// оба обращаются к базе, а контекст базы существует ровно столько же.
+// Хранилище вложений состояния не имеет, поэтому одно на всё приложение.
+builder.Services.AddSingleton<MessageStorage>();
+builder.Services.AddScoped<IUserDirectory, UserDirectory>();
+builder.Services.AddScoped<ConversationService>();
 
 // AuditLog нужно знать, кто выполняет действие и с какого адреса.
 builder.Services.AddHttpContextAccessor();

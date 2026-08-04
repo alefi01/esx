@@ -9,6 +9,7 @@ using Portal.Web.Configuration;
 using Portal.Web.Security;
 using Portal.Web.Services;
 using Portal.Web.Services.ActiveDirectory;
+using Portal.Web.Services.Notifications;
 using Portal.Web.Services.Offices;
 
 namespace Portal.Web.Pages.Account;
@@ -27,6 +28,7 @@ public class LoginModel : PageModel
     private readonly IOfficeResolver _offices;
     private readonly LoginThrottle _throttle;
     private readonly ActiveDirectoryOptions _adOptions;
+    private readonly NotificationService _notifications;
     private readonly ILogger<LoginModel> _logger;
 
     public LoginModel(
@@ -34,12 +36,14 @@ public class LoginModel : PageModel
         IOfficeResolver offices,
         LoginThrottle throttle,
         IOptions<ActiveDirectoryOptions> adOptions,
+        NotificationService notifications,
         ILogger<LoginModel> logger)
     {
         _authentication = authentication;
         _offices = offices;
         _throttle = throttle;
         _adOptions = adOptions.Value;
+        _notifications = notifications;
         _logger = logger;
     }
 
@@ -180,6 +184,22 @@ public class LoginModel : PageModel
         _throttle.RegisterSuccess(throttleKey);
 
         await SignInAsync(user, office, result.DomainController);
+
+        // Запоминаем, как показывать этого человека. Пригодится в переписках,
+        // если контроллер домена окажется недоступен: список собеседников
+        // тогда собирается из тех, кто уже входил в портал.
+        //
+        // Ошибку глотаем намеренно: недоступная база не должна мешать войти
+        // в портал — файлы и раздел диагностики работают и без неё.
+        try
+        {
+            await _notifications.RememberUserAsync(
+                user.SamAccountName, user.DisplayName, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Не удалось запомнить имя пользователя {User}.", user.SamAccountName);
+        }
 
         _logger.LogInformation(
             "Пользователь {User} вошёл с {Ip} (офис: {Office}).",

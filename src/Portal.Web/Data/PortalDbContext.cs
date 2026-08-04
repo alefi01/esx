@@ -26,6 +26,11 @@ public class PortalDbContext : DbContext
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<UserSeenState> SeenStates => Set<UserSeenState>();
 
+    public DbSet<Conversation> Conversations => Set<Conversation>();
+    public DbSet<ConversationParticipant> Participants => Set<ConversationParticipant>();
+    public DbSet<Message> Messages => Set<Message>();
+    public DbSet<MessageFile> MessageFiles => Set<MessageFile>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -110,6 +115,61 @@ public class PortalDbContext : DbContext
             // означали бы, что счётчик непрочитанного зависит от того,
             // какая из них попалась первой.
             entity.HasIndex(s => s.UserName).IsUnique();
+        });
+
+        modelBuilder.Entity<Conversation>(entity =>
+        {
+            // Список бесед всегда сортируется по времени последнего сообщения.
+            entity.HasIndex(c => c.LastMessageAt);
+
+            // Одна пара — одна переписка. Индекс частичный: у групп ключ пары
+            // пуст, и без условия все группы конфликтовали бы друг с другом
+            // одной и той же пустой строкой.
+            entity.HasIndex(c => c.PairKey)
+                .IsUnique()
+                .HasFilter("\"PairKey\" <> ''")
+                .HasDatabaseName("IX_Conversations_PairKey");
+        });
+
+        modelBuilder.Entity<ConversationParticipant>(entity =>
+        {
+            entity.HasOne(p => p.Conversation)
+                .WithMany(c => c.Participants)
+                .HasForeignKey(p => p.ConversationId)
+                // Участники — часть беседы, отдельно от неё не нужны.
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Один человек в беседе ровно один раз.
+            entity.HasIndex(p => new { p.ConversationId, p.UserName }).IsUnique();
+
+            // Основной запрос: «покажи мои беседы».
+            entity.HasIndex(p => p.UserName);
+        });
+
+        modelBuilder.Entity<Message>(entity =>
+        {
+            entity.HasOne(m => m.Conversation)
+                .WithMany(c => c.Messages)
+                .HasForeignKey(m => m.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // «Покажи сообщения беседы по порядку» и «есть ли новее такого-то».
+            entity.HasIndex(m => new { m.ConversationId, m.Id });
+
+            // Фоновая уборка вложений ищет по дате.
+            entity.HasIndex(m => m.CreatedAt);
+
+            entity.Ignore(m => m.IsDeleted);
+        });
+
+        modelBuilder.Entity<MessageFile>(entity =>
+        {
+            entity.HasOne(f => f.Message)
+                .WithMany(m => m.Files)
+                .HasForeignKey(f => f.MessageId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(f => f.PurgedAt);
         });
 
         modelBuilder.Entity<AuditEntry>(entity =>

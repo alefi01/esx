@@ -42,6 +42,7 @@
         <a class="@NavClass("/")" asp-page="/Index">Главная</a>
         <a class="@NavClass("/Announcements")" asp-page="/Announcements/Index">Объявления</a>
         <a class="@NavClass("/Files")" asp-page="/Files/Index">Файлы</a>
+        <a class="@NavClass("/Messages")" asp-page="/Messages/Index">Переписки</a>
         @if (User.IsInRole(adminGroup))
         {
             <a class="@NavClass("/Admin/Audit")" asp-page="/Admin/Audit">Журнал</a>
@@ -95,7 +96,7 @@
 </main>
 
 <footer class="footer">
-    Корпоративный портал · этап 3 (файловое хранилище)
+    Корпоративный портал · этап 5 (переписки)
 </footer>
 
 @* Окно подтверждения: используется вместо системного окна браузера,
