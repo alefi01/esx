@@ -1399,6 +1399,53 @@ body.has-preview .footer {
     animation: spin .7s linear infinite;
 }
 
+/* Ожидание загрузки файла в панели предпросмотра. */
+.preview__loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    height: 100%;
+    padding: 24px;
+    color: var(--c-text-muted);
+    font-size: 14px;
+    text-align: center;
+}
+
+.preview__loading p { margin: 0; }
+
+/*
+ * Бегущая полоска. Сколько осталось, мы не знаем: файл идёт от сервера,
+ * и доля загруженного браузером наружу не отдаётся. Поэтому полоска
+ * не показывает проценты, а просто движется — её задача сказать
+ * «идёт работа», а не «осталось столько-то».
+ */
+.preview__bar {
+    position: relative;
+    width: min(220px, 60%);
+    height: 4px;
+    background: var(--c-surface);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.preview__bar span {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 40%;
+    background: var(--c-accent);
+    border-radius: 999px;
+    animation: slide-through 1.2s var(--ease) infinite;
+}
+
+/* Подробность ошибки: код ответа или причина. Мелко и приглушённо —
+   человеку это не нужно, а тому, кто разбирается с жалобой, необходимо. */
+.preview__detail { font-size: 12.5px; opacity: .75; }
+
+.preview__actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 6px; }
+
 /* ---------- Колокольчик ---------- */
 
 .bell { position: relative; }
@@ -1591,6 +1638,11 @@ body.has-preview .footer {
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes slide-through {
+    from { left: -40%; }
+    to { left: 100%; }
+}
 
 @keyframes pop {
     from { transform: scale(.4); opacity: 0; }

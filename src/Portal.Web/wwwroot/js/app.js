@@ -397,7 +397,13 @@
 
         let currentId = null;
 
-        function note(text, icon) {
+        // Сколько ждём ответа, прежде чем признать, что связи нет.
+        // На канале между офисами ответ может идти долго, поэтому
+        // срок щедрый — но не бесконечный: висящее «Загрузка…»
+        // хуже честного «не дождались».
+        const WAIT_MS = 45000;
+
+        function note(text, icon, extra) {
             body.innerHTML = '';
 
             const box = document.createElement('div');
@@ -416,16 +422,155 @@
             paragraph.textContent = text;
             box.appendChild(paragraph);
 
+            // Подробность мелким шрифтом: код ответа или причина.
+            // Без неё разбираться с жалобой «не открывается» приходится
+            // вслепую, а с ней сразу видно, дошёл ли запрос до сервера.
+            if (extra) {
+                const detail = document.createElement('p');
+                detail.className = 'preview__detail';
+                detail.textContent = extra;
+                box.appendChild(detail);
+            }
+
             body.appendChild(box);
 
             return box;
         }
 
-        function spinner() {
-            const box = note('Загрузка…');
+        /**
+         * Ошибка показа. Кроме объяснения даёт две кнопки: скачать
+         * и открыть в отдельной вкладке — вторая часто срабатывает там,
+         * где встроенное окно просмотра запрещено настройками браузера.
+         */
+        function failure(text, detail, file) {
+            const box = note(text, 'i-warning', detail);
+
+            const actions = document.createElement('div');
+            actions.className = 'preview__actions';
+
+            const download = document.createElement('a');
+            download.className = 'btn';
+            download.href = file.downloadUrl;
+            download.setAttribute('download', '');
+            download.textContent = 'Скачать файл';
+
+            const open = document.createElement('a');
+            open.className = 'btn btn--quiet';
+            open.href = '/Files?handler=Preview&fileId=' + file.id;
+            open.target = '_blank';
+            open.rel = 'noopener';
+            open.textContent = 'Открыть в новой вкладке';
+
+            actions.appendChild(download);
+            actions.appendChild(open);
+            box.appendChild(actions);
+        }
+
+        /**
+         * Полоска ожидания. Показывается для ЛЮБОГО вида файла, в том числе
+         * для картинок и PDF: раньше они просто вставлялись в панель, и пока
+         * файл шёл по сети, человек видел пустое белое место и решал,
+         * что портал сломался.
+         */
+        function loading(name) {
+            body.innerHTML = '';
+
+            const box = document.createElement('div');
+            box.className = 'preview__loading';
+
             const dial = document.createElement('div');
             dial.className = 'preview__spinner';
-            box.insertBefore(dial, box.firstChild);
+
+            const caption = document.createElement('p');
+            caption.textContent = 'Загружается ' + (name || 'файл') + '…';
+
+            const bar = document.createElement('div');
+            bar.className = 'preview__bar';
+            bar.appendChild(document.createElement('span'));
+
+            box.appendChild(dial);
+            box.appendChild(caption);
+            box.appendChild(bar);
+
+            body.appendChild(box);
+
+            return box;
+        }
+
+        /** Убирает полоску ожидания, не трогая остальное содержимое панели. */
+        function doneLoading() {
+            const box = $('.preview__loading', body);
+
+            if (box) {
+                box.remove();
+            }
+        }
+
+        /**
+         * Человеческое объяснение неудачного запроса.
+         * Отдельной функцией, потому что причин ровно три, и путать их нельзя:
+         * «сервер отказал», «сервера не слышно» и «ждали слишком долго».
+         */
+        function describeFailure(reason) {
+            if (reason === 'timeout') {
+                return 'ответ не пришёл за ' + Math.round(WAIT_MS / 1000) + ' с';
+            }
+
+            if (typeof reason === 'number') {
+                if (reason === 401 || reason === 403) {
+                    return 'сервер ответил «нет доступа» (код ' + reason + '); попробуйте войти заново';
+                }
+
+                if (reason === 404) {
+                    return 'сервер ответил «файл не найден» (код 404)';
+                }
+
+                return 'сервер ответил кодом ' + reason;
+            }
+
+            return 'связь с сервером прервалась';
+        }
+
+        /**
+         * Запрос к порталу с ограничением по времени.
+         *
+         * credentials указан явно: в старых сборках браузеров fetch
+         * по умолчанию НЕ отправлял cookie, и запрос уходил как от гостя —
+         * сервер отвечал перенаправлением на вход, а человек видел
+         * невнятную ошибку.
+         */
+        function request(url) {
+            const controller = typeof AbortController === 'function' ? new AbortController() : null;
+            let timedOut = false;
+
+            const timer = setTimeout(() => {
+                timedOut = true;
+
+                if (controller) {
+                    controller.abort();
+                }
+            }, WAIT_MS);
+
+            const options = {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            };
+
+            if (controller) {
+                options.signal = controller.signal;
+            }
+
+            return fetch(url, options)
+                .then(response => {
+                    clearTimeout(timer);
+
+                    return response.ok ? response : Promise.reject(response.status);
+                })
+                .catch(error => {
+                    clearTimeout(timer);
+
+                    return Promise.reject(timedOut ? 'timeout' : (typeof error === 'number' ? error : null));
+                });
         }
 
         return {
@@ -455,71 +600,129 @@
 
                 const source = '/Files?handler=Preview&fileId=' + file.id;
 
-                if (file.kind === 'image') {
-                    body.innerHTML = '';
+                loading(file.name);
 
+                if (file.kind === 'image') {
                     const image = document.createElement('img');
                     image.alt = file.name;
-                    image.src = source;
-                    image.addEventListener('error', () => note('Не удалось показать изображение.', 'i-warning'));
 
-                    body.appendChild(image);
+                    image.addEventListener('load', () => {
+                        if (currentId !== file.id) {
+                            return;
+                        }
+
+                        doneLoading();
+                        body.appendChild(image);
+                    });
+
+                    image.addEventListener('error', () => {
+                        if (currentId === file.id) {
+                            failure('Не удалось показать изображение.',
+                                'файл не дошёл или повреждён', file);
+                        }
+                    });
+
+                    image.src = source;
                     return;
                 }
 
                 if (file.kind === 'pdf') {
-                    body.innerHTML = '';
-
+                    // PDF показывает сам браузер. Это удобно, но и уязвимо:
+                    // встроенный просмотрщик можно отключить групповой
+                    // политикой, и тогда окно остаётся пустым БЕЗ ошибки.
+                    // Поэтому ждём события «загрузилось», а если его нет —
+                    // предлагаем открыть файл отдельно.
                     const frame = document.createElement('iframe');
                     frame.title = file.name;
-                    frame.src = source;
+                    frame.hidden = true;
 
+                    let shown = false;
+
+                    const giveUp = setTimeout(() => {
+                        if (!shown && currentId === file.id) {
+                            failure(
+                                'Не удалось показать PDF во встроенном окне.',
+                                'возможно, просмотр PDF отключён настройками браузера',
+                                file);
+                        }
+                    }, WAIT_MS);
+
+                    frame.addEventListener('load', () => {
+                        shown = true;
+                        clearTimeout(giveUp);
+
+                        if (currentId === file.id) {
+                            doneLoading();
+                            frame.hidden = false;
+                        }
+                    });
+
+                    frame.addEventListener('error', () => {
+                        clearTimeout(giveUp);
+
+                        if (currentId === file.id) {
+                            failure('Не удалось показать PDF.', 'браузер отказался открыть файл', file);
+                        }
+                    });
+
+                    // Адрес задаём ДО вставки в страницу.
+                    //
+                    // Пустой iframe, попав в разметку, сразу выдаёт событие
+                    // «загрузилось» — про пустую страницу about:blank. Если
+                    // вставить его первым, а адрес прописать вторым, наш
+                    // обработчик срабатывает на это пустое событие: полоска
+                    // ожидания исчезает, окно показывается — и человек видит
+                    // белый прямоугольник вместо документа.
+                    frame.src = source;
                     body.appendChild(frame);
                     return;
                 }
 
                 if (file.kind === 'office') {
-                    spinner();
-
                     // Сервер присылает не файл, а уже разобранное содержимое.
                     // Вставляем как разметку осознанно: составлял её портал,
                     // весь текст документа в ней закодирован (см. OfficeDocuments),
                     // а исполнить что-либо вставленное таким способом браузер
                     // не даст — код со страницы запрещён её политикой безопасности.
-                    fetch('/Files?handler=OfficePreview&fileId=' + file.id,
-                        { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-                        .then(response => (response.ok ? response.text() : Promise.reject(response.status)))
+                    request('/Files?handler=OfficePreview&fileId=' + file.id)
+                        .then(response => response.text())
                         .then(markup => {
                             if (currentId !== file.id) {
                                 return;
                             }
 
-                            body.innerHTML = markup;
+                            doneLoading();
+
+                            const holder = document.createElement('div');
+                            holder.innerHTML = markup;
+                            body.appendChild(holder);
                         })
-                        .catch(() => note(
-                            'Не удалось разобрать документ. Скачайте файл и откройте его в своей программе.',
-                            'i-warning'));
+                        .catch(reason => {
+                            if (currentId === file.id) {
+                                failure('Не удалось получить содержимое документа.',
+                                    describeFailure(reason), file);
+                            }
+                        });
 
                     return;
                 }
 
                 if (file.kind === 'text') {
                     if (maxTextBytes > 0 && file.size > maxTextBytes) {
-                        note('Файл слишком большой для просмотра — откройте его после скачивания.', 'i-warning');
+                        note('Файл слишком большой для просмотра — откройте его после скачивания.',
+                            'i-warning');
                         return;
                     }
 
-                    spinner();
-
-                    fetch(source, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-                        .then(response => (response.ok ? response.text() : Promise.reject(response.status)))
+                    request(source)
+                        .then(response => response.text())
                         .then(text => {
                             // Только если за время загрузки не открыли другой файл.
                             if (currentId !== file.id) {
                                 return;
                             }
 
-                            body.innerHTML = '';
+                            doneLoading();
 
                             const block = document.createElement('pre');
                             // textContent, а не innerHTML: содержимое файла —
@@ -528,14 +731,18 @@
 
                             body.appendChild(block);
                         })
-                        .catch(() => note('Не удалось прочитать файл.', 'i-warning'));
+                        .catch(reason => {
+                            if (currentId === file.id) {
+                                failure('Не удалось прочитать файл.', describeFailure(reason), file);
+                            }
+                        });
 
                     return;
                 }
 
-                // Всё остальное — Word, Excel, архивы и прочее. Браузер такое
-                // не показывает: для этого нужен отдельный преобразователь
-                // на сервере (см. документацию, раздел про предпросмотр).
+                // Всё остальное — архивы, чертежи и прочее. Браузер такое
+                // не показывает, а разобрать сами мы умеем только документы
+                // Office (см. OfficeDocuments).
                 note(
                     'Такой файл браузер показать не умеет. Нажмите «Скачать» вверху панели, ' +
                     'и файл откроется в своей программе.',

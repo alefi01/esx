@@ -80,6 +80,51 @@ public class PreviewAndRenameTests
         Assert.Equal("inline", response.Content.Headers.ContentDisposition?.DispositionType);
     }
 
+    /// <summary>
+    /// Общая политика безопасности не должна глушить встроенный
+    /// просмотрщик PDF.
+    ///
+    /// На весь портал стоит object-src 'none' — запрет встраиваемых объектов.
+    /// Для страниц это правильно, но тот же заголовок вешался и на сам файл,
+    /// а просмотрщик PDF в Edge и Chrome — как раз объект-плагин. В части
+    /// версий браузера он от этого молча переставал работать: окно
+    /// предпросмотра оставалось пустым белым, без единой ошибки.
+    /// </summary>
+    [Fact]
+    public async Task Ответ_с_файлом_не_запрещает_встраиваемые_объекты()
+    {
+        var (factory, _) = Prepare("инструкция.pdf");
+        using var _factory = factory;
+
+        var client = await factory.LoginAsAsync("ivanov", Users, Admins);
+
+        var response = await client.GetAsync("/Files?handler=Preview&fileId=1");
+
+        var policy = string.Join(" ", response.Headers.GetValues("Content-Security-Policy"));
+
+        Assert.DoesNotContain("object-src", policy);
+
+        // Защита от встраивания портала на чужих сайтах при этом остаётся.
+        Assert.Contains("frame-ancestors 'self'", policy);
+    }
+
+    [Fact]
+    public async Task Страницы_портала_по_прежнему_запрещают_встраиваемые_объекты()
+    {
+        // Послабление выше касается только отдачи файла. На самих страницах
+        // запрет должен остаться — иначе смысл политики теряется.
+        var (factory, _) = Prepare("отчёт.txt");
+        using var _factory = factory;
+
+        var client = await factory.LoginAsAsync("ivanov", Users, Admins);
+
+        var response = await client.GetAsync("/Files");
+
+        var policy = string.Join(" ", response.Headers.GetValues("Content-Security-Policy"));
+
+        Assert.Contains("object-src 'none'", policy);
+    }
+
     [Theory]
     [InlineData("рисунок.svg")]      // картинка, но внутри может быть код
     [InlineData("страница.html")]
