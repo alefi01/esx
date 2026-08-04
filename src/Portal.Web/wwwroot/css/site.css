@@ -1012,6 +1012,61 @@ body.has-preview .footer {
     color: var(--c-text);
 }
 
+/* Разобранный документ Word, Excel или PowerPoint внутри панели.
+   Не пытаемся повторить вид документа — задача в том, чтобы содержимое
+   читалось: поля, нормальные отступы, видимая сетка таблиц. */
+.doc {
+    padding: 18px 20px;
+    background: var(--c-surface);
+    color: var(--c-text);
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.doc p { margin: 0 0 10px; }
+.doc__list { margin: 0 0 10px; padding-left: 22px; }
+.doc__list li { margin-bottom: 4px; }
+
+.doc__h { font-weight: 650; line-height: 1.3; margin: 18px 0 8px; }
+.doc__h:first-child { margin-top: 0; }
+.doc__h1 { font-size: 20px; }
+.doc__h2 { font-size: 17px; }
+.doc__h3 { font-size: 15px; }
+.doc__h4, .doc__h5, .doc__h6 { font-size: 14px; color: var(--c-text-muted); }
+
+.doc__table {
+    width: 100%;
+    margin: 0 0 14px;
+    border-collapse: collapse;
+    font-size: 13px;
+    /* Широкую таблицу лучше прокрутить, чем сжать до нечитаемости. */
+    display: block;
+    overflow-x: auto;
+}
+
+.doc__table td {
+    padding: 5px 8px;
+    border: 1px solid var(--c-border);
+    vertical-align: top;
+    white-space: pre-wrap;
+}
+
+/* Листы книги Excel и слайды презентации — каждый своим блоком. */
+.doc__sheet, .doc__slide { margin-bottom: 22px; }
+
+.doc__sheetname, .doc__slidenum {
+    margin-bottom: 8px;
+    font-size: 12px;
+    font-weight: 620;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    color: var(--c-text-muted);
+}
+
+.doc__slide { padding-left: 12px; border-left: 2px solid var(--c-border); }
+
+.doc__note { color: var(--c-text-muted); font-style: italic; }
+
 /* Сообщение «показать нельзя» и полоска ожидания внутри панели. */
 .preview__note {
     display: flex;

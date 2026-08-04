@@ -70,30 +70,11 @@ public sealed class FileStorage
     }
 
     /// <summary>
-    /// Копирует файл в другую папку и возвращает новое имя на диске.
-    /// Нужен для «копировать — вставить»: копия должна быть независимой,
-    /// иначе правка или удаление одного файла задели бы второй.
-    /// </summary>
-    public string Copy(int fromFolderId, int toFolderId, string storageName)
-    {
-        EnsureConfigured();
-
-        var targetDirectory = DirectoryFor(toFolderId);
-        Directory.CreateDirectory(targetDirectory);
-
-        var newName = Guid.NewGuid().ToString("N");
-
-        File.Copy(PathFor(fromFolderId, storageName), Path.Combine(targetDirectory, newName));
-
-        return newName;
-    }
-
-    /// <summary>
     /// Переносит файл в другую папку, имя на диске сохраняется.
     ///
     /// В пределах одного тома это операция мгновенная — данные не переписываются,
     /// меняется только запись в каталоге файловой системы. Поэтому перемещение
-    /// большого файла между папками портала происходит сразу, в отличие от копирования.
+    /// большого файла между папками портала происходит сразу.
     /// </summary>
     public void Move(int fromFolderId, int toFolderId, string storageName)
     {

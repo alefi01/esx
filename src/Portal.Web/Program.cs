@@ -60,10 +60,16 @@ var storageOptions = builder.Configuration
 // Там ограничение самого IIS, и оно срабатывает РАНЬШЕ приложения:
 // если его не поднять, крупный файл оборвётся с невнятной ошибкой 404.13
 // и никакого понятного сообщения пользователь не увидит.
+//
+// Storage:AbsoluteMaxFileSizeMb = 0 означает «без ограничения». Тогда всем
+// трём местам говорим «предела нет» (значение null), и остаётся только
+// ограничение IIS из web.config плюс место на диске.
 // ---------------------------------------------------------------------------
 
-var maxRequestBytes = (long)storageOptions.AbsoluteMaxFileSizeMb * 1024 * 1024
-                      + 4 * 1024 * 1024;   // запас на служебные части multipart-запроса
+long? maxRequestBytes = storageOptions.FileSizeUnlimited
+    ? null
+    : (long)storageOptions.AbsoluteMaxFileSizeMb * 1024 * 1024
+      + 4 * 1024 * 1024;   // запас на служебные части multipart-запроса
 
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = maxRequestBytes);
 
@@ -71,7 +77,9 @@ builder.Services.Configure<IISServerOptions>(options => options.MaxRequestBodySi
 
 builder.Services.Configure<FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = maxRequestBytes;
+    // У формы предел задаётся числом, «нет предела» здесь выражается
+    // наибольшим возможным значением.
+    options.MultipartBodyLengthLimit = maxRequestBytes ?? long.MaxValue;
 
     // Загружать можно несколько файлов сразу; предел по умолчанию (128 полей)
     // при массовой загрузке легко упереться.

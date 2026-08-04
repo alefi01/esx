@@ -47,14 +47,21 @@
 
         <div class="field">
             <label asp-for="Input.MaxFileSizeMb">Предел размера одного файла, МБ</label>
-            <input asp-for="Input.MaxFileSizeMb" type="number" min="1" max="@Model.AbsoluteMaxMb"
+            <input asp-for="Input.MaxFileSizeMb" type="number" min="0"
                    placeholder="не задано — как у родителя" />
             <span asp-validation-for="Input.MaxFileSizeMb" class="field-error"></span>
             <p class="hint">
                 Пусто — берётся значение родительской папки, а если и там пусто —
                 общее по умолчанию (@Model.DefaultMaxMb МБ).
-                Сейчас действует: <strong>@Model.FormatSize(Model.EffectiveMaxFileSize)</strong>.
-                Верхний предел для всего портала — @Model.AbsoluteMaxMb МБ.
+                <strong>0 — без ограничения.</strong>
+                Сейчас действует:
+                <strong>
+                    @(Model.EffectiveMaxFileSize > 0
+                        ? Model.FormatSize(Model.EffectiveMaxFileSize)
+                        : "без ограничения")
+                </strong>.
+                Верхний предел для всего портала —
+                @(Model.AbsoluteMaxMb > 0 ? $"{Model.AbsoluteMaxMb} МБ" : "не задан").
             </p>
         </div>
 

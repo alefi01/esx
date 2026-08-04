@@ -177,13 +177,33 @@ public sealed class FolderTree
         string.Join(" / ", PathTo(folder).Select(f => f.Name));
 
     /// <summary>
-    /// Действующий предел размера одного файла, байты.
+    /// Действующий предел размера одного файла, байты. <b>0 — без ограничения.</b>
+    ///
     /// Ищется у самой папки, затем у родителей, и в конце берётся
-    /// общее значение по умолчанию из конфигурации.
+    /// общее значение по умолчанию из конфигурации. Поверх всего действует
+    /// потолок портала (Storage:AbsoluteMaxFileSizeMb): папке нельзя разрешить
+    /// больше, чем принимает сам сервер, — иначе загрузка обрывалась бы
+    /// на полпути без внятного объяснения.
     /// </summary>
-    public long EffectiveMaxFileSizeBytes(StorageFolder folder) =>
-        (long)(EffectiveSetting<int>(folder, f => f.MaxFileSizeMb, _storage.DefaultMaxFileSizeMb)
-               ?? _storage.DefaultMaxFileSizeMb) * 1024 * 1024;
+    public long EffectiveMaxFileSizeBytes(StorageFolder folder)
+    {
+        var portalCap = _storage.FileSizeUnlimited
+            ? 0
+            : (long)_storage.AbsoluteMaxFileSizeMb * 1024 * 1024;
+
+        var megabytes = EffectiveSetting<int>(folder, f => f.MaxFileSizeMb, _storage.DefaultMaxFileSizeMb)
+                        ?? _storage.DefaultMaxFileSizeMb;
+
+        // У папки предел снят — остаётся только потолок портала.
+        if (megabytes <= 0)
+        {
+            return portalCap;
+        }
+
+        var bytes = (long)megabytes * 1024 * 1024;
+
+        return portalCap > 0 && bytes > portalCap ? portalCap : bytes;
+    }
 
     /// <summary>Действующая квота на объём папки, байты. null — квоты нет.</summary>
     public long? EffectiveQuotaBytes(StorageFolder folder)

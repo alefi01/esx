@@ -286,25 +286,15 @@ public class IndexModel : PageModel
     }
 
     /// <summary>
-    /// Копирование файлов в другую папку — то, что происходит по Ctrl+V
-    /// после Ctrl+C. Права проверяются с ОБЕИХ сторон: читать исходную папку
-    /// и писать в целевую.
+    /// Перемещение файлов в другую папку — перетаскивание плитки на папку.
+    ///
+    /// Права проверяются с ОБЕИХ сторон: убрать файл из исходной папки
+    /// и положить его в целевую. Копирования между папками портала нет:
+    /// оно было завязано на собственный буфер обмена, который путали
+    /// с буфером обмена Windows, и убрано вместе с ним.
     /// </summary>
-    public async Task<IActionResult> OnPostCopyAsync(
-        int targetFolderId, int[] fileIds, CancellationToken cancellationToken)
-    {
-        return await CopyOrMoveAsync(targetFolderId, fileIds, move: false, cancellationToken);
-    }
-
-    /// <summary>Перемещение файлов — Ctrl+X, Ctrl+V либо перетаскивание на папку.</summary>
     public async Task<IActionResult> OnPostMoveAsync(
         int targetFolderId, int[] fileIds, CancellationToken cancellationToken)
-    {
-        return await CopyOrMoveAsync(targetFolderId, fileIds, move: true, cancellationToken);
-    }
-
-    private async Task<IActionResult> CopyOrMoveAsync(
-        int targetFolderId, int[] fileIds, bool move, CancellationToken cancellationToken)
     {
         var redirect = await LoadAsync(targetFolderId, cancellationToken);
 
@@ -330,7 +320,7 @@ public class IndexModel : PageModel
         {
             if (file.FolderId == targetFolderId)
             {
-                // Вставка в ту же папку, откуда копировали, — ничего не делаем.
+                // Файл бросили на ту же папку, где он и лежит, — делать нечего.
                 continue;
             }
 
@@ -344,19 +334,16 @@ public class IndexModel : PageModel
 
             // Перемещение — это ещё и удаление из исходной папки,
             // поэтому прав на чтение мало: нужно управление либо своё авторство.
-            if (move)
-            {
-                var isOwner = string.Equals(
-                    file.UploadedByUserName, User.Identity?.Name, StringComparison.OrdinalIgnoreCase);
+            var isOwner = string.Equals(
+                file.UploadedByUserName, User.Identity?.Name, StringComparison.OrdinalIgnoreCase);
 
-                if (!_tree.CanManage(User, source) && !(isOwner && _tree.CanWrite(User, source)))
-                {
-                    problems.Add($"«{file.OriginalName}» — нет прав убрать файл из исходной папки");
-                    continue;
-                }
+            if (!_tree.CanManage(User, source) && !(isOwner && _tree.CanWrite(User, source)))
+            {
+                problems.Add($"«{file.OriginalName}» — нет прав убрать файл из исходной папки");
+                continue;
             }
 
-            // Ограничения целевой папки действуют и здесь: иначе через копирование
+            // Ограничения целевой папки действуют и здесь: иначе перетаскиванием
             // можно было бы обойти и предел размера, и квоту, и запрет расширений.
             var rejection = _validator.Validate(
                 file.OriginalName, file.SizeBytes, MaxFileSizeBytes, QuotaBytes, used);
@@ -369,40 +356,16 @@ public class IndexModel : PageModel
 
             try
             {
-                if (move)
-                {
-                    _storage.Move(file.FolderId, targetFolderId, file.StorageName);
+                _storage.Move(file.FolderId, targetFolderId, file.StorageName);
 
-                    _audit.Add(AuditAction.Move, file.OriginalName,
-                        $"из «{_tree.DisplayPath(source)}» в «{_tree.DisplayPath(Current)}»");
+                _audit.Add(AuditAction.Move, file.OriginalName,
+                    $"из «{_tree.DisplayPath(source)}» в «{_tree.DisplayPath(Current)}»");
 
-                    file.FolderId = targetFolderId;
-                }
-                else
-                {
-                    var newStorageName = _storage.Copy(file.FolderId, targetFolderId, file.StorageName);
-
-                    _db.Files.Add(new StoredFile
-                    {
-                        FolderId = targetFolderId,
-                        OriginalName = file.OriginalName,
-                        StorageName = newStorageName,
-                        SizeBytes = file.SizeBytes,
-                        ContentType = file.ContentType,
-                        UploadedAt = _time.GetUtcNow().UtcDateTime,
-                        UploadedByUserName = User.Identity?.Name ?? "",
-                        UploadedByDisplayName =
-                            User.FindFirstValue(ClaimTypes.GivenName) ?? User.Identity?.Name ?? ""
-                    });
-
-                    _audit.Add(AuditAction.Copy, file.OriginalName,
-                        $"из «{_tree.DisplayPath(source)}» в «{_tree.DisplayPath(Current)}»");
-                }
+                file.FolderId = targetFolderId;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Не удалось {Operation} файл {File}.",
-                    move ? "переместить" : "скопировать", file.OriginalName);
+                _logger.LogError(ex, "Не удалось переместить файл {File}.", file.OriginalName);
 
                 problems.Add($"«{file.OriginalName}» — ошибка при работе с диском");
                 continue;
@@ -416,9 +379,7 @@ public class IndexModel : PageModel
         {
             await _db.SaveChangesAsync(cancellationToken);
 
-            StatusMessage = move
-                ? $"Перемещено файлов: {done}."
-                : $"Скопировано файлов: {done}.";
+            StatusMessage = $"Перемещено файлов: {done}.";
         }
 
         if (problems.Count > 0)
@@ -836,6 +797,68 @@ public class IndexModel : PageModel
         return new FileStreamResult(stream, contentType) { EnableRangeProcessing = true };
     }
 
+    /// <summary>
+    /// Предпросмотр документа Office: Word, Excel, PowerPoint.
+    ///
+    /// Отдаём НЕ файл, а разобранное из него содержимое — кусок разметки.
+    /// Разбором занимается OfficeDocuments; там же объяснено, почему это
+    /// вообще возможно без сторонних программ.
+    ///
+    /// Такой путь заодно безопаснее прямой отдачи файла: браузер никогда
+    /// не видит исходный документ и не пытается ничего с ним сделать,
+    /// а весь текст из документа мы кодируем при выводе.
+    /// </summary>
+    public async Task<IActionResult> OnGetOfficePreviewAsync(int fileId, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        var file = await _db.Files.FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken);
+
+        if (file is null || file.DeletedAt is not null)
+        {
+            return NotFound();
+        }
+
+        var folder = _tree.Get(file.FolderId);
+
+        if (folder is null || !_tree.CanRead(User, folder))
+        {
+            return NotFound();
+        }
+
+        if (!OfficeDocuments.IsSupported(file.OriginalName)
+            || !_storage.Exists(file.FolderId, file.StorageName))
+        {
+            return NotFound();
+        }
+
+        string html;
+
+        try
+        {
+            await using var stream = _storage.OpenRead(file.FolderId, file.StorageName);
+
+            html = OfficeDocuments.ToHtml(stream, file.OriginalName);
+        }
+        catch (Exception ex)
+        {
+            // Испорченный или необычный файл не должен ронять страницу.
+            // Пишем в журнал приложения и показываем человеку понятную строку.
+            _logger.LogWarning(ex, "Не удалось разобрать документ {File} для предпросмотра.", file.OriginalName);
+
+            return Content(
+                "<div class=\"doc\"><p class=\"doc__note\">Не удалось разобрать документ. " +
+                "Скачайте файл и откройте его в своей программе.</p></div>",
+                "text/html; charset=utf-8");
+        }
+
+        await _audit.WriteAsync(
+            AuditAction.Preview, file.OriginalName,
+            $"папка «{_tree.DisplayPath(folder)}», разбор документа", cancellationToken);
+
+        return Content(html, "text/html; charset=utf-8");
+    }
+
     /// <summary>Сведения о файле или папке для окна «Свойства».</summary>
     public async Task<IActionResult> OnGetPropertiesAsync(
         int? fileId, int? folderId, CancellationToken cancellationToken)
@@ -1128,6 +1151,7 @@ public class IndexModel : PageModel
         PreviewKind.Image => "image",
         PreviewKind.Pdf => "pdf",
         PreviewKind.Text => "text",
+        PreviewKind.Office => "office",
         _ => ""
     };
 

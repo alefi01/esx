@@ -109,7 +109,14 @@
         @if (Model.Current is not null && Model.Access >= FolderAccess.Read)
         {
             <div class="toolbar__meta">
-                <span>Предел файла: <strong>@Model.FormatSize(Model.MaxFileSizeBytes)</strong></span>
+                <span>
+                    Предел файла:
+                    <strong>
+                        @(Model.MaxFileSizeBytes > 0
+                            ? Model.FormatSize(Model.MaxFileSizeBytes)
+                            : "без ограничения")
+                    </strong>
+                </span>
 
                 @if (Model.QuotaBytes is { } quota)
                 {
@@ -385,8 +392,6 @@
 @* ---------- Скрытые формы для действий из меню и с клавиатуры ---------- *@
 <form method="post" asp-page-handler="DeleteFiles" asp-route-folderId="@Model.Current?.Id"
       data-form="delete-files" hidden></form>
-
-<form method="post" asp-page-handler="Copy" data-form="copy" hidden></form>
 
 <form method="post" asp-page-handler="Move" data-form="move" hidden></form>
 

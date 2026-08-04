@@ -57,44 +57,6 @@
         return field ? field.value : '';
     }
 
-    /**
-     * Кладёт строку в буфер обмена Windows.
-     *
-     * Основной способ (navigator.clipboard) работает только на защищённом
-     * соединении — по HTTPS или на localhost. Портал пока работает по HTTP,
-     * поэтому там его просто нет, и нужен запасной путь: невидимое поле
-     * ввода и старая команда copy. Способ древний, но работает везде.
-     * После перехода на HTTPS сработает первый вариант, менять ничего не надо.
-     */
-    function copyText(text) {
-        if (navigator.clipboard && window.isSecureContext) {
-            return navigator.clipboard.writeText(text);
-        }
-
-        return new Promise((resolve, reject) => {
-            const field = document.createElement('textarea');
-            field.value = text;
-            // Уводим поле за экран, но не через display: none —
-            // у скрытого элемента нельзя выделить содержимое.
-            field.style.position = 'fixed';
-            field.style.left = '-9999px';
-            document.body.appendChild(field);
-            field.select();
-
-            let ok = false;
-
-            try {
-                ok = document.execCommand('copy');
-            } catch (error) {
-                ok = false;
-            }
-
-            field.remove();
-
-            return ok ? resolve() : reject(new Error('копирование недоступно'));
-        });
-    }
-
     /** Отправляет скрытую форму, добавив в неё нужные поля. */
     function submitForm(form, fields) {
         if (!form) {
@@ -515,6 +477,31 @@
                     return;
                 }
 
+                if (file.kind === 'office') {
+                    spinner();
+
+                    // Сервер присылает не файл, а уже разобранное содержимое.
+                    // Вставляем как разметку осознанно: составлял её портал,
+                    // весь текст документа в ней закодирован (см. OfficeDocuments),
+                    // а исполнить что-либо вставленное таким способом браузер
+                    // не даст — код со страницы запрещён её политикой безопасности.
+                    fetch('/Files?handler=OfficePreview&fileId=' + file.id,
+                        { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                        .then(response => (response.ok ? response.text() : Promise.reject(response.status)))
+                        .then(markup => {
+                            if (currentId !== file.id) {
+                                return;
+                            }
+
+                            body.innerHTML = markup;
+                        })
+                        .catch(() => note(
+                            'Не удалось разобрать документ. Скачайте файл и откройте его в своей программе.',
+                            'i-warning'));
+
+                    return;
+                }
+
                 if (file.kind === 'text') {
                     if (maxTextBytes > 0 && file.size > maxTextBytes) {
                         note('Файл слишком большой для просмотра — откройте его после скачивания.', 'i-warning');
@@ -879,34 +866,8 @@
                     label: 'Скачать', icon: 'i-download',
                     onClick: () => { window.location.href = tile.href; }
                 });
-            }
 
-            items.push({
-                label: 'Копировать' + countSuffix(ids.length), icon: 'i-copy',
-                onClick: () => putToClipboard('copy', ids)
-            });
-
-            if (canDelete) {
-                items.push({
-                    label: 'Вырезать' + countSuffix(ids.length), icon: 'i-cut',
-                    onClick: () => putToClipboard('cut', ids)
-                });
-            }
-
-            if (one) {
                 items.push({ separator: true });
-
-                // Ссылку кладём в буфер обмена Windows: её можно вставить
-                // в письмо или в сообщение — открывший её увидит файл,
-                // если у него есть на это право.
-                items.push({
-                    label: 'Копировать ссылку', icon: 'i-link',
-                    onClick: () => {
-                        copyText(new URL(tile.getAttribute('href'), location.href).href)
-                            .then(() => toasts.show('Ссылка на файл скопирована.', 'info'))
-                            .catch(() => toasts.show('Браузер не дал скопировать ссылку.', 'error'));
-                    }
-                });
 
                 if (canDelete) {
                     items.push({
@@ -1008,18 +969,6 @@
                 });
             }
 
-            const clipboard = readClipboard();
-
-            if (canWrite && clipboard && clipboard.fileIds.length > 0 && clipboard.folderId !== folderId) {
-                items.push({ separator: true });
-                items.push({
-                    label: (clipboard.op === 'cut' ? 'Переместить сюда' : 'Вставить') +
-                        countSuffix(clipboard.fileIds.length),
-                    icon: 'i-paste',
-                    onClick: () => pasteFromClipboard()
-                });
-            }
-
             // Пункты про «эту папку» имеют смысл, только когда мы внутри
             // папки. На верхнем уровне текущей папки нет — и предлагать
             // её свойства или управление ею нечего.
@@ -1055,57 +1004,6 @@
 
         function countSuffix(count) {
             return count > 1 ? ' (' + count + ')' : '';
-        }
-
-        // ---------- Буфер обмена внутри портала ----------
-        //
-        // Хранится в sessionStorage: переживает переход в другую папку,
-        // но не переживает закрытие вкладки — ровно как буфер обмена
-        // в проводнике не переживает перезагрузку.
-
-        function putToClipboard(op, fileIds) {
-            sessionStorage.setItem('portal.clipboard', JSON.stringify({
-                op: op,
-                fileIds: fileIds,
-                folderId: folderId
-            }));
-
-            toasts.show(
-                (op === 'cut' ? 'Вырезано файлов: ' : 'Скопировано файлов: ') + fileIds.length +
-                '. Откройте нужную папку и нажмите Ctrl+V.',
-                'info');
-        }
-
-        function readClipboard() {
-            try {
-                const raw = sessionStorage.getItem('portal.clipboard');
-                return raw ? JSON.parse(raw) : null;
-            } catch (error) {
-                return null;
-            }
-        }
-
-        function pasteFromClipboard() {
-            const clipboard = readClipboard();
-
-            if (!clipboard || clipboard.fileIds.length === 0 || folderId === null) {
-                return;
-            }
-
-            if (clipboard.folderId === folderId) {
-                toasts.show('Это та же папка, откуда файлы были взяты.', 'info');
-                return;
-            }
-
-            const form = $('[data-form="' + (clipboard.op === 'cut' ? 'move' : 'copy') + '"]');
-
-            // После перемещения буфер очищаем: повторная вставка вырезанного
-            // ничего бы не нашла и выдала бы непонятную ошибку.
-            if (clipboard.op === 'cut') {
-                sessionStorage.removeItem('portal.clipboard');
-            }
-
-            submitForm(form, { targetFolderId: folderId, fileIds: clipboard.fileIds });
         }
 
         function deleteSelected() {
@@ -1150,29 +1048,19 @@
                 return;
             }
 
-            if (ctrl && event.key.toLowerCase() === 'c' && selection.size > 0) {
-                event.preventDefault();
-                putToClipboard('copy', selectedFileIds());
-                return;
-            }
-
-            if (ctrl && event.key.toLowerCase() === 'x' && selection.size > 0) {
-                event.preventDefault();
-                putToClipboard('cut', selectedFileIds());
-                return;
-            }
-
-            if (ctrl && event.key.toLowerCase() === 'v') {
-                // Вставку файлов из проводника Windows обрабатывает событие paste
-                // ниже; здесь — вставка того, что скопировали внутри портала.
-                const clipboard = readClipboard();
-
-                if (canWrite && clipboard && clipboard.fileIds.length > 0) {
-                    event.preventDefault();
-                    pasteFromClipboard();
-                }
-                return;
-            }
+            // Ctrl+C, Ctrl+X и Ctrl+V внутри портала намеренно НЕ перехватываются.
+            //
+            // Раньше здесь был свой буфер обмена: «скопировать» в одной папке
+            // и «вставить» в другой. Выглядело как проводник Windows, но им
+            // не было — настоящий буфер обмена оставался нетронутым, и человек,
+            // нажавший Ctrl+C на портале, а Ctrl+V у себя на рабочем столе,
+            // не получал ничего. Путаницы больше, чем пользы.
+            //
+            // Теперь единственный смысл Ctrl+V — вставить файл С КОМПЬЮТЕРА
+            // в папку портала, то есть загрузить его. Это обрабатывается
+            // событием paste ниже. Обратного направления нет и быть не может:
+            // положить файл в буфер обмена Windows браузер странице не даёт.
+            // Файлы между папками портала переносятся перетаскиванием.
 
             if (event.key === 'Delete' && selection.size > 0) {
                 event.preventDefault();
@@ -1291,51 +1179,33 @@
 
         // ---------- Перетаскивание файлов ----------
         //
-        // Два разных перетаскивания одним движением:
-        //   внутрь портала, на другую папку — перемещение (наш формат данных);
-        //   наружу, в проводник Windows — скачивание (формат DownloadURL).
-        //
-        // Второе — это и есть ответ на «Ctrl+V не работает с сайта на компьютер».
-        // Положить настоящий файл в буфер обмена Windows страница не может:
-        // браузеры такого не разрешают никому, иначе любой открытый сайт
-        // подменял бы содержимое буфера. А вот отдать файл перетаскиванием
-        // можно — это работает в Edge и Chrome, то есть на ваших машинах.
+        // Перетаскивание работает только ВНУТРИ портала: файл на папку —
+        // это перемещение. Наружу, в проводник Windows, портал файлы
+        // не отдаёт — единственный способ забрать файл на компьютер
+        // это «Скачать».
 
-        fileTiles().forEach(tile => {
-            tile.draggable = true;
+        if (canWrite) {
+            fileTiles().forEach(tile => {
+                tile.draggable = true;
 
-            tile.addEventListener('dragstart', event => {
-                const id = parseInt(tile.dataset.file, 10);
+                tile.addEventListener('dragstart', event => {
+                    const id = parseInt(tile.dataset.file, 10);
 
-                if (!selection.has(id)) {
-                    selection = new Set([id]);
-                    repaintSelection();
-                }
+                    if (!selection.has(id)) {
+                        selection = new Set([id]);
+                        repaintSelection();
+                    }
 
-                if (canWrite) {
                     event.dataTransfer.setData(
                         'application/x-portal-files', JSON.stringify(selectedFileIds()));
-                }
 
-                // «тип:имя:адрес» — формат, по которому проводник понимает,
-                // что от него хотят скачивания. Адрес обязан быть полным.
-                const url = new URL(tile.getAttribute('href'), location.href).href;
+                    event.dataTransfer.effectAllowed = 'move';
+                    tile.classList.add('is-dragging');
+                });
 
-                event.dataTransfer.setData(
-                    'DownloadURL',
-                    'application/octet-stream:' + tile.dataset.name + ':' + url);
-
-                // На всякий случай кладём и обычную ссылку: её понимают
-                // почтовые программы и текстовые редакторы.
-                event.dataTransfer.setData('text/uri-list', url);
-                event.dataTransfer.setData('text/plain', url);
-
-                event.dataTransfer.effectAllowed = canWrite ? 'copyMove' : 'copy';
-                tile.classList.add('is-dragging');
+                tile.addEventListener('dragend', () => tile.classList.remove('is-dragging'));
             });
-
-            tile.addEventListener('dragend', () => tile.classList.remove('is-dragging'));
-        });
+        }
 
         if (canWrite) {
             $$('[data-drop-target]', pane).forEach(target => {

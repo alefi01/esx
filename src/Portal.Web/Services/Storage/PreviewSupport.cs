@@ -13,7 +13,13 @@ public enum PreviewKind
     Pdf = 2,
 
     /// <summary>Обычный текст: показывается как есть.</summary>
-    Text = 3
+    Text = 3,
+
+    /// <summary>
+    /// Документ Office (docx, xlsx, pptx). Портал разбирает его сам
+    /// и показывает содержимое разметкой — см. OfficeDocuments.
+    /// </summary>
+    Office = 4
 }
 
 /// <summary>
@@ -34,8 +40,10 @@ public enum PreviewKind
 ///
 /// Отдельно про SVG: это картинка, но внутри неё может быть скрипт,
 /// поэтому в списке её нет — SVG отдаётся только на скачивание.
-/// Office-документы (docx, xlsx) браузер показывать не умеет; для них
-/// нужен отдельный преобразователь, это обсуждается отдельно.
+///
+/// Документы Office (docx, xlsx, pptx) браузер показывать не умеет, поэтому
+/// они идут отдельным путём: портал разбирает их сам (OfficeDocuments)
+/// и отдаёт уже готовую разметку. Файл целиком браузеру при этом не уходит.
 /// </summary>
 public static class PreviewSupport
 {
@@ -62,7 +70,16 @@ public static class PreviewSupport
             [".json"] = (PreviewKind.Text, "text/plain; charset=utf-8"),
             [".xml"] = (PreviewKind.Text, "text/plain; charset=utf-8"),
             [".ini"] = (PreviewKind.Text, "text/plain; charset=utf-8"),
-            [".sql"] = (PreviewKind.Text, "text/plain; charset=utf-8")
+            [".sql"] = (PreviewKind.Text, "text/plain; charset=utf-8"),
+
+            // Документы Office. Тип содержимого здесь не используется:
+            // наружу уходит не сам файл, а разобранная из него разметка.
+            [".docx"] = (PreviewKind.Office, ""),
+            [".docm"] = (PreviewKind.Office, ""),
+            [".xlsx"] = (PreviewKind.Office, ""),
+            [".xlsm"] = (PreviewKind.Office, ""),
+            [".pptx"] = (PreviewKind.Office, ""),
+            [".pptm"] = (PreviewKind.Office, "")
         };
 
     /// <summary>Наибольший размер текстового файла, который имеет смысл показывать целиком.</summary>
@@ -71,9 +88,16 @@ public static class PreviewSupport
     public static PreviewKind KindOf(string fileName) =>
         Allowed.TryGetValue(Path.GetExtension(fileName), out var entry) ? entry.Kind : PreviewKind.None;
 
-    /// <summary>Тип содержимого для безопасной отдачи «на просмотр». null — показывать нельзя.</summary>
+    /// <summary>
+    /// Тип содержимого для безопасной отдачи «на просмотр».
+    /// null — файл целиком отдавать нельзя (в том числе для документов Office:
+    /// они уходят разметкой через отдельный обработчик).
+    /// </summary>
     public static string? ContentTypeFor(string fileName) =>
-        Allowed.TryGetValue(Path.GetExtension(fileName), out var entry) ? entry.ContentType : null;
+        Allowed.TryGetValue(Path.GetExtension(fileName), out var entry)
+        && entry.Kind != PreviewKind.Office
+            ? entry.ContentType
+            : null;
 
     /// <summary>Человеческое название типа — для окна свойств.</summary>
     public static string Describe(string fileName) => KindOf(fileName) switch
@@ -81,6 +105,12 @@ public static class PreviewSupport
         PreviewKind.Image => "изображение",
         PreviewKind.Pdf => "документ PDF",
         PreviewKind.Text => "текстовый файл",
+        PreviewKind.Office => Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".xlsx" or ".xlsm" => "книга Excel",
+            ".pptx" or ".pptm" => "презентация PowerPoint",
+            _ => "документ Word"
+        },
         _ => "файл"
     };
 }

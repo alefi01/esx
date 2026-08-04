@@ -63,7 +63,8 @@ public class SettingsModel : PageModel
         [Display(Name = "Наследовать права родительской папки")]
         public bool InheritPermissions { get; set; } = true;
 
-        [Range(1, 100000, ErrorMessage = "Укажите размер в мегабайтах или оставьте поле пустым")]
+        // Ноль допустим и означает «без ограничения» — см. подсказку на странице.
+        [Range(0, 10_000_000, ErrorMessage = "Укажите размер в мегабайтах, 0 (без ограничения) или оставьте поле пустым")]
         [Display(Name = "Предел размера одного файла, МБ")]
         public int? MaxFileSizeMb { get; set; }
 
@@ -120,7 +121,12 @@ public class SettingsModel : PageModel
             return Page();
         }
 
-        if (Input.MaxFileSizeMb > _storage.AbsoluteMaxFileSizeMb)
+        // Ноль здесь означает «без ограничения», поэтому сравнивать с потолком
+        // портала имеет смысл только положительные значения. И только если
+        // сам потолок задан: он тоже может быть снят.
+        if (!_storage.FileSizeUnlimited
+            && Input.MaxFileSizeMb > 0
+            && Input.MaxFileSizeMb > _storage.AbsoluteMaxFileSizeMb)
         {
             ModelState.AddModelError("Input.MaxFileSizeMb",
                 $"Больше общего верхнего предела ({_storage.AbsoluteMaxFileSizeMb} МБ) выставить нельзя. " +

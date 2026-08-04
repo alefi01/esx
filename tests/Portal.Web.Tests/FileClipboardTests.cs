@@ -92,8 +92,16 @@ public class FileClipboardTests : IDisposable
         return client.PostAsync(url, new FormUrlEncodedContent(fields));
     }
 
+    /// <summary>
+    /// Копирования между папками портала больше нет.
+    ///
+    /// Оно жило только вместе с собственным буфером обмена (Ctrl+C — Ctrl+V),
+    /// который люди принимали за буфер обмена Windows. Обработчик убран,
+    /// и запрос к нему не должен ничего делать — иначе получилась бы
+    /// возможность, о которой в интерфейсе нет ни следа.
+    /// </summary>
     [Fact]
-    public async Task Файл_копируется_в_другую_папку_и_остаётся_в_исходной()
+    public async Task Обработчика_копирования_больше_нет()
     {
         using var factory = CreateFactory();
         var source = AddFolder(factory, "Исходная", null, ("Vse", FolderAccess.Write));
@@ -103,19 +111,14 @@ public class FileClipboardTests : IDisposable
         var fileId = await UploadAsync(factory, client, source, "договор.pdf");
 
         var token = await client.GetTokenAsync($"/Files?id={target}");
-        var response = await PostIdsAsync(client, "/Files?handler=Copy", token, target, fileId);
 
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        await PostIdsAsync(client, "/Files?handler=Copy", token, target, fileId);
 
+        // Файл остался один и там же, где был.
         var files = factory.Query(db => db.Files.ToList());
 
-        Assert.Equal(2, files.Count);
-        Assert.Contains(files, f => f.FolderId == source);
-        Assert.Contains(files, f => f.FolderId == target);
-
-        // Копия должна быть самостоятельной: своё имя на диске, а не общее с оригиналом.
-        Assert.Equal(2, files.Select(f => f.StorageName).Distinct().Count());
-        Assert.Equal(2, Directory.GetFiles(_storageRoot, "*", SearchOption.AllDirectories).Length);
+        Assert.Single(files);
+        Assert.Equal(source, files[0].FolderId);
     }
 
     [Fact]
@@ -144,7 +147,7 @@ public class FileClipboardTests : IDisposable
     }
 
     [Fact]
-    public async Task Без_права_записи_в_целевую_папку_копирование_запрещено()
+    public async Task Без_права_записи_в_целевую_папку_перемещение_запрещено()
     {
         using var factory = CreateFactory();
         var source = AddFolder(factory, "Исходная", null, ("Vse", FolderAccess.Write));
@@ -154,14 +157,14 @@ public class FileClipboardTests : IDisposable
         var fileId = await UploadAsync(factory, client, source, "договор.pdf");
 
         var token = await client.GetTokenAsync($"/Files?id={source}");
-        var response = await PostIdsAsync(client, "/Files?handler=Copy", token, target, fileId);
+        var response = await PostIdsAsync(client, "/Files?handler=Move", token, target, fileId);
 
         Assert.Contains("AccessDenied", response.Headers.Location!.ToString());
         Assert.Equal(1, factory.Query(db => db.Files.Count()));
     }
 
     [Fact]
-    public async Task Без_права_читать_исходную_папку_файл_не_скопировать()
+    public async Task Без_права_читать_исходную_папку_файл_не_забрать()
     {
         // Попытка «вытащить» файл из закрытой папки, зная его номер.
         using var factory = CreateFactory();
@@ -174,18 +177,18 @@ public class FileClipboardTests : IDisposable
         var outsider = await factory.LoginAsAsync("ivanov", "WebUsers", "Vse");
         var token = await outsider.GetTokenAsync($"/Files?id={mine}");
 
-        await PostIdsAsync(outsider, "/Files?handler=Copy", token, mine, fileId);
+        await PostIdsAsync(outsider, "/Files?handler=Move", token, mine, fileId);
 
-        // Копии не появилось: файл по-прежнему один и лежит в закрытой папке.
+        // Ничего не вышло: файл по-прежнему один и лежит в закрытой папке.
         var files = factory.Query(db => db.Files.ToList());
         Assert.Single(files);
         Assert.Equal(secret, files[0].FolderId);
     }
 
     [Fact]
-    public async Task Ограничения_целевой_папки_действуют_и_при_копировании()
+    public async Task Ограничения_целевой_папки_действуют_и_при_перемещении()
     {
-        // Иначе через «скопировать — вставить» можно было бы обойти
+        // Иначе перетаскиванием файла на папку можно было бы обойти
         // и предел размера, и квоту папки.
         using var factory = CreateFactory();
         var source = AddFolder(factory, "Исходная", null, ("Vse", FolderAccess.Write));
@@ -202,9 +205,10 @@ public class FileClipboardTests : IDisposable
         });
 
         var token = await client.GetTokenAsync($"/Files?id={target}");
-        await PostIdsAsync(client, "/Files?handler=Copy", token, target, fileId);
+        await PostIdsAsync(client, "/Files?handler=Move", token, target, fileId);
 
-        Assert.Equal(1, factory.Query(db => db.Files.Count()));
+        // Файл остался в исходной папке: предел целевой его не пустил.
+        Assert.Equal(source, factory.Query(db => db.Files.Single().FolderId));
     }
 
     [Fact]

@@ -81,7 +81,8 @@ public sealed class UploadValidator
                 "в имени файла есть запрещённое расширение");
         }
 
-        if (sizeBytes > maxFileSizeBytes)
+        // 0 — предела нет. Проверять нечего.
+        if (maxFileSizeBytes > 0 && sizeBytes > maxFileSizeBytes)
         {
             return new UploadRejection(safeName,
                 $"размер {Format(sizeBytes)} больше разрешённых для этой папки {Format(maxFileSizeBytes)}");

@@ -28,6 +28,39 @@ public class UploadValidatorTests
         Assert.Contains("запрещ", rejection.Reason);
     }
 
+    /// <summary>
+    /// Ноль в качестве предела означает «без ограничения».
+    ///
+    /// Проверка нужна именно как проверка: пока такого правила не было,
+    /// ноль означал бы «не пропускать вообще ничего», и папка со снятым
+    /// пределом молча перестала бы принимать файлы.
+    /// </summary>
+    [Fact]
+    public void Ноль_как_предел_означает_отсутствие_предела()
+    {
+        var rejection = Create().Validate("огромный.zip", 8L * 1024 * Mb, 0, null, 0);
+
+        Assert.Null(rejection);
+    }
+
+    [Fact]
+    public void Снятый_предел_не_отменяет_квоту_папки()
+    {
+        // Предела на файл нет, но общий объём папки всё равно ограничен.
+        var rejection = Create().Validate("большой.zip", 900 * Mb, 0, 500 * Mb, 0);
+
+        Assert.NotNull(rejection);
+        Assert.Contains("не хватает места", rejection.Reason);
+    }
+
+    [Fact]
+    public void Снятый_предел_не_отменяет_запрет_расширений()
+    {
+        var rejection = Create().Validate("вирус.exe", 1024, 0, null, 0);
+
+        Assert.NotNull(rejection);
+    }
+
     [Fact]
     public void Двойное_расширение_не_обманывает_проверку()
     {
