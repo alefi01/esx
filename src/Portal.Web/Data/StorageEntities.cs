@@ -192,7 +192,8 @@ public enum AuditAction
 
     Move = 11,
     Rename = 12,
-    Preview = 13
+    Preview = 13,
+    PurgeAuditLog = 14
 }
 
 /// <summary>

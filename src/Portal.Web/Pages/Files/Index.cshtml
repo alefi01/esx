@@ -307,10 +307,20 @@
    область в это время сдвигается влево (класс на <body>, стили в site.css).
    Пустая заготовка — содержимое подставляет код страницы. *@
 <aside class="preview" data-preview hidden aria-label="Предпросмотр файла">
+    @* Полоска слева: за неё панель растягивают мышью. Ширина запоминается
+       в браузере, поэтому подбирать её каждый раз заново не придётся. *@
+    <div class="preview__grip" data-preview-grip role="separator"
+         aria-orientation="vertical" tabindex="0"
+         title="Потяните, чтобы изменить ширину. Двойное нажатие — во весь экран"></div>
+
     <div class="preview__head">
         <svg class="icon preview__kind"><use href="#i-file"></use></svg>
 
         <span class="preview__name" data-preview-name></span>
+
+        <button type="button" class="iconbtn" data-preview-wide title="Развернуть на всю ширину">
+            <svg class="icon"><use href="#i-expand"></use></svg>
+        </button>
 
         <a class="iconbtn" data-preview-download title="Скачать" download>
             <svg class="icon"><use href="#i-download"></use></svg>

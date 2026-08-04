@@ -18,6 +18,16 @@ namespace Portal.Web.Services.Messaging;
 public sealed record ConversationSummary(
     int Id, string Title, bool IsGroup, string Preview, DateTime LastAt, int Unread, int People);
 
+/// <summary>Найденное сообщение: где, кто, когда и кусок текста.</summary>
+/// <param name="ConversationId">В какой беседе.</param>
+/// <param name="MessageId">Само сообщение — по нему страница подсветит нужное.</param>
+/// <param name="ConversationTitle">Как называется беседа для того, кто ищет.</param>
+/// <param name="Author">Кто написал.</param>
+/// <param name="Excerpt">Кусок текста вокруг найденного.</param>
+/// <param name="At">Когда.</param>
+public sealed record MessageHit(
+    int ConversationId, int MessageId, string ConversationTitle, string Author, string Excerpt, DateTime At);
+
 /// <summary>
 /// Всё, что портал умеет делать с перепиской: искать, создавать,
 /// проверять доступ, считать непрочитанное.
@@ -356,5 +366,107 @@ public sealed class ConversationService
 
             await _db.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Поиск по сообщениям человека.
+    ///
+    /// Ищем ТОЛЬКО в беседах, где он участник. Это не оптимизация,
+    /// а единственно допустимое поведение: поиск по всем сообщениям сразу
+    /// превратил бы строку ввода в способ читать чужие разговоры.
+    /// Администратор здесь не исключение — его доступ к чужой переписке
+    /// осознанный и адресный, через открытие конкретной беседы,
+    /// а не через поиск по всему порталу.
+    /// </summary>
+    public async Task<IReadOnlyList<MessageHit>> SearchMessagesAsync(
+        string userName, string query, int take, CancellationToken cancellationToken)
+    {
+        var needle = (query ?? "").Trim();
+
+        if (needle.Length < 2)
+        {
+            // По одной букве находится всё подряд — толку ноль, нагрузка есть.
+            return [];
+        }
+
+        var mine = await _db.Participants
+            .Where(p => p.UserName.ToLower() == userName.ToLower())
+            .Select(p => p.ConversationId)
+            .ToListAsync(cancellationToken);
+
+        if (mine.Count == 0)
+        {
+            return [];
+        }
+
+        var pattern = needle.ToLower();
+
+        var found = await _db.Messages
+            .Where(m => mine.Contains(m.ConversationId)
+                        && m.DeletedAt == null
+                        && m.Body.ToLower().Contains(pattern))
+            .OrderByDescending(m => m.Id)
+            .Take(take)
+            .Select(m => new
+            {
+                m.Id,
+                m.ConversationId,
+                m.AuthorDisplayName,
+                m.Body,
+                m.CreatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        if (found.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = found.Select(m => m.ConversationId).Distinct().ToList();
+
+        var conversations = await _db.Conversations
+            .Where(c => ids.Contains(c.Id))
+            .Include(c => c.Participants)
+            .ToListAsync(cancellationToken);
+
+        return found.Select(m =>
+        {
+            var conversation = conversations.First(c => c.Id == m.ConversationId);
+
+            return new MessageHit(
+                m.ConversationId,
+                m.Id,
+                TitleFor(conversation, userName),
+                m.AuthorDisplayName,
+                Excerpt(m.Body, needle),
+                m.CreatedAt);
+        }).ToList();
+    }
+
+    /// <summary>
+    /// Кусок текста вокруг найденного слова.
+    ///
+    /// Показывать сообщение целиком нельзя: в списке результатов оно займёт
+    /// весь экран. Показывать начало — бесполезно: искомое может быть в конце.
+    /// Поэтому берём окно вокруг совпадения.
+    /// </summary>
+    private static string Excerpt(string body, string needle)
+    {
+        const int window = 60;
+
+        var text = body.ReplaceLineEndings(" ");
+        var at = text.IndexOf(needle, StringComparison.CurrentCultureIgnoreCase);
+
+        if (at < 0)
+        {
+            return text.Length <= window * 2 ? text : text[..(window * 2)] + "…";
+        }
+
+        var from = Math.Max(0, at - window);
+        var to = Math.Min(text.Length, at + needle.Length + window);
+
+        var excerpt = text[from..to];
+
+        return (from > 0 ? "…" : "") + excerpt + (to < text.Length ? "…" : "");
     }
 }

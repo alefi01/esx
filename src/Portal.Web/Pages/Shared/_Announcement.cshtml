@@ -1,0 +1,77 @@
+@using Portal.Web.Data
+@using Portal.Web.Services.Text
+@inject PlainTextFormatter TextFormatter
+@model Portal.Web.Pages.Shared.AnnouncementCard
+
+@*
+    Одно объявление. Вынесено в отдельный файл, потому что показывается
+    в двух местах: на главной и в ленте объявлений. Две копии разметки
+    разошлись бы при первой же правке.
+*@
+<div class="post">
+    <div class="post__head">
+        <span class="post__avatar">@Model.Initials</span>
+
+        <div class="post__who">
+            <strong>@Model.Item.AuthorDisplayName</strong>
+            <time datetime="@Model.Item.CreatedAt.ToString("O")">
+                @Model.Item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                @if (Model.Item.UpdatedAt is not null)
+                {
+                    <span>· изменено</span>
+                }
+            </time>
+        </div>
+
+        @if (Model.CanModify)
+        {
+            <div class="post__tools">
+                <a class="iconbtn" asp-page="/Announcements/Edit" asp-route-id="@Model.Item.Id" title="Изменить">
+                    <svg class="icon"><use href="#i-rename"></use></svg>
+                </a>
+                <a class="iconbtn" asp-page="/Announcements/Delete" asp-route-id="@Model.Item.Id" title="Удалить">
+                    <svg class="icon"><use href="#i-trash"></use></svg>
+                </a>
+            </div>
+        }
+    </div>
+
+    <h2 class="post__title">@Model.Item.Title</h2>
+
+    @* Длинное объявление показывается не целиком: лента из полотен текста
+       нечитаема. Разворачивание делает код страницы — он же и решает,
+       нужна ли кнопка вообще. Если код на странице не работает, объявление
+       останется видно целиком: класс, обрезающий текст, ставится только
+       из кода. Это важнее красоты. *@
+    <div class="post__body" data-collapsible>
+        @* Текст хранится как обычный текст. PlainTextFormatter экранирует его
+           и превращает переносы строк в разметку — вставить в объявление
+           скрипт таким образом нельзя. *@
+        <div class="post__text">@TextFormatter.ToHtml(Model.Item.Body)</div>
+
+        @if (Model.Item.Files.Count > 0)
+        {
+            <div class="post__files">
+                @foreach (var file in Model.Item.Files.Where(f => f.IsImage))
+                {
+                    <a class="post__image"
+                       asp-page="/Announcements/Index" asp-page-handler="Attachment" asp-route-fileId="@file.Id"
+                       target="_blank" rel="noopener" title="@file.OriginalName">
+                        <img src="/Announcements?handler=Attachment&amp;fileId=@file.Id"
+                             alt="@file.OriginalName" loading="lazy" />
+                    </a>
+                }
+
+                @foreach (var file in Model.Item.Files.Where(f => !f.IsImage))
+                {
+                    <a class="post__file"
+                       asp-page="/Announcements/Index" asp-page-handler="Attachment" asp-route-fileId="@file.Id">
+                        <svg class="icon"><use href="#i-file"></use></svg>
+                        <span class="post__filename">@file.OriginalName</span>
+                        <span class="post__filesize">@Model.FormatSize(file.SizeBytes)</span>
+                    </a>
+                }
+            </div>
+        }
+    </div>
+</div>

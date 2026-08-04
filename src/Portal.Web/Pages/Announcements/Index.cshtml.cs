@@ -18,6 +18,7 @@ public class IndexModel : PageModel
     private readonly ActiveDirectoryOptions _adOptions;
     private readonly DatabaseOptions _databaseOptions;
     private readonly NotificationService _notifications;
+    private readonly Portal.Web.Services.Announcements.AnnouncementStorage _storage;
     private readonly ILogger<IndexModel> _logger;
 
     public IndexModel(
@@ -25,12 +26,14 @@ public class IndexModel : PageModel
         IOptions<ActiveDirectoryOptions> adOptions,
         IOptions<DatabaseOptions> databaseOptions,
         NotificationService notifications,
+        Portal.Web.Services.Announcements.AnnouncementStorage storage,
         ILogger<IndexModel> logger)
     {
         _db = db;
         _adOptions = adOptions.Value;
         _databaseOptions = databaseOptions.Value;
         _notifications = notifications;
+        _storage = storage;
         _logger = logger;
     }
 
@@ -84,6 +87,7 @@ public class IndexModel : PageModel
             }
 
             Items = await _db.Announcements
+                .Include(a => a.Files)
                 .OrderByDescending(a => a.CreatedAt)
                 .ThenByDescending(a => a.Id)   // на случай совпадения времени до микросекунды
                 .Skip((PageNumber - 1) * pageSize)
@@ -116,5 +120,40 @@ public class IndexModel : PageModel
         }
 
         return Page();
+    }
+
+    /// <summary>
+    /// Отдаёт вложение объявления.
+    ///
+    /// Отдельной проверки прав здесь нет намеренно: объявление видно всем,
+    /// у кого есть доступ к порталу, а доступ к порталу проверяется общей
+    /// политикой ещё до входа в этот метод.
+    /// </summary>
+    public async Task<IActionResult> OnGetAttachmentAsync(int fileId, CancellationToken cancellationToken)
+    {
+        var file = await _db.AnnouncementFiles
+            .FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken);
+
+        if (file is null || !_storage.Exists(file.AnnouncementId, file.StorageName))
+        {
+            return NotFound();
+        }
+
+        var stream = _storage.OpenRead(file.AnnouncementId, file.StorageName);
+
+        // Картинки показываем прямо в ленте, поэтому их отдаём «на просмотр»,
+        // а не «на сохранение». Тип содержимого при этом берём по расширению,
+        // а заголовок nosniff (см. Program.cs) запрещает браузеру
+        // «додумывать» его самому.
+        if (file.IsImage)
+        {
+            return new FileStreamResult(stream, file.ContentType) { EnableRangeProcessing = true };
+        }
+
+        return new FileStreamResult(stream, file.ContentType)
+        {
+            FileDownloadName = file.OriginalName,
+            EnableRangeProcessing = true
+        };
     }
 }

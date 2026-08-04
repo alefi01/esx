@@ -20,6 +20,7 @@
  *   8. Переключатель светлой и тёмной темы
  *   9. Колокольчик уведомлений
  *  10. Переписки
+ *  11. Сворачивание длинных объявлений
  */
 
 (function () {
@@ -284,6 +285,37 @@
         });
     }
 
+    /**
+     * Кнопка, требующая подтверждения, — прямо в разметке.
+     *
+     * Достаточно повесить на кнопку отправки data-confirm-action и написать
+     * текст вопроса в data-confirm-text. Нужно там, где действие необратимо:
+     * очистка журнала, удаление и тому подобное.
+     */
+    document.addEventListener('click', event => {
+        const button = event.target.closest('[data-confirm-action]');
+
+        if (!button || button.dataset.confirmed === '1') {
+            return;
+        }
+
+        event.preventDefault();
+
+        confirmDialog(
+            button.dataset.confirmText || 'Выполнить действие?',
+            button.dataset.confirmOk || 'Выполнить'
+        ).then(ok => {
+            if (!ok) {
+                return;
+            }
+
+            // Второй раз спрашивать не надо: помечаем кнопку и нажимаем
+            // её заново, теперь уже по-настоящему.
+            button.dataset.confirmed = '1';
+            button.click();
+        });
+    }, true);
+
     document.addEventListener('keydown', event => {
         if (event.key === 'Escape') {
             const open = $('[data-modal].is-open');
@@ -396,6 +428,18 @@
         const downloadLink = $('[data-preview-download]', panel);
 
         let currentId = null;
+
+        // Номер показа. Растёт при каждом открытии файла в панели.
+        //
+        // Одного currentId мало: один и тот же файл можно начать открывать
+        // дважды подряд — так и происходит при двойном нажатии, когда сначала
+        // срабатывает одиночное (панель уже открыта и следует за выделением),
+        // а следом двойное. Оба запроса доходили до конца и дописывали
+        // содержимое в панель, и документ показывался дважды.
+        //
+        // Теперь каждый показ получает свой номер, и дописать себя в панель
+        // имеет право только последний.
+        let requestNumber = 0;
 
         // Сколько ждём ответа, прежде чем признать, что связи нет.
         // На канале между офисами ответ может идти долго, поэтому
@@ -520,6 +564,18 @@
             return box;
         }
 
+        /**
+         * Показать готовое содержимое: панель очищается полностью.
+         *
+         * Именно очищается, а не дополняется. Дописывание было ошибкой:
+         * если до этого в панели что-то оставалось, документ показывался
+         * дважды подряд.
+         */
+        function show(element) {
+            body.innerHTML = '';
+            body.appendChild(element);
+        }
+
         /** Убирает полоску ожидания, не трогая остальное содержимое панели. */
         function doneLoading() {
             const box = $('.preview__loading', body);
@@ -616,6 +672,11 @@
             open(file, maxTextBytes) {
                 currentId = file.id;
 
+                const token = ++requestNumber;
+
+                /** Этот показ ещё нужен, или его уже обогнал следующий? */
+                const current = () => token === requestNumber;
+
                 nameField.textContent = file.name;
                 nameField.title = file.name;
                 downloadLink.href = file.downloadUrl;
@@ -634,16 +695,15 @@
                     image.alt = file.name;
 
                     image.addEventListener('load', () => {
-                        if (currentId !== file.id) {
+                        if (!current()) {
                             return;
                         }
 
-                        doneLoading();
-                        body.appendChild(image);
+                        show(image);
                     });
 
                     image.addEventListener('error', () => {
-                        if (currentId === file.id) {
+                        if (current()) {
                             failure('Не удалось показать изображение.',
                                 'файл не дошёл или повреждён', file);
                         }
@@ -666,7 +726,7 @@
                     let shown = false;
 
                     const giveUp = setTimeout(() => {
-                        if (!shown && currentId === file.id) {
+                        if (!shown && current()) {
                             failure(
                                 'Не удалось показать PDF во встроенном окне.',
                                 'возможно, просмотр PDF отключён настройками браузера',
@@ -678,7 +738,7 @@
                         shown = true;
                         clearTimeout(giveUp);
 
-                        if (currentId === file.id) {
+                        if (current()) {
                             doneLoading();
                             frame.hidden = false;
                         }
@@ -687,7 +747,7 @@
                     frame.addEventListener('error', () => {
                         clearTimeout(giveUp);
 
-                        if (currentId === file.id) {
+                        if (current()) {
                             failure('Не удалось показать PDF.', 'браузер отказался открыть файл', file);
                         }
                     });
@@ -714,18 +774,17 @@
                     request('/Files?handler=OfficePreview&fileId=' + file.id)
                         .then(response => response.text())
                         .then(markup => {
-                            if (currentId !== file.id) {
+                            if (!current()) {
                                 return;
                             }
 
-                            doneLoading();
-
                             const holder = document.createElement('div');
                             holder.innerHTML = markup;
-                            body.appendChild(holder);
+
+                            show(holder);
                         })
                         .catch(reason => {
-                            if (currentId === file.id) {
+                            if (current()) {
                                 failure('Не удалось получить содержимое документа.',
                                     describeFailure(reason), file, reason);
                             }
@@ -744,22 +803,20 @@
                     request(source)
                         .then(response => response.text())
                         .then(text => {
-                            // Только если за время загрузки не открыли другой файл.
-                            if (currentId !== file.id) {
+                            // Только если за время загрузки не начали показывать другое.
+                            if (!current()) {
                                 return;
                             }
-
-                            doneLoading();
 
                             const block = document.createElement('pre');
                             // textContent, а не innerHTML: содержимое файла —
                             // это данные, и разметкой оно становиться не должно.
                             block.textContent = text;
 
-                            body.appendChild(block);
+                            show(block);
                         })
                         .catch(reason => {
-                            if (currentId === file.id) {
+                            if (current()) {
                                 failure('Не удалось прочитать файл.', describeFailure(reason), file, reason);
                             }
                         });
@@ -791,6 +848,133 @@
                 }, 250);
             }
         };
+    })();
+
+    // ----------------------------------------------------------------------
+    // Ширина панели предпросмотра
+    //
+    // Панель можно растянуть, потянув за её левый край. Ширина запоминается
+    // в браузере: подбирать её заново при каждом открытии файла — занятие
+    // утомительное, а на сервер такая мелочь не должна ходить вовсе.
+    // ----------------------------------------------------------------------
+
+    (function () {
+        const grip = $('[data-preview-grip]');
+
+        if (!grip) {
+            return;
+        }
+
+        const KEY = 'portal.previewWidth';
+        const MIN = 320;
+
+        /** Шире этого панель не пустим: рабочей области должно что-то остаться. */
+        function maxWidth() {
+            return Math.max(MIN, window.innerWidth - 360);
+        }
+
+        function apply(width) {
+            const value = Math.min(Math.max(width, MIN), maxWidth());
+
+            document.documentElement.style.setProperty('--preview-w', value + 'px');
+
+            return value;
+        }
+
+        function remember(width) {
+            try {
+                localStorage.setItem(KEY, String(width));
+            } catch (error) {
+                // Не смогли запомнить — ширина всё равно действует до перезагрузки.
+            }
+        }
+
+        // Восстанавливаем прошлый выбор.
+        try {
+            const saved = parseInt(localStorage.getItem(KEY), 10);
+
+            if (saved > 0) {
+                apply(saved);
+            }
+        } catch (error) {
+            // Настройки браузера могут запрещать хранилище — тогда ширина обычная.
+        }
+
+        let dragging = false;
+
+        grip.addEventListener('pointerdown', event => {
+            if (event.button !== 0) {
+                return;
+            }
+
+            dragging = true;
+            grip.setPointerCapture(event.pointerId);
+            document.body.classList.add('is-resizing');
+            event.preventDefault();
+        });
+
+        grip.addEventListener('pointermove', event => {
+            if (!dragging) {
+                return;
+            }
+
+            // Панель прижата к правому краю, поэтому её ширина —
+            // это расстояние от указателя до правого края окна.
+            apply(window.innerWidth - event.clientX);
+        });
+
+        ['pointerup', 'pointercancel'].forEach(name => {
+            grip.addEventListener(name, event => {
+                if (!dragging) {
+                    return;
+                }
+
+                dragging = false;
+                document.body.classList.remove('is-resizing');
+
+                if (grip.hasPointerCapture(event.pointerId)) {
+                    grip.releasePointerCapture(event.pointerId);
+                }
+
+                remember(apply(window.innerWidth - event.clientX));
+            });
+        });
+
+        // Двойное нажатие по полоске — во всю ширину и обратно.
+        grip.addEventListener('dblclick', () => toggleWide());
+
+        // Клавиатура: стрелками по 40 точек, чтобы можно было и без мыши.
+        grip.addEventListener('keydown', event => {
+            const current = parseInt(getComputedStyle(document.documentElement)
+                .getPropertyValue('--preview-w'), 10) || 460;
+
+            if (event.key === 'ArrowLeft') {
+                event.preventDefault();
+                remember(apply(current + 40));
+            } else if (event.key === 'ArrowRight') {
+                event.preventDefault();
+                remember(apply(current - 40));
+            }
+        });
+
+        function toggleWide() {
+            const current = parseInt(getComputedStyle(document.documentElement)
+                .getPropertyValue('--preview-w'), 10) || 460;
+
+            remember(apply(current >= maxWidth() - 4 ? 460 : maxWidth()));
+        }
+
+        $$('[data-preview-wide]').forEach(button => {
+            button.addEventListener('click', toggleWide);
+        });
+
+        // Окно уменьшили — панель не должна занять его целиком.
+        window.addEventListener('resize', () => {
+            const current = parseInt(getComputedStyle(document.documentElement)
+                .getPropertyValue('--preview-w'), 10) || 460;
+
+            apply(current);
+        });
     })();
 
     document.addEventListener('click', event => {
@@ -2033,6 +2217,75 @@
 
         $$('[data-action="new-group"]').forEach(button => {
             button.addEventListener('click', () => openPeopleModal('new-group'));
+        });
+    })();
+
+    // ======================================================================
+    // 11. Сворачивание длинных объявлений
+    //
+    // Лента из полотен текста нечитаема, поэтому длинные объявления
+    // показываются началом, а по нажатию раскрываются целиком.
+    //
+    // Порог решается ПО ФАКТУ, а не по числу символов: одно и то же
+    // количество текста занимает разную высоту на широком и узком экране.
+    // Меряем настоящую высоту и сворачиваем только то, что действительно
+    // не поместилось.
+    //
+    // Важно: класс, обрезающий текст, ставится отсюда. Если код страницы
+    // почему-либо не отработает, объявление останется видно целиком —
+    // это правильнее, чем спрятать его совсем.
+    // ======================================================================
+
+    (function () {
+        const blocks = $$('[data-collapsible]');
+
+        if (blocks.length === 0) {
+            return;
+        }
+
+        /** Ниже этой высоты сворачивать нечего. Должно совпадать с max-height в стилях. */
+        const LIMIT = 220;
+
+        blocks.forEach(block => {
+            if (block.scrollHeight <= LIMIT + 40) {
+                return;
+            }
+
+            block.classList.add('is-collapsed');
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'post__more';
+
+            const label = document.createTextNode('Читать полностью');
+
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('class', 'icon');
+            const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+            use.setAttribute('href', '#i-chevron-down');
+            svg.appendChild(use);
+
+            button.appendChild(label);
+            button.appendChild(svg);
+
+            button.addEventListener('click', () => {
+                const collapsed = block.classList.toggle('is-collapsed');
+
+                button.classList.toggle('is-open', !collapsed);
+                label.textContent = collapsed ? 'Читать полностью' : 'Свернуть';
+
+                // Свернули длинное объявление — возвращаем человека к его началу,
+                // иначе он окажется где-то посреди следующего.
+                if (collapsed) {
+                    const top = block.getBoundingClientRect().top;
+
+                    if (top < 0) {
+                        block.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                    }
+                }
+            });
+
+            block.insertAdjacentElement('afterend', button);
         });
     })();
 

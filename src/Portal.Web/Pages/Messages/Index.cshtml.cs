@@ -59,6 +59,15 @@ public class IndexModel : PageModel
 
     public IReadOnlyList<ConversationSummary> Conversations { get; private set; } = [];
 
+    /// <summary>Строка поиска по перепискам.</summary>
+    [BindProperty(SupportsGet = true, Name = "q")]
+    public string? Query { get; set; }
+
+    public bool IsSearching => !string.IsNullOrWhiteSpace(Query);
+
+    /// <summary>Найденные сообщения — показываются вместо списка бесед.</summary>
+    public IReadOnlyList<MessageHit> FoundMessages { get; private set; } = [];
+
     public Conversation? Current { get; private set; }
     public IReadOnlyList<Message> Items { get; private set; } = [];
 
@@ -110,6 +119,21 @@ public class IndexModel : PageModel
     private async Task LoadAsync(int? id, CancellationToken cancellationToken)
     {
         Conversations = await _conversations.ListAsync(UserName, cancellationToken);
+
+        if (IsSearching)
+        {
+            var needle = Query!.Trim();
+
+            // Список бесед фильтруем по названию и по имени собеседника,
+            // а сообщения ищем отдельным запросом. Человек обычно не помнит,
+            // что именно он ищет — беседу или фразу, — поэтому показываем и то и другое.
+            Conversations = Conversations
+                .Where(c => c.Title.Contains(needle, StringComparison.CurrentCultureIgnoreCase))
+                .ToList();
+
+            FoundMessages = await _conversations.SearchMessagesAsync(
+                UserName, needle, 50, cancellationToken);
+        }
 
         if (id is null)
         {
@@ -573,6 +597,23 @@ public class IndexModel : PageModel
             .AnyAsync(m => m.ConversationId == id && m.Id > afterId, cancellationToken);
 
         return new JsonResult(new { hasNew });
+    }
+
+    /// <summary>Подсветка найденного куска. Возвращает части: до, само совпадение, после.</summary>
+    public (string Before, string Match, string After) Highlight(string text)
+    {
+        var needle = (Query ?? "").Trim();
+
+        if (needle.Length == 0)
+        {
+            return (text, "", "");
+        }
+
+        var at = text.IndexOf(needle, StringComparison.CurrentCultureIgnoreCase);
+
+        return at < 0
+            ? (text, "", "")
+            : (text[..at], text.Substring(at, needle.Length), text[(at + needle.Length)..]);
     }
 
     public static string FormatSize(long bytes) => UploadValidator.Format(bytes);

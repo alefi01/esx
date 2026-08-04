@@ -5,7 +5,7 @@ namespace Portal.Web.Tests;
 public class AuthFlowTests
 {
     [Fact]
-    public async Task Успешный_вход_приводит_на_главную_с_именем_и_группами()
+    public async Task Успешный_вход_приводит_на_главную_с_именем()
     {
         using var factory = new PortalFactory();
         factory.Ad.Groups = ["WebUsers", "Domain Users"];
@@ -21,7 +21,41 @@ public class AuthFlowTests
 
         Assert.Equal(HttpStatusCode.OK, home.StatusCode);
         Assert.Contains("Пользователь ivanov", html);
-        Assert.Contains("WebUsers", html);
+    }
+
+    /// <summary>
+    /// Главная — страница для сотрудника, а не для наладки.
+    ///
+    /// Раньше на ней был список групп Active Directory, контроллер домена
+    /// и прочие сведения, нужные при первой настройке. Человеку они
+    /// ни о чём не говорят и только настораживают, поэтому переехали
+    /// на «Диагностику» — там они и должны быть.
+    /// </summary>
+    [Fact]
+    public async Task На_главной_нет_служебных_сведений()
+    {
+        using var factory = new PortalFactory();
+        factory.Ad.Groups = ["WebUsers", "Domain Users"];
+
+        var client = await factory.LoginAsAsync("ivanov", "WebUsers", "Domain Users");
+
+        var html = await client.GetStringAsync("/");
+
+        Assert.DoesNotContain("Domain Users", html);
+        Assert.DoesNotContain("Проверено контроллером", html);
+        Assert.DoesNotContain("заглушка", html);
+    }
+
+    [Fact]
+    public async Task Группы_Active_Directory_видны_администратору_в_диагностике()
+    {
+        using var factory = new PortalFactory();
+
+        var client = await factory.LoginAsAsync("ivanov", "WebUsers", "WebAdmins", "Domain Users");
+
+        var html = await client.GetStringAsync("/Admin/Diagnostics");
+
+        Assert.Contains("Domain Users", html);
     }
 
     [Fact]

@@ -70,4 +70,46 @@ public class Announcement
 
     /// <summary>Когда последний раз правили, тоже в UTC. null — не правили ни разу.</summary>
     public DateTime? UpdatedAt { get; set; }
+
+    /// <summary>Приложенные файлы и картинки.</summary>
+    public List<AnnouncementFile> Files { get; set; } = [];
+}
+
+/// <summary>
+/// Файл, приложенный к объявлению.
+///
+/// Лежит отдельной веткой на диске, а не в файловом хранилище: доступ там
+/// решается группами Active Directory, а объявление по смыслу видно всем,
+/// у кого есть доступ к порталу. Смешивать две разные модели доступа
+/// в одном месте — верный способ однажды показать не то и не тому.
+/// </summary>
+public class AnnouncementFile
+{
+    public int Id { get; set; }
+
+    public int AnnouncementId { get; set; }
+    public Announcement? Announcement { get; set; }
+
+    /// <summary>Имя, которое видит человек.</summary>
+    [MaxLength(260)]
+    public string OriginalName { get; set; } = "";
+
+    /// <summary>
+    /// Имя на диске — случайное. Имя, данное человеком, в пути к файлу
+    /// не участвует никогда.
+    /// </summary>
+    [MaxLength(64)]
+    public string StorageName { get; set; } = "";
+
+    public long SizeBytes { get; set; }
+
+    [MaxLength(200)]
+    public string ContentType { get; set; } = "application/octet-stream";
+
+    /// <summary>
+    /// Картинка ли это. Считается один раз при загрузке, по белому списку
+    /// расширений: от этого зависит, показать ли файл прямо в ленте
+    /// или дать ссылку на скачивание.
+    /// </summary>
+    public bool IsImage { get; set; }
 }

@@ -43,6 +43,76 @@ public class AuditModel : PageModel
 
     public string? DatabaseError { get; private set; }
 
+    /// <summary>Сколько всего записей в журнале и сколько из них старые.</summary>
+    public int TotalEntries { get; private set; }
+    public int OldEntries { get; private set; }
+    public DateTime? OldestEntryAt { get; private set; }
+
+    /// <summary>Действующий срок хранения, дней. 0 — хранить вечно.</summary>
+    public int RetentionDays => _options.AuditRetentionDays;
+
+    /// <summary>Как часто просыпается фоновая уборка — для подсказки на странице.</summary>
+    public int CleanupHours => _options.CleanupIntervalHours;
+
+    [TempData]
+    public string? StatusMessage { get; set; }
+
+    /// <summary>
+    /// Убрать записи старше срока хранения.
+    ///
+    /// То же самое делает фоновая уборка раз в несколько часов; кнопка нужна,
+    /// чтобы не ждать её — например, сразу после того как срок поменяли.
+    /// </summary>
+    public async Task<IActionResult> OnPostPurgeOldAsync(CancellationToken cancellationToken)
+    {
+        if (_options.AuditRetentionDays <= 0)
+        {
+            StatusMessage = "Срок хранения журнала не задан — удалять нечего. " +
+                            "Задайте Storage:AuditRetentionDays в appsettings.Production.json.";
+
+            return RedirectToPage();
+        }
+
+        var threshold = DateTime.UtcNow.AddDays(-_options.AuditRetentionDays);
+
+        var removed = await _db.AuditEntries
+            .Where(a => a.At < threshold)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        StatusMessage = removed == 0
+            ? "Записей старше срока хранения не нашлось."
+            : $"Убрано записей: {removed}.";
+
+        return RedirectToPage();
+    }
+
+    /// <summary>
+    /// Стереть журнал целиком.
+    ///
+    /// Действие необратимое и заметное, поэтому требует подтверждения
+    /// в интерфейсе, а сам факт очистки записывается в журнал первой же
+    /// строкой — иначе очистка стала бы способом скрыть свои следы.
+    /// </summary>
+    public async Task<IActionResult> OnPostPurgeAllAsync(CancellationToken cancellationToken)
+    {
+        var removed = await _db.AuditEntries.ExecuteDeleteAsync(cancellationToken);
+
+        _db.AuditEntries.Add(new AuditEntry
+        {
+            At = DateTime.UtcNow,
+            UserName = User.Identity?.Name ?? "",
+            Action = AuditAction.PurgeAuditLog,
+            Target = "журнал действий",
+            Details = $"журнал очищен полностью, удалено записей: {removed}"
+        });
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        StatusMessage = $"Журнал очищен. Удалено записей: {removed}.";
+
+        return RedirectToPage();
+    }
+
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         var pageSize = Math.Max(10, _options.AuditPageSize);
@@ -74,6 +144,23 @@ public class AuditModel : PageModel
             }
 
             var total = await query.CountAsync(cancellationToken);
+
+            // Сводка по всему журналу, а не по отфильтрованному:
+            // кнопки очистки работают со всеми записями, и показывать
+            // рядом с ними число из фильтра было бы обманом.
+            TotalEntries = await _db.AuditEntries.CountAsync(cancellationToken);
+
+            OldestEntryAt = await _db.AuditEntries
+                .OrderBy(e => e.At)
+                .Select(e => (DateTime?)e.At)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (RetentionDays > 0)
+            {
+                var threshold = DateTime.UtcNow.AddDays(-RetentionDays);
+
+                OldEntries = await _db.AuditEntries.CountAsync(e => e.At < threshold, cancellationToken);
+            }
 
             TotalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
 
@@ -107,6 +194,10 @@ public class AuditModel : PageModel
         AuditAction.ChangeFolderSettings => "настройки папки",
         AuditAction.ChangePermissions => "права доступа",
         AuditAction.RetentionCleanup => "автоочистка",
+        AuditAction.Rename => "переименование",
+        AuditAction.Preview => "предпросмотр",
+        AuditAction.Move => "перемещение",
+        AuditAction.PurgeAuditLog => "очистка журнала",
         _ => action.ToString()
     };
 }

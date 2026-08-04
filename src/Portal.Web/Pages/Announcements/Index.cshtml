@@ -1,6 +1,4 @@
 @page
-@using Portal.Web.Services.Text
-@inject PlainTextFormatter TextFormatter
 @model Portal.Web.Pages.Announcements.IndexModel
 @{
     ViewData["Title"] = "Объявления";
@@ -11,7 +9,10 @@
 
     @if (Model.CanPublish)
     {
-        <a class="button button--primary button--inline" asp-page="Create">Написать объявление</a>
+        <a class="btn btn--primary" asp-page="Create">
+            <svg class="icon"><use href="#i-pen"></use></svg>
+            Написать объявление
+        </a>
     }
 </div>
 
@@ -45,39 +46,8 @@
 
 @foreach (var item in Model.Items)
 {
-    @* Здесь <div>, а не <article>, хотя по смыслу подошёл бы именно article.
-       Причина техническая: в Razor из .NET 10 теги article, section, header,
-       footer и figure нельзя ставить самым внешним элементом внутри блока
-       кода (@@if, @@foreach) — разбор страницы ломается, а ошибка при этом
-       показывается совсем в другой строке. Внутри <div> они работают,
-       вне блоков кода — тоже (см. header и footer в _Layout.cshtml). *@
-    <div class="card">
-        <h2>@item.Title</h2>
-
-        <p class="meta">
-            @item.AuthorDisplayName ·
-            <time datetime="@item.CreatedAt.ToString("O")">
-                @item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
-            </time>
-            @if (item.UpdatedAt is not null)
-            {
-                <span class="hint">(изменено @item.UpdatedAt.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm"))</span>
-            }
-        </p>
-
-        @* Текст объявления хранится как обычный текст. PlainTextFormatter
-           экранирует его и превращает переносы строк в разметку —
-           вставить в объявление скрипт таким образом нельзя. *@
-        <div class="announcement-body">@TextFormatter.ToHtml(item.Body)</div>
-
-        @if (Model.CanModify(item))
-        {
-            <p class="actions">
-                <a asp-page="Edit" asp-route-id="@item.Id">Изменить</a>
-                <a asp-page="Delete" asp-route-id="@item.Id" class="link--danger">Удалить</a>
-            </p>
-        }
-    </div>
+    @await Html.PartialAsync("_Announcement",
+        new Portal.Web.Pages.Shared.AnnouncementCard(item, Model.CanModify(item)))
 }
 
 @if (Model.TotalPages > 1)

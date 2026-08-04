@@ -12,7 +12,7 @@
         <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
     }
 
-    <form method="post">
+    <form method="post" enctype="multipart/form-data">
         <div asp-validation-summary="ModelOnly" class="alert alert--error"></div>
 
         <div class="field">
@@ -30,6 +30,16 @@
                 <code>https://…</code> станут кликабельными автоматически.
                 Разметка HTML не поддерживается намеренно — так объявление
                 не сможет содержать вредоносный код.
+            </p>
+        </div>
+
+        <div class="field">
+            <label for="attachments">Вложения</label>
+            <input type="file" id="attachments" name="attachments" multiple />
+            <p class="hint">
+                Картинки (png, jpg, gif, webp) показываются прямо в объявлении,
+                остальные файлы — ссылкой на скачивание. Опасные расширения
+                не принимаются, как и в файловом хранилище.
             </p>
         </div>
 

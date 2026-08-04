@@ -181,6 +181,26 @@
     <dt>Способ признания</dt>
     <dd><code>@Model.AuthenticationType</code></dd>
 
+    <dt>Проверено контроллером</dt>
+    <dd><code>@Model.AuthenticatedBy</code></dd>
+
+    <dt>Почта из каталога</dt>
+    <dd>@(string.IsNullOrEmpty(Model.Email) ? "не указана" : Model.Email)</dd>
+
+    <dt>Группы Active Directory (@Model.Groups.Count)</dt>
+    <dd>
+        <p class="hint">
+            Каждая из них в портале является ролью: права на разделы и папки
+            раздаются именно по ним, отдельного списка пользователей портал не ведёт.
+        </p>
+        <ul class="tags">
+            @foreach (var group in Model.Groups)
+            {
+                <li><code>@group</code></li>
+            }
+        </ul>
+    </dd>
+
     <dt>Папка ключей шифрования</dt>
     <dd>
         <code>@Model.KeysPath</code><br />

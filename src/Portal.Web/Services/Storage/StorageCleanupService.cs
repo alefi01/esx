@@ -96,12 +96,14 @@ public sealed class StorageCleanupService : BackgroundService
 
         var movedToTrash = await ApplyRetentionAsync(db, now, cancellationToken);
         var purged = await PurgeTrashAsync(db, storage, now, cancellationToken);
+        var forgotten = await PurgeAuditAsync(db, now, cancellationToken);
 
         if (movedToTrash > 0 || purged > 0)
         {
             _logger.LogInformation(
-                "Уборка хранилища завершена: в корзину отправлено {Moved}, стёрто окончательно {Purged}.",
-                movedToTrash, purged);
+                "Уборка хранилища завершена: в корзину отправлено {Moved}, стёрто окончательно {Purged}, " +
+                "записей журнала убрано {Forgotten}.",
+                movedToTrash, purged, forgotten);
         }
     }
 
@@ -155,6 +157,30 @@ public sealed class StorageCleanupService : BackgroundService
     }
 
     /// <summary>Шаг 2: содержимое корзины старше срока — стереть с диска и из базы.</summary>
+    /// <summary>
+    /// Убирает записи журнала старше заданного срока.
+    ///
+    /// Удаляем одним запросом к базе, а не вычиткой в память: записей
+    /// за полгода могут быть десятки тысяч, и тащить их на сервер приложения
+    /// только чтобы тут же удалить — бессмысленная работа.
+    /// </summary>
+    private async Task<int> PurgeAuditAsync(
+        PortalDbContext db, DateTime now, CancellationToken cancellationToken)
+    {
+        var days = _options.AuditRetentionDays;
+
+        if (days <= 0)
+        {
+            return 0;   // 0 — хранить вечно
+        }
+
+        var threshold = now.AddDays(-days);
+
+        return await db.AuditEntries
+            .Where(a => a.At < threshold)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
     private async Task<int> PurgeTrashAsync(
         PortalDbContext db, FileStorage storage, DateTime now, CancellationToken cancellationToken)
     {

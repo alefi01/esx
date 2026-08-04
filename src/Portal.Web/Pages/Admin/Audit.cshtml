@@ -7,6 +7,68 @@
 
 <h1>Журнал действий с файлами</h1>
 
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert--ok" role="status">@Model.StatusMessage</div>
+}
+
+<div class="card">
+    <h2>Хранение</h2>
+
+    <dl class="facts">
+        <dt>Записей в журнале</dt>
+        <dd>
+            @Model.TotalEntries
+            @if (Model.OldestEntryAt is { } oldest)
+            {
+                <span class="muted">самая давняя — @oldest.ToLocalTime().ToString("dd.MM.yyyy")</span>
+            }
+        </dd>
+
+        <dt>Срок хранения</dt>
+        <dd>
+            @if (Model.RetentionDays > 0)
+            {
+                <span>@Model.RetentionDays дн.</span>
+                @if (Model.OldEntries > 0)
+                {
+                    <span class="badge badge--warn">старше срока: @Model.OldEntries</span>
+                }
+            }
+            else
+            {
+                <span>не задан — журнал хранится вечно</span>
+            }
+            <p class="hint">
+                Настройка <code>Storage:AuditRetentionDays</code> в
+                <code>appsettings.Production.json</code>. Старые записи убирает
+                фоновая уборка раз в @Model.CleanupHours ч; кнопкой ниже
+                это можно сделать сразу.
+            </p>
+        </dd>
+    </dl>
+
+    <div class="row-form">
+        <form method="post" asp-page-handler="PurgeOld" data-busy-form>
+            <button type="submit" class="btn" data-confirm-action
+                    data-confirm-text="Убрать записи журнала старше срока хранения? Действие необратимо."
+                    data-confirm-ok="Убрать старые">
+                <svg class="icon"><use href="#i-trash"></use></svg>
+                Убрать старые записи
+            </button>
+        </form>
+
+        <form method="post" asp-page-handler="PurgeAll" data-busy-form>
+            <button type="submit" class="btn btn--danger" data-confirm-action
+                    data-confirm-text="Стереть весь журнал действий? Восстановить его будет нельзя. Сам факт очистки останется в журнале первой строкой."
+                    data-confirm-ok="Стереть всё">
+                <svg class="icon"><use href="#i-trash"></use></svg>
+                Очистить журнал полностью
+            </button>
+        </form>
+    </div>
+</div>
+
 @if (Model.DatabaseError is not null)
 {
     <div class="alert alert--error" role="alert">

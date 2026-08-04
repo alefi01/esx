@@ -29,7 +29,22 @@
             </div>
         </div>
 
-        @if (Model.Conversations.Count == 0)
+        @* Поиск по перепискам: и по названиям бесед, и по тексту сообщений. *@
+        <form method="get" class="search chat__search" role="search">
+            <svg class="icon icon--xs search__icon"><use href="#i-search"></use></svg>
+
+            <input type="search" name="q" value="@Model.Query" autocomplete="off"
+                   placeholder="Поиск по перепискам" aria-label="Поиск по перепискам" />
+
+            @if (Model.IsSearching)
+            {
+                <a class="search__clear" asp-page="Index" title="Очистить поиск">
+                    <svg class="icon icon--xs"><use href="#i-close"></use></svg>
+                </a>
+            }
+        </form>
+
+        @if (Model.Conversations.Count == 0 && !Model.IsSearching)
         {
             <div class="chat__empty">
                 <p>Переписок пока нет.</p>
@@ -64,6 +79,48 @@
                     </a>
                 }
             </div>
+
+            @if (Model.IsSearching)
+            {
+                <div class="chat__found">
+                    <div class="chat__foundhead">
+                        Сообщения: @Model.FoundMessages.Count
+                    </div>
+
+                    @if (Model.FoundMessages.Count == 0 && Model.Conversations.Count == 0)
+                    {
+                        <div class="chat__empty">
+                            <p>Ничего не нашлось</p>
+                            <p class="muted">Поиск идёт только по вашим перепискам.</p>
+                        </div>
+                    }
+
+                    @foreach (var hit in Model.FoundMessages)
+                    {
+                        var parts = Model.Highlight(hit.Excerpt);
+
+                        <a class="chat__hit" asp-page="Index" asp-route-id="@hit.ConversationId"
+                           asp-route-q="@Model.Query">
+                            <span class="chat__hittop">
+                                <span class="chat__hitwhere">@hit.ConversationTitle</span>
+                                <span class="chat__hittime">@hit.At.ToLocalTime().ToString("dd.MM HH:mm")</span>
+                            </span>
+
+                            <span class="chat__hittext">
+                                @* В переписке двоих названием беседы служит имя
+                                   собеседника — тогда подписывать сообщение тем же
+                                   именем ещё раз незачем. В группе автор нужен. *@
+                                @if (!string.Equals(hit.Author, hit.ConversationTitle,
+                                    StringComparison.CurrentCultureIgnoreCase))
+                                {
+                                    <span class="muted">@hit.Author:</span>
+                                }
+                                @parts.Before<mark>@parts.Match</mark>@parts.After
+                            </span>
+                        </a>
+                    }
+                </div>
+            }
         }
     </aside>
 

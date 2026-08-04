@@ -4,59 +4,88 @@
     ViewData["Title"] = "Главная";
 }
 
-<div class="card">
-    <h1>Здравствуйте, @Model.DisplayName</h1>
+<div class="home">
+    @* ---------- Приветствие ---------- *@
+    <div class="hero">
+        <div class="hero__text">
+            <h1>@Model.Greeting, @Model.DisplayName</h1>
+            <p>
+                Это корпоративный портал.
+                @if (!string.IsNullOrEmpty(Model.OfficeName))
+                {
+                    <span>Вы в офисе «@Model.OfficeName».</span>
+                }
+            </p>
+        </div>
 
-    <p class="hint">
-        Это заглушка главной страницы. На следующих этапах здесь появятся объявления,
-        файловое хранилище и диалоги. Сейчас страница нужна для одного:
-        подтвердить, что вход через доменную учётную запись работает.
-    </p>
+        <div class="hero__links">
+            <a class="tilelink" asp-page="/Files/Index">
+                <span class="tilelink__icon"><svg class="icon"><use href="#i-folder"></use></svg></span>
+                <span>
+                    <strong>Файлы</strong>
+                    <span class="muted">Общие документы и папки отделов</span>
+                </span>
+            </a>
 
-    <dl class="facts">
-        <dt>Учётная запись</dt>
-        <dd><code>@Model.UserName</code></dd>
+            <a class="tilelink" asp-page="/Messages/Index">
+                <span class="tilelink__icon"><svg class="icon"><use href="#i-chat"></use></svg></span>
+                <span>
+                    <strong>Переписки</strong>
+                    <span class="muted">Личные сообщения и рабочие группы</span>
+                </span>
+            </a>
 
-        <dt>Отображаемое имя</dt>
-        <dd>@Model.DisplayName</dd>
-
-        <dt>Почта</dt>
-        <dd>@(string.IsNullOrEmpty(Model.Email) ? "не указана в AD" : Model.Email)</dd>
-
-        <dt>Офис (по IP)</dt>
-        <dd>@Model.OfficeName</dd>
-
-        <dt>Проверено контроллером</dt>
-        <dd><code>@Model.AuthenticatedBy</code></dd>
-
-        <dt>Права администратора</dt>
-        <dd>
-            @if (Model.IsAdmin)
+            @if (Model.CanPublish)
             {
-                <span class="badge badge--ok">есть</span>
-                <span class="hint">(состоите в группе @Model.AdminGroupName)</span>
+                <a class="tilelink" asp-page="/Announcements/Create">
+                    <span class="tilelink__icon"><svg class="icon"><use href="#i-pen"></use></svg></span>
+                    <span>
+                        <strong>Написать объявление</strong>
+                        <span class="muted">Увидят все сотрудники</span>
+                    </span>
+                </a>
             }
-            else
-            {
-                <span class="badge">нет</span>
-                <span class="hint">(нужна группа @Model.AdminGroupName)</span>
-            }
-        </dd>
-    </dl>
-</div>
+        </div>
+    </div>
 
-<div class="card">
-    <h2>Группы Active Directory (@Model.Groups.Count)</h2>
+    @* ---------- Лента объявлений ---------- *@
+    <div class="feed">
+        <div class="feed__head">
+            <h2>Объявления</h2>
+            <a asp-page="/Announcements/Index">Все объявления</a>
+        </div>
 
-    <p class="hint">
-        Каждая из этих групп в портале является ролью. Права на разделы будут
-        раздаваться именно по ним — отдельного списка пользователей портал не ведёт.
-    </p>
-
-    <ul class="tags">
-        @foreach (var group in Model.Groups)
+        @if (Model.DatabaseUnavailable)
         {
-            <li><code>@group</code></li>
+            <div class="alert alert--error" role="alert">
+                <strong>Объявления сейчас недоступны.</strong>
+                Не удалось получить данные — сообщите администратору.
+                Остальные разделы портала работают.
+            </div>
         }
-    </ul>
+        else if (Model.Items.Count == 0)
+        {
+            <div class="empty">
+                <svg class="icon icon--xl"><use href="#i-bell"></use></svg>
+                <p>Объявлений пока нет</p>
+                @if (Model.CanPublish)
+                {
+                    <p class="muted">Вы можете написать первое.</p>
+                }
+            </div>
+        }
+
+        @foreach (var item in Model.Items)
+        {
+            @await Html.PartialAsync("_Announcement",
+                new Portal.Web.Pages.Shared.AnnouncementCard(item, Model.CanModify(item)))
+        }
+
+        @if (Model.HasMore)
+        {
+            <p class="feed__more">
+                <a class="btn" asp-page="/Announcements/Index">Смотреть все объявления</a>
+            </p>
+        }
+    </div>
 </div>

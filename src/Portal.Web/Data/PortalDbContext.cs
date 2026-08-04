@@ -19,6 +19,7 @@ public class PortalDbContext : DbContext
     }
 
     public DbSet<Announcement> Announcements => Set<Announcement>();
+    public DbSet<AnnouncementFile> AnnouncementFiles => Set<AnnouncementFile>();
 
     public DbSet<StorageFolder> Folders => Set<StorageFolder>();
     public DbSet<FolderPermission> FolderPermissions => Set<FolderPermission>();
@@ -45,6 +46,15 @@ public class PortalDbContext : DbContext
             // Отдельный индекс по автору: по нему строится проверка
             // «моё это объявление или чужое», а в будущем — фильтр «мои объявления».
             entity.HasIndex(a => a.AuthorUserName);
+        });
+
+        modelBuilder.Entity<AnnouncementFile>(entity =>
+        {
+            entity.HasOne(f => f.Announcement)
+                .WithMany(a => a.Files)
+                .HasForeignKey(f => f.AnnouncementId)
+                // Вложения — часть объявления, отдельно от него не нужны.
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<StorageFolder>(entity =>

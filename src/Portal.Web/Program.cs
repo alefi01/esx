@@ -304,6 +304,7 @@ builder.Services.AddScoped<NotificationService>();
 // оба обращаются к базе, а контекст базы существует ровно столько же.
 // Хранилище вложений состояния не имеет, поэтому одно на всё приложение.
 builder.Services.AddSingleton<MessageStorage>();
+builder.Services.AddSingleton<Portal.Web.Services.Announcements.AnnouncementStorage>();
 builder.Services.AddScoped<IUserDirectory, UserDirectory>();
 builder.Services.AddScoped<ConversationService>();
 

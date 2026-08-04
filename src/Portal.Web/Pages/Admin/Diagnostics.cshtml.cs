@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Diagnostics;
 using System.Net.Sockets;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -69,6 +70,16 @@ public class DiagnosticsModel : PageModel
     /// <summary>Чем портал признал текущего пользователя.</summary>
     public string AuthenticationType { get; private set; } = "не определён";
 
+    /// <summary>
+    /// Группы Active Directory текущего пользователя. В портале это и есть роли:
+    /// своего списка пользователей он не ведёт. Раньше показывались на главной —
+    /// переехали сюда, где им и место.
+    /// </summary>
+    public IReadOnlyList<string> Groups { get; private set; } = [];
+
+    public string? Email { get; private set; }
+    public string AuthenticatedBy { get; private set; } = "—";
+
     /// <summary>Папка с ключами шифрования cookie, число файлов и доступность на запись.</summary>
     public string KeysPath { get; private set; } = "";
     public int KeyFileCount { get; private set; }
@@ -98,6 +109,16 @@ public class DiagnosticsModel : PageModel
         AuthCookieLength = cookie?.Length ?? 0;
 
         AuthenticationType = User.Identity?.AuthenticationType ?? "не определён";
+
+        Groups = User.FindAll(System.Security.Claims.ClaimTypes.Role)
+            .Select(c => c.Value)
+            .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        Email = User.FindFirstValue(System.Security.Claims.ClaimTypes.Email);
+
+        AuthenticatedBy = User.FindFirstValue(Portal.Web.Security.PortalClaimTypes.AuthenticatedBy)
+            is { Length: > 0 } dc ? dc : "—";
 
         KeysPath = Path.Combine(_environment.ContentRootPath, "App_Data", "keys");
 

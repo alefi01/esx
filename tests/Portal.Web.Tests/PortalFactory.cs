@@ -218,6 +218,18 @@ public sealed class PortalFactory : WebApplicationFactory<Program>
         db.SaveChanges();
     }
 
+    /// <summary>
+    /// Убирает базу целиком — чтобы проверить, как портал ведёт себя,
+    /// когда PostgreSQL недоступен. Такое случается, и портал не должен
+    /// от этого падать: файлы и переписки живут своей жизнью.
+    /// </summary>
+    public void DropDatabase()
+    {
+        using var scope = Services.CreateScope();
+
+        scope.ServiceProvider.GetRequiredService<PortalDbContext>().Database.EnsureDeleted();
+    }
+
     /// <summary>Прочитать что-нибудь из базы напрямую — для проверки результата.</summary>
     public T Query<T>(Func<PortalDbContext, T> query)
     {
