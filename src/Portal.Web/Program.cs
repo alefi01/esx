@@ -152,7 +152,92 @@ builder.Services
 
         // Скользящий срок: пока человек работает, сессия продлевается.
         options.SlidingExpiration = true;
+
+        // -------------------------------------------------------------------
+        // Что отвечать, когда пользователь не признан вошедшим
+        //
+        // По умолчанию cookie-аутентификация перенаправляет на страницу входа.
+        // Для обычного перехода это правильно. Но код страницы обращается
+        // к порталу и в фоне — за уведомлениями и за содержимым предпросмотра, —
+        // и для таких запросов перенаправление вредно: браузер послушно идёт
+        // по нему, получает разметку страницы входа с кодом 200, и портал
+        // показывает её вместо документа. Человек видит невнятную ошибку
+        // и не догадывается, что просто истёк вход.
+        //
+        // Поэтому фоновым запросам отвечаем честным кодом и коротким
+        // объяснением, которое страница умеет показать словами.
+        // -------------------------------------------------------------------
+
+        static bool IsBackgroundRequest(HttpRequest request) =>
+            request.Path.StartsWithSegments("/api")
+            || string.Equals(request.Headers.XRequestedWith, "XMLHttpRequest", StringComparison.OrdinalIgnoreCase);
+
+        options.Events.OnRedirectToLogin = context =>
+        {
+            RecordAuthFailure(context.HttpContext, "вход не признан: cookie отсутствует, истекла или не расшифровалась");
+
+            if (IsBackgroundRequest(context.Request))
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/json; charset=utf-8";
+
+                return context.Response.WriteAsync("{\"reason\":\"signed-out\"}");
+            }
+
+            context.Response.Redirect(context.RedirectUri);
+
+            return Task.CompletedTask;
+        };
+
+        options.Events.OnRedirectToAccessDenied = context =>
+        {
+            RecordAuthFailure(context.HttpContext, "вход признан, но прав на этот раздел нет");
+
+            if (IsBackgroundRequest(context.Request))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                context.Response.ContentType = "application/json; charset=utf-8";
+
+                return context.Response.WriteAsync("{\"reason\":\"forbidden\"}");
+            }
+
+            context.Response.Redirect(context.RedirectUri);
+
+            return Task.CompletedTask;
+        };
     });
+
+// Записывает отказ в список последних — его видно на странице «Диагностика».
+// Отдельной функцией, потому что вызывается из двух мест выше.
+static void RecordAuthFailure(HttpContext context, string reason)
+{
+    var diagnostics = context.RequestServices.GetService<AuthDiagnostics>();
+
+    if (diagnostics is null)
+    {
+        return;
+    }
+
+    var cookie = context.Request.Cookies["Portal.Auth"];
+
+    diagnostics.Record(new AuthFailure(
+        DateTime.Now,
+        context.Request.Path + context.Request.QueryString,
+        reason,
+        cookie is not null,
+        cookie?.Length ?? 0,
+        context.Connection.RemoteIpAddress?.ToString() ?? "",
+        context.Request.Headers.UserAgent.ToString()));
+
+    context.RequestServices.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("Portal.Web.Security.Access")
+        .LogWarning(
+            "Отказ в доступе: {Path}. Причина: {Reason}. Cookie входа: {Cookie}. Адрес: {Ip}.",
+            context.Request.Path + context.Request.QueryString,
+            reason,
+            cookie is null ? "не пришла" : $"пришла, {cookie.Length} симв.",
+            context.Connection.RemoteIpAddress);
+}
 
 // ---------------------------------------------------------------------------
 // 4. Авторизация: роли — это группы Active Directory
@@ -199,6 +284,7 @@ builder.Services.AddSingleton<IOfficeResolver, OfficeResolver>();
 // выше на вывод кириллицы как есть.
 builder.Services.AddSingleton<PlainTextFormatter>();
 builder.Services.AddSingleton<LoginThrottle>();
+builder.Services.AddSingleton<AuthDiagnostics>();
 builder.Services.AddScoped<IAdAuthenticationService, LdapAdAuthenticationService>();
 
 // ---------------------------------------------------------------------------
@@ -429,6 +515,27 @@ app.Use(async (context, next) =>
     // должны говорить одно и то же, иначе поведение зависит от браузера.
     headers["Content-Security-Policy"] =
         "default-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'";
+
+    // Страницы портала не кладём в кэш браузера.
+    //
+    // Иначе получается обман: человек возвращается кнопкой «назад», браузер
+    // достаёт страницу из кэша, она выглядит рабочей — а вход к этому моменту
+    // уже истёк, и всё, что страница спрашивает у сервера, отвечает отказом.
+    // Выглядит как «портал сломался», хотя надо просто войти заново.
+    //
+    // Правило вешаем только на разметку: стили, код страниц и сами файлы
+    // кэшировать по-прежнему можно и нужно — на канале между офисами это
+    // экономит заметную долю трафика.
+    context.Response.OnStarting(() =>
+    {
+        if (context.Response.ContentType?.StartsWith("text/html", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            headers.CacheControl = "no-store, no-cache, must-revalidate";
+            headers.Pragma = "no-cache";
+        }
+
+        return Task.CompletedTask;
+    });
 
     await next();
 });

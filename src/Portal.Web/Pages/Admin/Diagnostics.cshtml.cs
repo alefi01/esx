@@ -34,22 +34,99 @@ public class DiagnosticsModel : PageModel
     private readonly DatabaseStatus _databaseStatus;
     private readonly PortalDbContext _db;
     private readonly Portal.Web.Services.Storage.FileStorage _fileStorage;
+    private readonly Portal.Web.Security.AuthDiagnostics _authDiagnostics;
+    private readonly IWebHostEnvironment _environment;
 
     public DiagnosticsModel(
         IOfficeResolver offices,
         IOptions<ActiveDirectoryOptions> ad,
         DatabaseStatus databaseStatus,
         PortalDbContext db,
-        Portal.Web.Services.Storage.FileStorage fileStorage)
+        Portal.Web.Services.Storage.FileStorage fileStorage,
+        Portal.Web.Security.AuthDiagnostics authDiagnostics,
+        IWebHostEnvironment environment)
     {
         _offices = offices;
         _ad = ad.Value;
         _databaseStatus = databaseStatus;
         _db = db;
         _fileStorage = fileStorage;
+        _authDiagnostics = authDiagnostics;
+        _environment = environment;
     }
 
+    // ------------------------------------------------------------------
+    // Доступ: почему кому-то отказывают
+    // ------------------------------------------------------------------
+
+    public IReadOnlyList<Portal.Web.Security.AuthFailure> AuthFailures { get; private set; } = [];
+    public long AuthFailureTotal { get; private set; }
+
+    /// <summary>Пришла ли cookie входа с ЭТИМ запросом и какой длины.</summary>
+    public bool AuthCookiePresent { get; private set; }
+    public int AuthCookieLength { get; private set; }
+
+    /// <summary>Чем портал признал текущего пользователя.</summary>
+    public string AuthenticationType { get; private set; } = "не определён";
+
+    /// <summary>Папка с ключами шифрования cookie, число файлов и доступность на запись.</summary>
+    public string KeysPath { get; private set; } = "";
+    public int KeyFileCount { get; private set; }
+    public bool KeysWritable { get; private set; }
+    public string? KeysError { get; private set; }
+
     public sealed record DcProbe(string Host, int Port, bool Reachable, long ElapsedMs, string? Error);
+
+    /// <summary>
+    /// Состояние всего, от чего зависит признание пользователя вошедшим.
+    ///
+    /// Самое важное здесь — ключи шифрования cookie. Ими портал подписывает
+    /// и расшифровывает вход. Если папка с ключами недоступна на запись,
+    /// .NET молча создаёт временные ключи в памяти — и при каждом перезапуске
+    /// рабочего процесса IIS все cookie разом перестают приниматься.
+    /// Со стороны это выглядит как «портал случайно разлогинивает людей»
+    /// и как отказы 401 на запросах уже открытой страницы.
+    /// </summary>
+    private void ProbeAccess()
+    {
+        AuthFailures = _authDiagnostics.Recent();
+        AuthFailureTotal = _authDiagnostics.Total;
+
+        var cookie = Request.Cookies["Portal.Auth"];
+
+        AuthCookiePresent = cookie is not null;
+        AuthCookieLength = cookie?.Length ?? 0;
+
+        AuthenticationType = User.Identity?.AuthenticationType ?? "не определён";
+
+        KeysPath = Path.Combine(_environment.ContentRootPath, "App_Data", "keys");
+
+        try
+        {
+            if (!Directory.Exists(KeysPath))
+            {
+                KeysError = "папки нет — ключи создаются заново при каждом запуске";
+                return;
+            }
+
+            KeyFileCount = Directory.GetFiles(KeysPath, "*.xml").Length;
+
+            // Проверяем именно запись: прав на чтение может хватать,
+            // а на запись — нет, и тогда новый ключ просто некуда положить.
+            var probe = Path.Combine(KeysPath, $"probe-{Guid.NewGuid():N}.tmp");
+
+            // System.IO.File целиком: внутри страницы короткое имя File
+            // занято её собственным методом отдачи файла.
+            System.IO.File.WriteAllText(probe, "проверка");
+            System.IO.File.Delete(probe);
+
+            KeysWritable = true;
+        }
+        catch (Exception ex)
+        {
+            KeysError = ex.Message;
+        }
+    }
 
     public string? RemoteIp { get; private set; }
     public string DetectedOffice { get; private set; } = "не определён";
@@ -91,6 +168,8 @@ public class DiagnosticsModel : PageModel
         {
             Probes.Add(await ProbeAsync(host, _ad.Port, _ad.TimeoutSeconds, cancellationToken));
         }
+
+        ProbeAccess();
 
         await ProbeDatabaseAsync(cancellationToken);
 

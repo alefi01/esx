@@ -442,7 +442,30 @@
          * и открыть в отдельной вкладке — вторая часто срабатывает там,
          * где встроенное окно просмотра запрещено настройками браузера.
          */
-        function failure(text, detail, file) {
+        function failure(text, detail, file, reason) {
+            // Истёкший вход — не поломка файла, и предлагать «скачать»
+            // тут бессмысленно: скачивание тоже не сработает. Нужно другое —
+            // сказать прямо, что произошло, и дать войти заново.
+            if (reason === 401) {
+                const box = note(
+                    'Вход в портал истёк.',
+                    'i-warning',
+                    'страница была открыта слишком долго — войдите заново');
+
+                const actions = document.createElement('div');
+                actions.className = 'preview__actions';
+
+                const reload = document.createElement('a');
+                reload.className = 'btn btn--primary';
+                reload.href = location.href;
+                reload.textContent = 'Обновить страницу';
+
+                actions.appendChild(reload);
+                box.appendChild(actions);
+
+                return;
+            }
+
             const box = note(text, 'i-warning', detail);
 
             const actions = document.createElement('div');
@@ -516,9 +539,13 @@
                 return 'ответ не пришёл за ' + Math.round(WAIT_MS / 1000) + ' с';
             }
 
+            if (reason === 401) {
+                return 'вход в портал истёк';
+            }
+
             if (typeof reason === 'number') {
-                if (reason === 401 || reason === 403) {
-                    return 'сервер ответил «нет доступа» (код ' + reason + '); попробуйте войти заново';
+                if (reason === 403) {
+                    return 'нет прав на этот файл (код 403)';
                 }
 
                 if (reason === 404) {
@@ -700,7 +727,7 @@
                         .catch(reason => {
                             if (currentId === file.id) {
                                 failure('Не удалось получить содержимое документа.',
-                                    describeFailure(reason), file);
+                                    describeFailure(reason), file, reason);
                             }
                         });
 
@@ -733,7 +760,7 @@
                         })
                         .catch(reason => {
                             if (currentId === file.id) {
-                                failure('Не удалось прочитать файл.', describeFailure(reason), file);
+                                failure('Не удалось прочитать файл.', describeFailure(reason), file, reason);
                             }
                         });
 
@@ -2145,13 +2172,45 @@
                 : when.toLocaleDateString('ru-RU') + ', ' + time;
         }
 
+        let timer = null;
+        let toldAboutSignOut = false;
+
+        function stopPolling() {
+            if (timer !== null) {
+                clearInterval(timer);
+                timer = null;
+            }
+        }
+
         function poll() {
-            fetch('/api/notifications', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            fetch('/api/notifications', {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
                 .then(response => (response.ok ? response.json() : Promise.reject(response.status)))
                 .then(render)
-                .catch(() => {
-                    // Молча: связь могла моргнуть, а ругаться на это
-                    // всплывающим сообщением раз в минуту — издевательство.
+                .catch(reason => {
+                    // Истёкший вход — не «связь моргнула». Молчать про него
+                    // нельзя: страница выглядит рабочей, а на деле не работает
+                    // уже ничего. Говорим один раз и перестаём спрашивать —
+                    // иначе сообщение всплывало бы каждую минуту.
+                    if (reason === 401) {
+                        stopPolling();
+                        badge.hidden = true;
+
+                        if (!toldAboutSignOut) {
+                            toldAboutSignOut = true;
+
+                            toasts.show(
+                                'Вход в портал истёк. Обновите страницу и войдите заново.',
+                                'error');
+                        }
+
+                        return;
+                    }
+
+                    // Всё остальное — молча: связь могла моргнуть, а ругаться
+                    // на это всплывающим сообщением раз в минуту — издевательство.
                 });
         }
 
@@ -2183,11 +2242,11 @@
         });
 
         poll();
-        setInterval(poll, POLL_MS);
+        timer = setInterval(poll, POLL_MS);
 
         // Вернулись на вкладку — проверяем сразу, не дожидаясь минуты.
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
+            if (document.visibilityState === 'visible' && timer !== null) {
                 poll();
             }
         });

@@ -155,7 +155,111 @@
 </div>
 
 <div class="card">
-    <h2>Настроенные офисы</h2>
+    <h2>Доступ</h2>
+
+<p class="hint">
+    Раздел отвечает на жалобы вида «страница открыта, а ничего не работает»
+    и на ошибки 401 в консоли браузера. Портал признаёт человека вошедшим
+    по cookie, которую сам же и подписывает; если что-то из этой цепочки
+    ломается, здесь будет видно, что именно.
+</p>
+
+<dl class="facts">
+    <dt>Cookie входа в этом запросе</dt>
+    <dd>
+        @if (Model.AuthCookiePresent)
+        {
+            <span class="badge badge--ok">пришла</span>
+            <span class="muted">@Model.AuthCookieLength символов</span>
+        }
+        else
+        {
+            <span class="badge badge--error">не пришла</span>
+        }
+    </dd>
+
+    <dt>Способ признания</dt>
+    <dd><code>@Model.AuthenticationType</code></dd>
+
+    <dt>Папка ключей шифрования</dt>
+    <dd>
+        <code>@Model.KeysPath</code><br />
+        @if (Model.KeysError is not null)
+        {
+            <span class="badge badge--error">недоступна</span>
+            <span class="muted">@Model.KeysError</span>
+        }
+        else if (!Model.KeysWritable)
+        {
+            <span class="badge badge--error">нет прав на запись</span>
+        }
+        else
+        {
+            <span class="badge badge--ok">в порядке</span>
+            <span class="muted">файлов ключей: @Model.KeyFileCount</span>
+        }
+    </dd>
+
+    <dt>Отказов с момента запуска</dt>
+    <dd>@Model.AuthFailureTotal</dd>
+</dl>
+
+@if (Model.KeysError is not null || !Model.KeysWritable)
+{
+    <div class="alert alert--error" role="alert">
+        <strong>Ключи шифрования cookie некуда сохранять.</strong>
+        В этом случае .NET создаёт временные ключи в памяти, и при каждом
+        перезапуске рабочего процесса IIS все входы разом перестают
+        приниматься: страница у человека открыта, а любой запрос с неё
+        получает отказ 401. Выдайте пулу приложений право на запись
+        в папку <code>App_Data\keys</code>.
+    </div>
+}
+
+@if (Model.AuthFailures.Count > 0)
+{
+    <h3>Последние отказы</h3>
+
+    <p class="hint">
+        Свежие сверху. Если человек из другого офиса повторит действие сейчас,
+        оно появится здесь первой строкой — вместе с причиной.
+    </p>
+
+    <table class="table">
+        <thead>
+        <tr>
+            <th>Когда</th>
+            <th>Куда</th>
+            <th>Причина</th>
+            <th>Cookie</th>
+            <th>Адрес</th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var failure in Model.AuthFailures)
+        {
+            <tr>
+                <td>@failure.At.ToString("dd.MM HH:mm:ss")</td>
+                <td><code>@failure.Path</code></td>
+                <td>@failure.Reason</td>
+                <td>
+                    @if (failure.CookiePresent)
+                    {
+                        <span>пришла, @failure.CookieLength симв.</span>
+                    }
+                    else
+                    {
+                        <strong>не пришла</strong>
+                    }
+                </td>
+                <td>@failure.RemoteIp</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+<h2>Настроенные офисы</h2>
 
     <table class="table">
         <thead>

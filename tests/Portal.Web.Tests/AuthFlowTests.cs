@@ -162,4 +162,69 @@ public class AuthFlowTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("ok", await response.Content.ReadAsStringAsync());
     }
+
+    /// <summary>
+    /// Фоновый запрос от уже открытой страницы не должен получать
+    /// разметку страницы входа.
+    ///
+    /// Так и было: cookie-аутентификация перенаправляла на вход, браузер
+    /// послушно шёл по перенаправлению и получал HTML с кодом 200 — портал
+    /// показывал страницу входа вместо документа, а человек видел невнятную
+    /// ошибку и не догадывался, что просто истёк вход.
+    /// </summary>
+    [Fact]
+    public async Task Фоновый_запрос_без_входа_получает_401_а_не_страницу_входа()
+    {
+        using var factory = new PortalFactory();
+        var client = factory.CreateTestClient();
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "/Files?handler=Preview&fileId=1");
+        request.Headers.Add("X-Requested-With", "XMLHttpRequest");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Contains("signed-out", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Точка_уведомлений_без_входа_отвечает_401()
+    {
+        using var factory = new PortalFactory();
+        var client = factory.CreateTestClient();
+
+        var response = await client.GetAsync("/api/notifications");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Обычный_переход_без_входа_по_прежнему_ведёт_на_страницу_входа()
+    {
+        // Послабление выше касается только фоновых запросов. Человек,
+        // открывший адрес в браузере, должен попасть на форму входа,
+        // а не увидеть голый код ошибки.
+        using var factory = new PortalFactory();
+        var client = factory.CreateTestClient();
+
+        var response = await client.GetAsync("/Files");
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Contains("/Account/Login", response.Headers.Location!.ToString());
+    }
+
+    [Fact]
+    public async Task Страницы_портала_не_кладутся_в_кэш_браузера()
+    {
+        // Иначе человек возвращается кнопкой «назад», браузер достаёт
+        // страницу из кэша, она выглядит рабочей — а вход уже истёк,
+        // и всё, что она спрашивает у сервера, отвечает отказом.
+        using var factory = new PortalFactory();
+        var client = await factory.LoginAsAsync("ivanov", "WebUsers");
+
+        var response = await client.GetAsync("/Files");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("no-store", response.Headers.CacheControl!.ToString());
+    }
 }
