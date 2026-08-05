@@ -94,6 +94,23 @@
     // второй раз.
     // ======================================================================
 
+    // ----------------------------------------------------------------------
+    // Полосы заполнения (место в папке, место в хранилище)
+    //
+    // Ширину полосы задаёт не разметка, а этот код. Причина в политике
+    // безопасности страницы (CSP): она запрещает встроенные стили, то есть
+    // атрибут style="width: 40%" браузер молча отбрасывает, и полоса
+    // выглядела бы всегда одинаково — пустой или полной.
+    //
+    // Поэтому сервер пишет число в data-percent, а ширину проставляем здесь.
+    // ----------------------------------------------------------------------
+
+    $$('[data-percent]').forEach(fill => {
+        const percent = parseFloat(fill.dataset.percent);
+
+        fill.style.width = (isNaN(percent) ? 0 : Math.min(100, Math.max(0, percent))) + '%';
+    });
+
     const progress = (function () {
         let bar = null;
         let timer = null;
@@ -2323,6 +2340,143 @@
     })();
 
     // ======================================================================
+    // 8а. Вид списка файлов и порядок сортировки
+    //
+    // Вид (плитками или списком) — дело вкуса конкретного человека, сервер
+    // про него не знает: выбор хранится в браузере и действует на всех
+    // страницах портала. Порядок сортировки, наоборот, живёт в адресе
+    // страницы — его можно послать ссылкой, и он переживает перезагрузку.
+    // ======================================================================
+
+    (function () {
+        const grid = $('[data-file-grid]');
+        const buttons = $$('[data-view]');
+
+        // Список выбора «по имени / по дате…» отправляет форму сам,
+        // без кнопки. Без JavaScript кнопка появится (см. noscript в разметке).
+        $$('[data-autosubmit]').forEach(select => {
+            select.addEventListener('change', () => select.form.submit());
+        });
+
+        if (buttons.length === 0) {
+            return;
+        }
+
+        const STORAGE_KEY = 'portal.fileView';
+
+        function apply(mode) {
+            if (grid) {
+                grid.classList.toggle('grid--list', mode === 'list');
+            }
+
+            buttons.forEach(button =>
+                button.classList.toggle('is-active', button.dataset.view === mode));
+        }
+
+        // localStorage недоступен, если браузер настроен строго или страница
+        // открыта в режиме без сохранения данных. Это не повод ломать страницу:
+        // просто вид не запомнится между заходами.
+        function remember(mode) {
+            try {
+                localStorage.setItem(STORAGE_KEY, mode);
+            } catch (error) {
+                /* пусть будет как есть */
+            }
+        }
+
+        function restore() {
+            try {
+                return localStorage.getItem(STORAGE_KEY);
+            } catch (error) {
+                return null;
+            }
+        }
+
+        apply(restore() === 'list' ? 'list' : 'grid');
+
+        buttons.forEach(button => {
+            button.addEventListener('click', () => {
+                apply(button.dataset.view);
+                remember(button.dataset.view);
+            });
+        });
+    })();
+
+    // ======================================================================
+    // 8б. Боковое меню на узком экране
+    //
+    // На широком экране меню всегда на месте и этот код ничего не делает:
+    // кнопка с тремя полосками там просто не видна (см. .burger в стилях).
+    // На узком меню уезжает за левый край и выдвигается поверх страницы.
+    // ======================================================================
+
+    (function () {
+        const sidebar = $('[data-sidebar]');
+        const toggle = $('[data-sidebar-toggle]');
+        const scrim = $('.scrim');
+
+        if (!sidebar || !toggle) {
+            return;
+        }
+
+        function setOpen(open) {
+            sidebar.classList.toggle('is-open', open);
+            toggle.setAttribute('aria-expanded', String(open));
+
+            if (scrim) {
+                scrim.classList.toggle('is-open', open);
+            }
+        }
+
+        toggle.addEventListener('click', () => setOpen(!sidebar.classList.contains('is-open')));
+
+        if (scrim) {
+            scrim.addEventListener('click', () => setOpen(false));
+        }
+
+        // Нажатие по пункту меню тоже закрывает его: после перехода
+        // на другую страницу открытое меню только мешает.
+        sidebar.addEventListener('click', event => {
+            if (event.target.closest('.nav-item')) {
+                setOpen(false);
+            }
+        });
+
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                setOpen(false);
+            }
+        });
+    })();
+
+    // ======================================================================
+    // 8в. Поиск по Ctrl+K
+    //
+    // Сочетание клавиш переводит курсор в поле поиска в шапке, где бы
+    // человек ни находился. Привычка из современных программ; подсказка
+    // «Ctrl K» нарисована прямо в поле, чтобы про неё знали.
+    // ======================================================================
+
+    (function () {
+        const field = $('[data-global-search]');
+
+        if (!field) {
+            return;
+        }
+
+        document.addEventListener('keydown', event => {
+            // Проверяем и Ctrl, и Cmd — на случай, если портал откроют с Mac.
+            // Браузерный поиск по странице это сочетание не занимает,
+            // перехватывать безопасно.
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+                event.preventDefault();
+                field.focus();
+                field.select();
+            }
+        });
+    })();
+
+    // ======================================================================
     // 9. Колокольчик уведомлений
     //
     // Раз в минуту спрашиваем сервер, нет ли нового объявления. Постоянного
@@ -2357,6 +2511,21 @@
         const announced = new Set();
         let first = true;
 
+        /**
+         * Число рядом с пунктом бокового меню.
+         * Ноль не показываем совсем: пустой кружок только отвлекает.
+         */
+        function setNavCount(kind, value) {
+            const element = $('[data-nav-count="' + kind + '"]');
+
+            if (!element) {
+                return;
+            }
+
+            element.hidden = !value;
+            element.textContent = value > 99 ? '99+' : String(value);
+        }
+
         function render(data) {
             const unread = data.unread || 0;
 
@@ -2364,6 +2533,9 @@
             badge.textContent = unread > 99 ? '99+' : String(unread);
 
             toggle.classList.toggle('is-active', unread > 0);
+
+            setNavCount('announcement', data.announcements || 0);
+            setNavCount('message', data.messages || 0);
 
             list.innerHTML = '';
 
@@ -2400,7 +2572,11 @@
 
                     if (!announced.has(key)) {
                         announced.add(key);
-                        toasts.show('Новое объявление: ' + item.title, 'info');
+
+                        toasts.show(
+                            (item.kind === 'message' ? 'Новое сообщение: ' : 'Новое объявление: ')
+                            + item.title,
+                            'info');
                     }
                 });
             } else {
@@ -2450,6 +2626,8 @@
                     if (reason === 401) {
                         stopPolling();
                         badge.hidden = true;
+                        setNavCount('announcement', 0);
+                        setNavCount('message', 0);
 
                         if (!toldAboutSignOut) {
                             toldAboutSignOut = true;

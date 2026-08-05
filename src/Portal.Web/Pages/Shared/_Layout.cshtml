@@ -1,17 +1,44 @@
 @using Microsoft.Extensions.Options
 @using Portal.Web.Configuration
+@using Portal.Web.Services.Storage
 @inject IOptions<ActiveDirectoryOptions> AdOptions
+@inject StorageUsage Usage
 @{
     var adminGroup = AdOptions.Value.AdminGroup;
+    var isAdmin = User.IsInRole(adminGroup);
+
+    // Занятое место для карточки внизу меню. Значение общее для всех
+    // и лежит в памяти минуту, поэтому запроса к базе на каждой странице
+    // здесь нет — см. комментарий в StorageUsage.
+    var usage = await Usage.GetAsync(Context.RequestAborted);
 
     // Подсветка текущего раздела в меню. Сравниваем по началу пути,
     // чтобы «Файлы» оставались выделенными и внутри вложенных папок.
     var path = Context.Request.Path.Value ?? "/";
 
-    string NavClass(string prefix) =>
-        prefix == "/"
-            ? (path == "/" ? "is-active" : "")
-            : (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? "is-active" : "");
+    string NavClass(string prefix)
+    {
+        if (prefix == "/")
+        {
+            return path == "/" ? "is-active" : "";
+        }
+
+        if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return "";
+        }
+
+        // «Файлы» не должны подсвечиваться, когда открыта корзина или
+        // настройки папки: у них свои пункты меню, и подсвечиваться должен
+        // ровно один. Без этой проверки «/Files/Trash» зажигал бы оба.
+        if (prefix.Equals("/Files", StringComparison.OrdinalIgnoreCase)
+            && path.StartsWith("/Files/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "";
+        }
+
+        return "is-active";
+    }
 }
 <!DOCTYPE html>
 <html lang="ru">
@@ -28,29 +55,39 @@
        светлый фон — некрасивая вспышка при каждом переходе. *@
     <script src="~/js/theme.js" asp-append-version="true"></script>
 </head>
-<body>
+@* Класс app-shell включает «оконный» режим: шапка и меню стоят на месте,
+   прокручивается только середина. У страницы входа разметка другая. *@
+<body class="app-shell">
 @* Набор значков подключается один раз и дальше используется по ссылке. *@
 <partial name="_Icons" />
 
+@* ====================== Верхняя полоса ====================== *@
 <header class="topbar">
+    @* Кнопка бокового меню. Видна только на узком экране — на широком
+       меню и так на месте, прятать его незачем. *@
+    <button type="button" class="iconbtn burger" data-sidebar-toggle
+            aria-label="Меню" aria-expanded="false">
+        <svg class="icon"><use href="#i-menu"></use></svg>
+    </button>
+
     <a class="topbar__brand" asp-page="/Index">
-        <svg class="icon"><use href="#i-folder"></use></svg>
-        Портал
+        <span class="topbar__logo"><svg class="icon"><use href="#i-folder"></use></svg></span>
+        <span>Портал</span>
     </a>
 
-    <nav class="topbar__nav">
-        <a class="@NavClass("/")" asp-page="/Index">Главная</a>
-        <a class="@NavClass("/Announcements")" asp-page="/Announcements/Index">Объявления</a>
-        <a class="@NavClass("/Files")" asp-page="/Files/Index">Файлы</a>
-        <a class="@NavClass("/Messages")" asp-page="/Messages/Index">Переписки</a>
-        @if (User.IsInRole(adminGroup))
-        {
-            <a class="@NavClass("/Admin/Audit")" asp-page="/Admin/Audit">Журнал</a>
-            <a class="@NavClass("/Admin/Diagnostics")" asp-page="/Admin/Diagnostics">Диагностика</a>
-        }
-    </nav>
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        @* Поиск по файлам. Обычная форма с методом GET: работает и без
+           JavaScript, а адрес результата можно послать коллеге ссылкой. *@
+        <form class="topsearch" method="get" asp-page="/Files/Index" role="search">
+            <span class="topsearch__icon"><svg class="icon icon--xs"><use href="#i-search"></use></svg></span>
+            <input type="search" name="q" placeholder="Поиск по файлам"
+                   aria-label="Поиск по файлам" data-global-search />
+            <span class="topsearch__hint"><kbd>Ctrl</kbd><kbd>K</kbd></span>
+        </form>
+    }
 
-    <div class="topbar__user">
+    <div class="topbar__tools">
         @if (User.Identity?.IsAuthenticated == true)
         {
             @* ---------- Колокольчик ----------
@@ -85,19 +122,103 @@
             @* Выход только POST-ом — см. комментарий в Logout.cshtml.cs.
                Tag helper сам добавит в форму antiforgery-токен. *@
             <form method="post" asp-page="/Account/Logout" class="inline-form">
-                <button type="submit" class="button button--link">Выйти</button>
+                <button type="submit" class="iconbtn" title="Выйти" aria-label="Выйти">
+                    <svg class="icon"><use href="#i-open"></use></svg>
+                </button>
             </form>
         }
     </div>
 </header>
 
-<main class="page">
-    @RenderBody()
-</main>
+<div class="shell">
 
-<footer class="footer">
-    Корпоративный портал
-</footer>
+    @* ====================== Боковое меню ====================== *@
+    <aside class="sidebar" data-sidebar>
+        <nav class="nav-group">
+            <div class="nav-title">Рабочее пространство</div>
+
+            <a class="nav-item @NavClass("/")" asp-page="/Index">
+                <svg class="icon"><use href="#i-home"></use></svg>
+                Главная
+            </a>
+
+            <a class="nav-item @NavClass("/Files")" asp-page="/Files/Index">
+                <svg class="icon"><use href="#i-folder"></use></svg>
+                Файлы
+            </a>
+
+            <a class="nav-item @NavClass("/Messages")" asp-page="/Messages/Index">
+                <svg class="icon"><use href="#i-chat"></use></svg>
+                Чат
+                @* Число непрочитанных проставляет код страницы после опроса
+                   сервера — здесь только место под него. *@
+                <span class="nav-item__count nav-item__count--alert" data-nav-count="message" hidden>0</span>
+            </a>
+        </nav>
+
+        <nav class="nav-group">
+            <div class="nav-title">Организация</div>
+
+            <a class="nav-item @NavClass("/Announcements")" asp-page="/Announcements/Index">
+                <svg class="icon"><use href="#i-mega"></use></svg>
+                Объявления
+                <span class="nav-item__count" data-nav-count="announcement" hidden>0</span>
+            </a>
+        </nav>
+
+        <nav class="nav-group">
+            <div class="nav-title">Сервис</div>
+
+            <a class="nav-item @NavClass("/Files/Trash")" asp-page="/Files/Trash">
+                <svg class="icon"><use href="#i-trash"></use></svg>
+                Корзина
+            </a>
+
+            @if (isAdmin)
+            {
+                <a class="nav-item @NavClass("/Admin/Audit")" asp-page="/Admin/Audit">
+                    <svg class="icon"><use href="#i-shield"></use></svg>
+                    Журнал
+                </a>
+
+                <a class="nav-item @NavClass("/Admin/Diagnostics")" asp-page="/Admin/Diagnostics">
+                    <svg class="icon"><use href="#i-settings"></use></svg>
+                    Диагностика
+                </a>
+            }
+        </nav>
+
+        @* Карточка «сколько занято». Общий объём задаётся настройкой
+           Storage:TotalCapacityGb; портал по ней ничего не запрещает —
+           она нужна только чтобы цифру было с чем сравнить. *@
+        <div class="storage-card">
+            <div class="storage-card__head">
+                <svg class="icon"><use href="#i-info"></use></svg>
+                Хранилище
+            </div>
+
+            @if (usage.ShowBar)
+            {
+                @* Ширину полосы проставляет код страницы по data-percent:
+                   встроенные стили запрещены политикой безопасности. *@
+                <div class="bar">
+                    <i class="@(usage.IsNearlyFull ? "is-full" : "")"
+                       data-percent="@((int)Math.Round(usage.Fraction * 100))"></i>
+                </div>
+            }
+
+            <div class="storage-card__text">@usage.Caption</div>
+        </div>
+    </aside>
+
+    @* Затемнение под выдвинутым меню на узком экране. *@
+    <div class="scrim" data-sidebar-close></div>
+
+    @* ====================== Содержимое ====================== *@
+    <main class="view">
+        @RenderBody()
+    </main>
+</div>
 
 @* Окно подтверждения: используется вместо системного окна браузера,
    чтобы опасные действия выглядели одинаково на всех страницах. *@

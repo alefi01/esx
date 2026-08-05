@@ -13,7 +13,15 @@ namespace Portal.Web.Services.Notifications;
 public sealed record NotificationItem(string Kind, int Id, string Title, string Author, DateTime At, string Url);
 
 /// <summary>Сводка непрочитанного для одного человека.</summary>
-public sealed record NotificationSummary(int Unread, IReadOnlyList<NotificationItem> Items);
+/// <param name="Unread">Всего непрочитанного — число на колокольчике.</param>
+/// <param name="Announcements">Из них объявлений — число рядом с пунктом меню.</param>
+/// <param name="Messages">Из них сообщений в беседах — число рядом с пунктом меню.</param>
+/// <param name="Items">Последние события списком, вперемешку, свежие сверху.</param>
+public sealed record NotificationSummary(
+    int Unread,
+    int Announcements,
+    int Messages,
+    IReadOnlyList<NotificationItem> Items);
 
 /// <summary>
 /// Подсчёт непрочитанного и отметка «прочитано».
@@ -124,7 +132,8 @@ public sealed class NotificationService
             // и человек, которому написали до первого входа, должен это увидеть.
             var firstVisit = await MessagesAsync(userName, cancellationToken);
 
-            return new NotificationSummary(firstVisit.Unread, firstVisit.Items);
+            return new NotificationSummary(
+                firstVisit.Unread, 0, firstVisit.Unread, firstVisit.Items);
         }
 
         var unreadQuery = _db.Announcements.Where(a => a.Id > lastSeen);
@@ -153,7 +162,8 @@ public sealed class NotificationService
             .Take(MaxItems)
             .ToList();
 
-        return new NotificationSummary(unreadAnnouncements + unreadMessages, items);
+        return new NotificationSummary(
+            unreadAnnouncements + unreadMessages, unreadAnnouncements, unreadMessages, items);
     }
 
     /// <summary>Отметить всё текущее прочитанным.</summary>

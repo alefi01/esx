@@ -6,158 +6,110 @@
     значит шрифты со значками и картинки с CDN недоступны, а хранить
     десяток отдельных файлов ради иконок — лишняя возня.
 
+    Значки КОНТУРНЫЕ: рисуются линией, а не заливкой. Так задумано в макете,
+    и так они одинаково читаются на светлом и тёмном фоне при любом размере.
+    Поэтому в стилях у .icon стоит fill: none и stroke: currentColor —
+    цвет линии наследуется от текста.
+
+    Исключение одно — папки в файловом списке (см. ниже).
+
     Использование в разметке:  <svg class="icon"><use href="#i-folder"></use></svg>
+    Размер задаётся классом (.icon--xs, .icon--lg, .icon--xl) или прямо в стиле.
 *@
 <svg xmlns="http://www.w3.org/2000/svg" class="icon-sprite" aria-hidden="true" focusable="false">
-    <symbol id="i-folder" viewBox="0 0 24 24">
-        <path d="M3.5 6.2c0-.94.76-1.7 1.7-1.7h3.3c.5 0 .98.22 1.3.6l1.05 1.25c.13.15.31.24.5.24h7.45c.94 0 1.7.76 1.7 1.7v9.5c0 .94-.76 1.7-1.7 1.7H5.2c-.94 0-1.7-.76-1.7-1.7V6.2z"/>
+
+    @*
+        Значки папок для файлового списка — ЕДИНСТВЕННОЕ исключение
+        из правила «значки контурные». Папка тут главный предмет,
+        и залитая цветом она узнаётся с одного взгляда, как в проводнике.
+
+        Цвета заданы прямо в путях, простой заливкой, а НЕ градиентом.
+        Градиент здесь пробовался и не подошёл: ссылка вида url(#имя)
+        из значка, вставленного через <use>, браузером не разрешается —
+        папки просто не рисовались. Две сплошные краски, светлая и потемнее,
+        дают тот же объём и работают всегда.
+
+        От темы цвет не зависит намеренно: жёлтая папка одинаково видна
+        и на светлом, и на тёмном фоне.
+    *@
+
+    @* Задняя стенка темнее передней — за счёт этого видно объём. *@
+    <symbol id="i-folder-solid" viewBox="0 0 24 24">
+        <path fill="#e0a020" stroke="none"
+              d="M2 5.6A1.6 1.6 0 0 1 3.6 4h4.6c.5 0 1 .23 1.3.63l1.2 1.57H20.4A1.6 1.6 0 0 1 22 7.8v10.6A1.6 1.6 0 0 1 20.4 20H3.6A1.6 1.6 0 0 1 2 18.4Z" />
+        <path fill="#f7c34d" stroke="none"
+              d="M2 9.4A1.4 1.4 0 0 1 3.4 8h17.2A1.4 1.4 0 0 1 22 9.4v9A1.6 1.6 0 0 1 20.4 20H3.6A1.6 1.6 0 0 1 2 18.4Z" />
     </symbol>
 
-    <symbol id="i-folder-locked" viewBox="0 0 24 24">
-        <path d="M3.5 6.2c0-.94.76-1.7 1.7-1.7h3.3c.5 0 .98.22 1.3.6l1.05 1.25c.13.15.31.24.5.24h7.45c.94 0 1.7.76 1.7 1.7v9.5c0 .94-.76 1.7-1.7 1.7H5.2c-.94 0-1.7-.76-1.7-1.7V6.2z"/>
-        <path class="icon-overlay" d="M13.9 12.2v-1a2.1 2.1 0 1 1 4.2 0v1h.4c.4 0 .7.3.7.7v3c0 .4-.3.7-.7.7h-5c-.4 0-.7-.3-.7-.7v-3c0-.4.3-.7.7-.7h.4zm1.2 0h1.8v-1a.9.9 0 1 0-1.8 0v1z"/>
+    @* Та же папка с замком: у неё выключено наследование прав,
+       то есть внутрь пускают не всех, кого пускают в родительскую. *@
+    <symbol id="i-folder-solid-locked" viewBox="0 0 24 24">
+        <path fill="#e0a020" stroke="none"
+              d="M2 5.6A1.6 1.6 0 0 1 3.6 4h4.6c.5 0 1 .23 1.3.63l1.2 1.57H20.4A1.6 1.6 0 0 1 22 7.8v10.6A1.6 1.6 0 0 1 20.4 20H3.6A1.6 1.6 0 0 1 2 18.4Z" />
+        <path fill="#f7c34d" stroke="none"
+              d="M2 9.4A1.4 1.4 0 0 1 3.4 8h17.2A1.4 1.4 0 0 1 22 9.4v9A1.6 1.6 0 0 1 20.4 20H3.6A1.6 1.6 0 0 1 2 18.4Z" />
+        <path fill="#6b4b12" stroke="none"
+              d="M12.6 13.2a2.4 2.4 0 0 1 4.8 0v.6h.5a.6.6 0 0 1 .6.6v3a.6.6 0 0 1-.6.6h-5.8a.6.6 0 0 1-.6-.6v-3a.6.6 0 0 1 .6-.6h.5Zm1.2.6h2.4v-.6a1.2 1.2 0 0 0-2.4 0Z" />
     </symbol>
 
-    <symbol id="i-file" viewBox="0 0 24 24">
-        <path d="M6 3.5h7.2c.2 0 .4.08.55.23l4.52 4.52c.15.15.23.34.23.55V20a.5.5 0 0 1-.5.5H6a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5z"/>
-        <path class="icon-overlay" d="M13.2 3.6v4.3c0 .3.2.5.5.5h4.3"/>
-    </symbol>
+    @* ---------- Разделы и навигация ---------- *@
 
-    <symbol id="i-upload" viewBox="0 0 24 24">
-        <path d="M12 15.5a.9.9 0 0 1-.9-.9V6.2L8.5 8.8a.9.9 0 1 1-1.28-1.27l4.14-4.14a.9.9 0 0 1 1.28 0l4.14 4.14A.9.9 0 0 1 15.5 8.8l-2.6-2.6v8.4a.9.9 0 0 1-.9.9z"/>
-        <path d="M4.6 14.2a.9.9 0 0 1 .9.9v3.2h13v-3.2a.9.9 0 1 1 1.8 0v3.6c0 .77-.63 1.4-1.4 1.4H5.1c-.77 0-1.4-.63-1.4-1.4v-3.6a.9.9 0 0 1 .9-.9z"/>
-    </symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+    <symbol id="i-folder-locked" viewBox="0 0 24 24"><path d="M22 12V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h7"/><rect x="14" y="14" width="8" height="6" rx="1.4"/><path d="M16 14v-1.6a2 2 0 0 1 4 0V14"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-mega" viewBox="0 0 24 24"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M3 7h9M19 7h2M3 12h2M11 12h10M3 17h7M17 17h4"/><circle cx="15.5" cy="7" r="2.3"/><circle cx="8" cy="12" r="2.3"/><circle cx="13.5" cy="17" r="2.3"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></symbol>
 
-    <symbol id="i-new-folder" viewBox="0 0 24 24">
-        <path d="M3.5 6.2c0-.94.76-1.7 1.7-1.7h3.3c.5 0 .98.22 1.3.6l1.05 1.25c.13.15.31.24.5.24h7.45c.94 0 1.7.76 1.7 1.7v9.5c0 .94-.76 1.7-1.7 1.7H5.2c-.94 0-1.7-.76-1.7-1.7V6.2z"/>
-        <path class="icon-overlay" d="M12 10.4v5.2M9.4 13h5.2"/>
-    </symbol>
+    @* ---------- Действия с файлами ---------- *@
 
-    <symbol id="i-settings" viewBox="0 0 24 24">
-        <path class="icon-overlay" d="M3.5 7h9M19 7h1.5M3.5 12h1.5M11 12h9.5M3.5 17h7.5M17 17h3.5"/>
-        <circle cx="15.5" cy="7" r="2.3"/>
-        <circle cx="8" cy="12" r="2.3"/>
-        <circle cx="14" cy="17" r="2.3"/>
-    </symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></symbol>
+    <symbol id="i-new-folder" viewBox="0 0 24 24"><path d="M22 13V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9"/><path d="M18 15v6M15 18h6"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-restore" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-rename" viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><path d="M18.4 11.3l-7 7a4.2 4.2 0 0 1-5.9-5.9l7.6-7.6a2.8 2.8 0 0 1 4 4l-7.6 7.6a1.4 1.4 0 0 1-2-2l7-7"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9.5 4.5H4.5v5M14.5 19.5h5v-5M4.5 14.5v5h5M19.5 9.5v-5h-5"/></symbol>
 
-    <symbol id="i-trash" viewBox="0 0 24 24">
-        <path d="M9.2 3.5h5.6a.9.9 0 0 1 .9.9v1.1h3.4a.9.9 0 1 1 0 1.8h-.5l-.86 11.2a2 2 0 0 1-2 1.85H8.26a2 2 0 0 1-2-1.85L5.4 7.3h-.5a.9.9 0 0 1 0-1.8h3.4V4.4a.9.9 0 0 1 .9-.9zm.9 2h3.8v-.2h-3.8v.2z"/>
-    </symbol>
+    @* ---------- Мелочи интерфейса ---------- *@
 
-    <symbol id="i-download" viewBox="0 0 24 24">
-        <path d="M12 3.6a.9.9 0 0 1 .9.9v8.4l2.6-2.6a.9.9 0 1 1 1.28 1.27l-4.14 4.14a.9.9 0 0 1-1.28 0L7.22 11.57A.9.9 0 0 1 8.5 10.3l2.6 2.6V4.5a.9.9 0 0 1 .9-.9z"/>
-        <path d="M4.6 14.2a.9.9 0 0 1 .9.9v3.2h13v-3.2a.9.9 0 1 1 1.8 0v3.6c0 .77-.63 1.4-1.4 1.4H5.1c-.77 0-1.4-.63-1.4-1.4v-3.6a.9.9 0 0 1 .9-.9z"/>
-    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
+    <symbol id="i-warning" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/></symbol>
+    <symbol id="i-zoom-in" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M11 8v6M8 11h6"/></symbol>
+    <symbol id="i-zoom-out" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M8 11h6"/></symbol>
 
-    <symbol id="i-copy" viewBox="0 0 24 24">
-        <path d="M9 3.5h8.5c.83 0 1.5.67 1.5 1.5v9.5a.9.9 0 1 1-1.8 0V5.3H9A.9.9 0 0 1 9 3.5z"/>
-        <path d="M6.5 6.6h7.9c.83 0 1.5.67 1.5 1.5V19c0 .83-.67 1.5-1.5 1.5H6.5c-.83 0-1.5-.67-1.5-1.5V8.1c0-.83.67-1.5 1.5-1.5z"/>
-    </symbol>
+    @* ---------- Люди и переписки ---------- *@
 
-    <symbol id="i-cut" viewBox="0 0 24 24">
-        <path class="icon-overlay" d="M7 4l10 13M17 4L7 17"/>
-        <path d="M6.4 20.5a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-1.8a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4zM17.6 20.5a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-1.8a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z"/>
-    </symbol>
+    <symbol id="i-person" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    <symbol id="i-group" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
 
-    <symbol id="i-paste" viewBox="0 0 24 24">
-        <path d="M9 2.9h6a.9.9 0 0 1 .9.9v.7h1.6c.83 0 1.5.67 1.5 1.5V20c0 .83-.67 1.5-1.5 1.5H6.5c-.83 0-1.5-.67-1.5-1.5V6c0-.83.67-1.5 1.5-1.5h1.6v-.7A.9.9 0 0 1 9 2.9zm.9 1.8v.9h4.2v-.9H9.9z"/>
-    </symbol>
+    @* ---------- Тема оформления ---------- *@
 
-    <symbol id="i-open" viewBox="0 0 24 24">
-        <path d="M13.6 3.5h6a.9.9 0 0 1 .9.9v6a.9.9 0 1 1-1.8 0V6.57l-7.06 7.06a.9.9 0 0 1-1.27-1.27L17.43 5.3H13.6a.9.9 0 0 1 0-1.8z"/>
-        <path d="M5.5 6.6h4.6a.9.9 0 0 1 0 1.8H6.3v9.3h9.3v-3.8a.9.9 0 1 1 1.8 0v4.6c0 .55-.45 1-1 1H5.5c-.55 0-1-.45-1-1V7.6c0-.55.45-1 1-1z"/>
-    </symbol>
-
-    <symbol id="i-chevron" viewBox="0 0 24 24">
-        <path class="icon-overlay" d="M9.5 6.5l5 5.5-5 5.5"/>
-    </symbol>
-
-    <symbol id="i-check" viewBox="0 0 24 24">
-        <path class="icon-overlay" d="M5 12.5l4.5 4.5L19 7.5"/>
-    </symbol>
-
-    <symbol id="i-warning" viewBox="0 0 24 24">
-        <path d="M12 3.2c.5 0 .96.27 1.2.7l8 14a1.4 1.4 0 0 1-1.2 2.1H4c-1.07 0-1.74-1.16-1.2-2.1l8-14c.24-.43.7-.7 1.2-.7zm0 5.4a.9.9 0 0 0-.9.9v4a.9.9 0 1 0 1.8 0v-4a.9.9 0 0 0-.9-.9zm0 8.6a1.1 1.1 0 1 0 0-2.2 1.1 1.1 0 0 0 0 2.2z"/>
-    </symbol>
-
-    @* --- добавлено на этапе 3.1: предпросмотр, темы, поиск, уведомления --- *@
-
-    <symbol id="i-search" viewBox="0 0 24 24">
-        <path class="icon-overlay" d="M10.5 3.8a6.7 6.7 0 1 1 0 13.4 6.7 6.7 0 0 1 0-13.4zM15.4 15.4l4.4 4.4"/>
-    </symbol>
-
-    <symbol id="i-close" viewBox="0 0 24 24">
-        <path class="icon-overlay" d="M6 6l12 12M18 6L6 18"/>
-    </symbol>
-
-    <symbol id="i-eye" viewBox="0 0 24 24">
-        <path class="icon-overlay" d="M2.6 12S6.4 5.6 12 5.6 21.4 12 21.4 12 17.6 18.4 12 18.4 2.6 12 2.6 12z"/>
-        <circle cx="12" cy="12" r="2.9"/>
-    </symbol>
-
-    <symbol id="i-rename" viewBox="0 0 24 24">
-        <path d="M16.6 3.6a1.4 1.4 0 0 1 2 0l1.8 1.8a1.4 1.4 0 0 1 0 2L18.9 8.9 15.1 5.1l1.5-1.5zM13.8 6.4l3.8 3.8-8.2 8.2a1 1 0 0 1-.45.26l-4 1.1a.6.6 0 0 1-.74-.74l1.1-4a1 1 0 0 1 .26-.45l8.23-8.17z"/>
-    </symbol>
-
-    <symbol id="i-info" viewBox="0 0 24 24">
-        <path d="M12 2.8a9.2 9.2 0 1 1 0 18.4 9.2 9.2 0 0 1 0-18.4zm0 6.4a1.15 1.15 0 1 0 0-2.3 1.15 1.15 0 0 0 0 2.3zm0 1.6a.9.9 0 0 0-.9.9v5a.9.9 0 1 0 1.8 0v-5a.9.9 0 0 0-.9-.9z"/>
-    </symbol>
-
-    <symbol id="i-link" viewBox="0 0 24 24">
-        <path class="icon-overlay" d="M10.2 13.8a3.6 3.6 0 0 0 5.1 0l3-3a3.6 3.6 0 0 0-5.1-5.1l-1.3 1.3M13.8 10.2a3.6 3.6 0 0 0-5.1 0l-3 3a3.6 3.6 0 0 0 5.1 5.1l1.3-1.3"/>
-    </symbol>
-
-    <symbol id="i-bell" viewBox="0 0 24 24">
-        <path d="M12 2.6a5.7 5.7 0 0 1 5.7 5.7v3.3l1.4 2.6a1 1 0 0 1-.88 1.48H5.78a1 1 0 0 1-.88-1.48l1.4-2.6V8.3A5.7 5.7 0 0 1 12 2.6z"/>
-        <path d="M9.7 17.5h4.6a2.3 2.3 0 0 1-4.6 0z"/>
-    </symbol>
-
-    @* Три значка режима темы: как в системе, светлая, тёмная. *@
-    <symbol id="i-theme-auto" viewBox="0 0 24 24">
-        <path d="M12 3.4a8.6 8.6 0 1 1 0 17.2 8.6 8.6 0 0 1 0-17.2zm0 1.8v13.6a6.8 6.8 0 0 0 0-13.6z"/>
-    </symbol>
-
-    <symbol id="i-theme-light" viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="4.1"/>
-        <path class="icon-overlay" d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/>
-    </symbol>
-
-    <symbol id="i-theme-dark" viewBox="0 0 24 24">
-        <path d="M20.4 14.6A8.6 8.6 0 0 1 9.4 3.6a8.6 8.6 0 1 0 11 11z"/>
-    </symbol>
-    @* --- добавлено на этапе 5: переписки --- *@
-
-    <symbol id="i-chat" viewBox="0 0 24 24">
-        <path d="M4.2 4.4h15.6c.94 0 1.7.76 1.7 1.7v9c0 .94-.76 1.7-1.7 1.7H9.6l-4.3 3.3a.7.7 0 0 1-1.12-.56V16.8H4.2c-.94 0-1.7-.76-1.7-1.7v-9c0-.94.76-1.7 1.7-1.7z"/>
-    </symbol>
-
-    <symbol id="i-person" viewBox="0 0 24 24">
-        <circle cx="12" cy="8" r="3.9"/>
-        <path d="M4.6 20.3c0-3.6 3.3-6 7.4-6s7.4 2.4 7.4 6a.9.9 0 0 1-.9.9H5.5a.9.9 0 0 1-.9-.9z"/>
-    </symbol>
-
-    <symbol id="i-group" viewBox="0 0 24 24">
-        <circle cx="9" cy="8.2" r="3.4"/>
-        <circle cx="17.2" cy="9.2" r="2.6"/>
-        <path d="M2.6 19.6c0-3.2 2.9-5.3 6.4-5.3s6.4 2.1 6.4 5.3a.8.8 0 0 1-.8.8H3.4a.8.8 0 0 1-.8-.8z"/>
-        <path d="M16.4 13.6c2.9 0 5 1.6 5 4a.8.8 0 0 1-.8.8h-3.4c.1-.3.1-.5.1-.8 0-1.6-.6-3-1.6-4h.7z"/>
-    </symbol>
-
-    <symbol id="i-pen" viewBox="0 0 24 24">
-        <path d="M16.6 3.6a1.4 1.4 0 0 1 2 0l1.8 1.8a1.4 1.4 0 0 1 0 2L18.9 8.9 15.1 5.1l1.5-1.5zM13.8 6.4l3.8 3.8-8.2 8.2a1 1 0 0 1-.45.26l-4 1.1a.6.6 0 0 1-.74-.74l1.1-4a1 1 0 0 1 .26-.45l8.23-8.17z"/>
-    </symbol>
-
-    <symbol id="i-clip" viewBox="0 0 24 24">
-        <path class="icon-overlay" d="M18.4 11.3l-7 7a4.2 4.2 0 0 1-5.9-5.9l7.6-7.6a2.8 2.8 0 0 1 4 4l-7.6 7.6a1.4 1.4 0 0 1-2-2l7-7"/>
-    </symbol>
-
-    <symbol id="i-send" viewBox="0 0 24 24">
-        <path d="M3.6 11.1l16.1-6.9a.8.8 0 0 1 1.05 1.05l-6.9 16.1a.8.8 0 0 1-1.48-.06l-2.2-6-6-2.2a.8.8 0 0 1-.06-1.48z"/>
-    </symbol>
-    <symbol id="i-expand" viewBox="0 0 24 24">
-        <path class="icon-overlay" d="M9.5 4.5H4.5v5M14.5 19.5h5v-5M4.5 14.5v5h5M19.5 9.5v-5h-5"/>
-    </symbol>
-    <symbol id="i-chevron-down" viewBox="0 0 24 24">
-        <path class="icon-overlay" d="M6.5 9.5l5.5 5 5.5-5"/>
-    </symbol>
+    <symbol id="i-theme-light" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-theme-dark" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+    <symbol id="i-theme-auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18Z" fill="currentColor" stroke="none"/></symbol>
 </svg>

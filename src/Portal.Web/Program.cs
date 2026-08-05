@@ -300,6 +300,11 @@ builder.Services.AddScoped<FolderTree>();
 builder.Services.AddScoped<AuditLog>();
 builder.Services.AddScoped<NotificationService>();
 
+// Занятое место для карточки в боковом меню. Само значение общее для всех
+// и лежит в памяти минуту (см. StorageUsage), но берётся из базы — Scoped.
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<StorageUsage>();
+
 // Переписки. Справочник сотрудников и служба бесед живут один запрос:
 // оба обращаются к базе, а контекст базы существует ровно столько же.
 // Хранилище вложений состояния не имеет, поэтому одно на всё приложение.

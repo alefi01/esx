@@ -19,30 +19,60 @@
 /* 1. Переменные оформления                                               */
 /* ====================================================================== */
 
+/*
+ * Цвета заданы ДВАЖДЫ и по-разному, и это сделано намеренно.
+ *
+ * Сначала идут короткие имена (--bg, --surface, --accent…) — это набор
+ * из макета, по которому рисовался портал. Именно их правят, когда нужно
+ * поменять вид сайта: достаточно тронуть одно место на тему.
+ *
+ * Ниже они присваиваются длинным именам (--c-bg, --c-surface, --c-accent…).
+ * Длинные имена расставлены по всему файлу — их сотни, и переписывать всё
+ * ради смены палитры смысла нет. Так что длинные — это просто «псевдонимы»,
+ * которые сами подхватят новые цвета. Трогать их не нужно.
+ */
 :root {
-    /* Цвета. Собраны вокруг одного акцентного тона, остальное — оттенки серого. */
-    --c-accent: #2563eb;
-    --c-accent-hover: #1d4ed8;
-    --c-accent-soft: #eff4ff;
+    /* --- Набор из макета. Светлая тема. --- */
+    --bg: #eef1f6;          /* фон всей страницы                    */
+    --surface: #ffffff;     /* карточки, панели, окна               */
+    --surface2: #f5f7fb;    /* второй слой: наведение, поля ввода   */
+    --surface3: #eaeef5;    /* третий слой: полосы, заглушки        */
+    --text: #171c26;
+    --muted: #68738a;       /* подписи, второстепенный текст        */
+    --border: #e2e7f0;
+    --accent: #0067c0;      /* фирменный синий                      */
+    --accent-2: #3aa0ff;    /* он же, светлее — для наведения       */
+    --accent-soft: rgba(0, 103, 192, .09);
+    --danger: #e5484d;
+    --warn: #f59f00;
+    --ok: #1e8e5a;
 
-    --c-bg: #f6f7f9;
-    --c-surface: #ffffff;
-    --c-surface-2: #f2f3f5;
-    --c-border: #e3e5e9;
-    --c-border-strong: #cfd3da;
+    /* Рамка «посильнее» — там, где обычной не видно (кнопки, поля). */
+    --border-strong: #cfd7e4;
 
-    --c-text: #1a1d21;
-    --c-text-muted: #6b7280;
+    /* --- Псевдонимы: их читает остальной файл. Не правьте здесь цвета. --- */
+    --c-accent: var(--accent);
+    --c-accent-hover: var(--accent-2);
+    --c-accent-soft: var(--accent-soft);
 
-    --c-ok: #15803d;
-    --c-ok-bg: #ecfdf3;
-    --c-warn: #b45309;
-    --c-warn-bg: #fffaeb;
-    --c-error: #b91c1c;
-    --c-error-bg: #fef2f2;
+    --c-bg: var(--bg);
+    --c-surface: var(--surface);
+    --c-surface-2: var(--surface2);
+    --c-border: var(--border);
+    --c-border-strong: var(--border-strong);
+
+    --c-text: var(--text);
+    --c-text-muted: var(--muted);
+
+    --c-ok: var(--ok);
+    --c-ok-bg: color-mix(in srgb, var(--ok) 12%, var(--surface));
+    --c-warn: var(--warn);
+    --c-warn-bg: color-mix(in srgb, var(--warn) 14%, var(--surface));
+    --c-error: var(--danger);
+    --c-error-bg: color-mix(in srgb, var(--danger) 10%, var(--surface));
 
     --c-folder: #f0b429;
-    --c-file: #94a3b8;
+    --c-file: var(--muted);
 
     /* Размеры */
     --r-sm: 6px;
@@ -50,6 +80,12 @@
     --r-lg: 14px;
     --gap: 16px;
     --page-width: 1100px;
+
+    /* Каркас: высота шапки и ширина бокового меню.
+       Вынесены в переменные, потому что от них считаются высоты
+       прокручиваемых областей — иначе пришлось бы править в десятке мест. */
+    --topbar-h: 60px;
+    --sidebar-w: 252px;
 
     /* Тени: мягкие, в два слоя — так объём выглядит естественнее */
     --shadow-sm: 0 1px 2px rgba(16, 24, 40, .05);
@@ -73,32 +109,27 @@
  *
  * Поэтому набор переменных приходится записать дважды: одинаковых значений
  * в двух селекторах CSS иначе не добиться — переменных-«миксинов» в нём нет.
- * Правя цвета, правьте оба места.
+ * Правя цвета, правьте оба места. Псевдонимы (--c-*) переопределять не надо:
+ * они ссылаются на короткие имена и обновятся сами.
  */
 @media (prefers-color-scheme: dark) {
     /* Системная тёмная действует, только если светлая не выбрана явно. */
     :root:not([data-theme="light"]) {
-        --c-accent: #60a5fa;
-        --c-accent-hover: #93c5fd;
-        --c-accent-soft: #172554;
+        --bg: #14171f;
+        --surface: #1d2230;
+        --surface2: #242a3a;
+        --surface3: #2b3245;
+        --text: #e8ecf6;
+        --muted: #96a0b6;
+        --border: #2e3547;
+        --accent: #4cc2ff;
+        --accent-2: #2f8af5;
+        --accent-soft: rgba(76, 194, 255, .12);
+        --danger: #ff6b6f;
+        --warn: #ffc046;
+        --ok: #3fc38a;
 
-        --c-bg: #0f1115;
-        --c-surface: #171a20;
-        --c-surface-2: #1e222a;
-        --c-border: #272b33;
-        --c-border-strong: #3a3f4a;
-
-        --c-text: #e8eaed;
-        --c-text-muted: #9aa2ae;
-
-        --c-ok: #4ade80;
-        --c-ok-bg: #052e16;
-        --c-warn: #fbbf24;
-        --c-warn-bg: #2c1e05;
-        --c-error: #f87171;
-        --c-error-bg: #2c0f0f;
-
-        --c-file: #64748b;
+        --border-strong: #3c445a;
 
         --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
         --shadow-md: 0 4px 12px rgba(0, 0, 0, .5);
@@ -107,32 +138,26 @@
 }
 
 :root[data-theme="dark"] {
-        --c-accent: #60a5fa;
-        --c-accent-hover: #93c5fd;
-        --c-accent-soft: #172554;
+    --bg: #14171f;
+    --surface: #1d2230;
+    --surface2: #242a3a;
+    --surface3: #2b3245;
+    --text: #e8ecf6;
+    --muted: #96a0b6;
+    --border: #2e3547;
+    --accent: #4cc2ff;
+    --accent-2: #2f8af5;
+    --accent-soft: rgba(76, 194, 255, .12);
+    --danger: #ff6b6f;
+    --warn: #ffc046;
+    --ok: #3fc38a;
 
-        --c-bg: #0f1115;
-        --c-surface: #171a20;
-        --c-surface-2: #1e222a;
-        --c-border: #272b33;
-        --c-border-strong: #3a3f4a;
+    --border-strong: #3c445a;
 
-        --c-text: #e8eaed;
-        --c-text-muted: #9aa2ae;
-
-        --c-ok: #4ade80;
-        --c-ok-bg: #052e16;
-        --c-warn: #fbbf24;
-        --c-warn-bg: #2c1e05;
-        --c-error: #f87171;
-        --c-error-bg: #2c0f0f;
-
-        --c-file: #64748b;
-
-        --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
-        --shadow-md: 0 4px 12px rgba(0, 0, 0, .5);
-        --shadow-lg: 0 20px 40px rgba(0, 0, 0, .6);
-    }
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, .5);
+    --shadow-lg: 0 20px 40px rgba(0, 0, 0, .6);
+}
 
 /* ====================================================================== */
 /* 2. Основа                                                              */
@@ -189,27 +214,36 @@ code {
     margin: 6px 0 0;
 }
 
-/* Значки. Размер задаётся классом, цвет наследуется от текста. */
+/*
+ * Значки.
+ *
+ * Все значки КОНТУРНЫЕ: рисуются линией, а не заливкой (см. _Icons.cshtml).
+ * Поэтому здесь fill: none и stroke: currentColor — цвет линии наследуется
+ * от цвета текста, и один и тот же значок выглядит уместно и на кнопке,
+ * и в меню, и на светлом, и на тёмном фоне.
+ *
+ * Толщина линии слегка уменьшается на крупных размерах: у значка 64×64
+ * та же толщина 1.8 выглядела бы неоправданно жирной.
+ */
 .icon {
     width: 20px;
     height: 20px;
     flex: none;
-    fill: currentColor;
-    vertical-align: -.2em;
-}
-
-.icon--xs { width: 14px; height: 14px; }
-.icon--lg { width: 44px; height: 44px; }
-.icon--xl { width: 64px; height: 64px; }
-
-/* Обводки внутри значков рисуются линией, а не заливкой. */
-.icon-overlay {
     fill: none;
     stroke: currentColor;
     stroke-width: 1.8;
     stroke-linecap: round;
     stroke-linejoin: round;
+    vertical-align: -.2em;
 }
+
+.icon--xs { width: 14px; height: 14px; stroke-width: 2; }
+.icon--lg { width: 44px; height: 44px; stroke-width: 1.4; }
+.icon--xl { width: 64px; height: 64px; stroke-width: 1.2; }
+
+/* Значок «залитый» — например, звёздочка у файла в избранном.
+   Здесь заливка нужна: пустая звезда и закрашенная должны отличаться. */
+.icon--solid { fill: currentColor; }
 
 .icon-sprite { display: none; }
 
@@ -227,65 +261,270 @@ code {
 /* 3. Каркас страницы                                                     */
 /* ====================================================================== */
 
+/*
+ * Портал устроен как программа, а не как обычный сайт: шапка и боковое меню
+ * стоят на месте, прокручивается только середина. Отсюда правила ниже —
+ * высота 100% по всей цепочке html → body → .shell, иначе «прокручивать
+ * только середину» не получится: браузеру не от чего считать её высоту.
+ *
+ * Класс app-shell стоит на <body> только в основной разметке (_Layout).
+ * У страницы входа разметка другая (_LayoutBare), и там страница
+ * прокручивается как обычно — иначе на маленьком экране форма входа
+ * оказалась бы обрезанной.
+ */
+html { height: 100%; }
+
+body.app-shell {
+    height: 100%;
+    overflow: hidden;
+}
+
 .topbar {
-    position: sticky;
-    top: 0;
-    z-index: 40;
     display: flex;
     align-items: center;
-    gap: 24px;
-    height: 56px;
-    padding: 0 20px;
-    background: color-mix(in srgb, var(--c-surface) 85%, transparent);
-    backdrop-filter: blur(12px);
+    gap: 12px;
+    height: var(--topbar-h);
+    padding: 0 16px;
+    background: var(--c-surface);
     border-bottom: 1px solid var(--c-border);
+    position: relative;
+    z-index: 50;
 }
 
 .topbar__brand {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 9px;
     font-weight: 650;
     font-size: 16px;
     color: var(--c-text);
     letter-spacing: -.01em;
+    white-space: nowrap;
 }
 
 .topbar__brand:hover { text-decoration: none; }
 
-.topbar__nav { display: flex; gap: 4px; }
-
-.topbar__nav a {
-    padding: 6px 12px;
-    border-radius: var(--r-sm);
-    color: var(--c-text-muted);
-    font-weight: 520;
-    font-size: 14px;
-    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+/* Значок портала — единственное место с фирменной заливкой. */
+.topbar__logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: 9px;
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
 }
 
-.topbar__nav a:hover {
-    background: var(--c-surface-2);
-    color: var(--c-text);
-    text-decoration: none;
-}
+.topbar__logo .icon { width: 18px; height: 18px; }
 
-/* Текущий раздел подсвечен — человек всегда видит, где находится. */
-.topbar__nav a.is-active {
-    background: var(--c-accent-soft);
-    color: var(--c-accent);
-}
+/* Кнопка бокового меню. На широком экране не нужна — меню и так видно. */
+.burger { display: none; }
 
-.topbar__user {
+.topbar__tools {
     margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     color: var(--c-text-muted);
     font-size: 14px;
 }
 
-.topbar__name { margin-left: 4px; }
+.topbar__name {
+    margin: 0 4px;
+    max-width: 190px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---------- Общий поиск в шапке (Ctrl+K) ---------- */
+
+.topsearch {
+    position: relative;
+    flex: 1 1 380px;
+    max-width: 420px;
+    margin-left: 10px;
+}
+
+.topsearch input {
+    width: 100%;
+    height: 36px;
+    padding: 0 78px 0 36px;
+    font: inherit;
+    font-size: 14px;
+    color: var(--c-text);
+    background: var(--c-surface-2);
+    border: 1px solid transparent;
+    border-radius: 999px;
+    transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+
+.topsearch input:focus {
+    outline: none;
+    background: var(--c-surface);
+    border-color: var(--c-accent);
+}
+
+.topsearch__icon {
+    position: absolute;
+    left: 11px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--c-text-muted);
+    pointer-events: none;
+}
+
+/* Подсказка «Ctrl K» справа в поле: сочетание клавиш видно, но не мешает. */
+.topsearch__hint {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 3px;
+    color: var(--c-text-muted);
+    font-size: 11px;
+    pointer-events: none;
+}
+
+.topsearch__hint kbd {
+    font: inherit;
+    padding: 1px 5px;
+    border: 1px solid var(--c-border-strong);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: var(--c-surface);
+}
+
+/* ---------- Боковое меню ---------- */
+
+.shell {
+    display: flex;
+    height: calc(100% - var(--topbar-h));
+}
+
+.sidebar {
+    width: var(--sidebar-w);
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 10px;
+    background: var(--c-surface);
+    border-right: 1px solid var(--c-border);
+    overflow-y: auto;
+}
+
+.nav-group { margin-bottom: 10px; }
+
+.nav-title {
+    padding: 8px 10px 5px;
+    color: var(--c-text-muted);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 11px;
+    border-radius: var(--r-md);
+    color: var(--c-text);
+    font-size: 14px;
+    font-weight: 500;
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+.nav-item:hover { background: var(--c-surface-2); text-decoration: none; color: var(--c-text); }
+.nav-item .icon { width: 18px; height: 18px; color: var(--c-text-muted); }
+
+/* Текущий раздел подсвечен — человек всегда видит, где находится. */
+.nav-item.is-active {
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+    font-weight: 600;
+}
+
+.nav-item.is-active .icon { color: var(--c-accent); }
+
+/* Число справа: непрочитанные сообщения и объявления. */
+.nav-item__count {
+    margin-left: auto;
+    min-width: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--surface3);
+    color: var(--c-text-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    text-align: center;
+    line-height: 18px;
+}
+
+.nav-item.is-active .nav-item__count { background: var(--c-accent); color: #fff; }
+.nav-item__count--alert { background: var(--c-error); color: #fff; }
+
+/* ---------- Карточка «сколько занято на диске» ---------- */
+
+.storage-card {
+    margin-top: auto;
+    padding: 13px;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-lg);
+    background: var(--surface2);
+    font-size: 12.5px;
+}
+
+.storage-card__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    color: var(--c-text);
+    margin-bottom: 9px;
+}
+
+.storage-card__head .icon { width: 16px; height: 16px; color: var(--c-text-muted); }
+
+.storage-card .bar {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--surface3);
+    overflow: hidden;
+}
+
+.storage-card .bar > i {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width var(--t-base) var(--ease);
+}
+
+/* Место заканчивается — полоса краснеет. Отдельная подпись не нужна. */
+.storage-card .bar > i.is-full { background: var(--c-error); }
+
+.storage-card__text { margin-top: 7px; color: var(--c-text-muted); }
+
+/* Затемнение под выдвинутым меню. На широком экране меню никуда
+   не выдвигается, поэтому затемнения нет вовсе — см. «Узкие экраны». */
+.scrim { display: none; }
+
+/* ---------- Область содержимого ---------- */
+
+.view {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 20px 26px 40px;
+    animation: page-in var(--t-base) var(--ease);
+}
 
 /* Круглая кнопка со значком: колокольчик, тема, закрыть панель. */
 .iconbtn {
@@ -307,34 +546,41 @@ code {
 .iconbtn:hover { background: var(--c-surface-2); color: var(--c-text); text-decoration: none; }
 .iconbtn.is-active { background: var(--c-accent-soft); color: var(--c-accent); }
 
+/*
+ * .page — разметка страницы входа и других страниц без бокового меню
+ * (_LayoutBare). В основной разметке её нет: там роль «страницы» играет .view.
+ */
 .page {
     max-width: var(--page-width);
     margin: 0 auto;
     padding: 24px var(--gap) 40px;
     animation: page-in var(--t-base) var(--ease);
-    /* Сдвиг влево при открытом предпросмотре — см. раздел «Предпросмотр». */
-    transition: margin var(--t-base) var(--ease), max-width var(--t-base) var(--ease);
 }
 
 .page--centered { max-width: 420px; padding-top: 10vh; }
 
-.footer {
-    max-width: var(--page-width);
-    margin: 0 auto;
-    padding: 0 var(--gap) 24px;
-    color: var(--c-text-muted);
-    font-size: 13px;
-}
-
+/* Шапка раздела: заголовок слева, кнопки действий справа. */
 .page-header {
     display: flex;
     align-items: center;
     gap: var(--gap);
-    margin-bottom: var(--gap);
+    margin-bottom: 18px;
 }
 
 .page-header h1 { margin: 0; }
 .page-header .btn, .page-header .button { margin-left: auto; }
+
+/* Строка под заголовком: чем этот раздел занимается. */
+.page-header__text { min-width: 0; }
+.page-header__sub { margin: 3px 0 0; color: var(--c-text-muted); font-size: 13.5px; }
+
+/*
+ * Ограничитель ширины для страниц со сплошным текстом — объявлений,
+ * настроек, журнала. Область содержимого раскрыта на всю ширину окна,
+ * и без него строки на широком мониторе получаются в 200 символов:
+ * глаз теряет начало следующей строки.
+ */
+.narrow { max-width: 940px; }
 
 /* ====================================================================== */
 /* 4. Кнопки и поля                                                       */
@@ -799,7 +1045,34 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .crumbs__sep { color: var(--c-border-strong); }
 .crumbs__current { font-weight: 600; padding: 3px 6px; }
 
-.toolbar__actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.toolbar__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.sortform { display: flex; gap: 6px; margin: 0; }
+
+/* Список выбора: порядок сортировки. Оформлен так же, как кнопки рядом. */
+.sel {
+    height: 36px;
+    padding: 0 10px;
+    font: inherit;
+    font-size: 13.5px;
+    color: var(--c-text);
+    background: var(--c-surface);
+    border: 1px solid var(--c-border-strong);
+    border-radius: var(--r-md);
+    cursor: pointer;
+}
+
+/* Переключатель «плитками / списком»: две кнопки в одной рамке. */
+.vt {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    background: var(--c-surface-2);
+    border-radius: var(--r-md);
+}
+
+.vt .iconbtn { width: 30px; height: 30px; border-radius: 7px; }
+.vt .iconbtn.is-active { background: var(--c-surface); color: var(--c-accent); box-shadow: var(--shadow-sm); }
 
 .toolbar__meta {
     flex-basis: 100%;
@@ -842,24 +1115,42 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     outline: none;
 }
 
+/*
+ * Список содержимого папки.
+ *
+ * Разметка у обоих видов ОДНА (см. Files/Index.cshtml) — различаются только
+ * стили. Ниже сначала идёт вид плитками, потом всё, что меняет класс
+ * grid--list. Так две «шкурки» лежат рядом и правятся вместе, а не расходятся.
+ */
 .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
     gap: 10px;
 }
 
-/* Плитка папки или файла — вид, привычный по проводнику Windows. */
+/* Заголовок столбцов нужен только в режиме списка. */
+.grid__head { display: none; }
+
+/*
+ * Плитка папки или файла — вид, привычный по проводнику Windows.
+ *
+ * Сетка из двух столбцов, а не колонка: значок, имя и пометки занимают
+ * всю ширину, а размер и дата встают рядом друг с другом в одну строку.
+ * Колонкой их пришлось бы оборачивать лишним элементом, который в режиме
+ * списка только мешал бы — там это отдельные столбцы таблицы.
+ */
 .tile {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 6px;
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: center;
+    justify-items: center;
+    align-content: start;
+    gap: 8px 5px;
     /* Одинаковая высота: иначе длинное имя файла растягивает свою плитку,
        и весь ряд под ней съезжает. */
-    min-height: 148px;
-    padding: 14px 8px 12px;
-    border-radius: var(--r-md);
+    min-height: 156px;
+    padding: 16px 8px 12px;
+    border-radius: var(--r-lg);
     border: 1px solid transparent;
     color: var(--c-text);
     text-align: center;
@@ -888,27 +1179,80 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     transform: scale(1.04);
 }
 
-.tile__icon { position: relative; display: flex; align-items: center; justify-content: center; }
-
-.tile--folder .tile__icon { color: var(--c-folder); }
-.tile--file .tile__icon { color: var(--c-file); }
-
-/* Расширение файла подписью на значке — как отличают типы в проводнике. */
-.tile__ext {
-    position: absolute;
-    left: 50%;
-    bottom: 3px;
-    transform: translateX(-50%);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: .03em;
-    color: #fff;
-    background: var(--c-accent);
-    border-radius: 3px;
-    padding: 0 4px;
-    max-width: 38px;
-    overflow: hidden;
+.tile__icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
 }
+
+/*
+ * Значок файла: прямоугольник «листа бумаги», покрашенный по типу файла,
+ * с расширением внизу. Нарисован стилями, без картинок и без кода —
+ * значит, не нужны ни файлы на каждый тип, ни обращения к сети.
+ *
+ * Цвет берётся из переменной --kind, которую задаёт правило ниже
+ * по атрибуту data-kind у плитки.
+ */
+.tile__icon--file {
+    width: 46px;
+    height: 58px;
+    border-radius: 7px;
+    background: var(--kind, var(--muted));
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 7px;
+    box-shadow: var(--shadow-sm);
+}
+
+/* Загнутый уголок сверху справа — по нему лист узнаётся как документ. */
+.tile__icon--file::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 15px;
+    height: 15px;
+    border-top-right-radius: 7px;
+    background: rgba(255, 255, 255, .34);
+    clip-path: polygon(0 0, 100% 100%, 100% 0);
+}
+
+.tile__ext {
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    color: #fff;
+    max-width: 40px;
+    overflow: hidden;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, .25);
+}
+
+/*
+ * Цвета типов файлов. Один цвет — одно семейство: по нему список читается
+ * быстрее, чем по подписям, даже боковым зрением.
+ * Семейство определяет FileKinds в коде сервера.
+ *
+ * Селектор без имени класса, по одному атрибуту: так эти же цвета
+ * достаются значку в заголовке окна предпросмотра, а не только плиткам.
+ */
+[data-kind="image"] { --kind: #10a56b; }
+[data-kind="pdf"]   { --kind: #e5484d; }
+[data-kind="word"]  { --kind: #2b6cb0; }
+[data-kind="excel"] { --kind: #1e8e5a; }
+[data-kind="ppt"]   { --kind: #e0641f; }
+[data-kind="video"] { --kind: #8b5cf6; }
+[data-kind="audio"] { --kind: #ec4899; }
+[data-kind="zip"]   { --kind: #b45309; }
+[data-kind="code"]  { --kind: #0ea5e9; }
+[data-kind="text"]  { --kind: #64748b; }
+[data-kind="other"] { --kind: #64748b; }
+
+/* Значок, имя и пометки занимают обе колонки сетки. */
+.tile__icon,
+.tile__name,
+.tile__marks { grid-column: 1 / -1; }
 
 .tile__name {
     font-size: 13px;
@@ -925,14 +1269,88 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     overflow-wrap: anywhere;
 }
 
-.tile__sub {
+/* Размер слева, дата справа — в одну строку. */
+.tile__size,
+.tile__date {
+    font-size: 11px;
+    color: var(--c-text-muted);
+    white-space: nowrap;
+}
+
+.tile__size { grid-column: 1; }
+.tile__date { grid-column: 2; }
+
+.tile__marks {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 4px;
-    font-size: 11px;
-    color: var(--c-text-muted);
 }
+
+.tile__marks:empty { display: none; }
+
+/* ---------- Вид списком ---------- */
+
+/*
+ * Столбцы: значок | название | размер | дата | пометки.
+ * Ширины совпадают у заголовка и у строк — иначе они разъедутся.
+ */
+.grid--list { display: block; }
+
+.grid--list .grid__head,
+.grid--list .tile {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 110px 120px auto;
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+    min-height: 0;
+}
+
+.grid--list .grid__head {
+    padding: 6px 12px;
+    color: var(--c-text-muted);
+    font-size: 11.5px;
+    font-weight: 650;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--c-border);
+}
+
+.grid--list .tile {
+    padding: 7px 12px;
+    border-radius: var(--r-md);
+    border-bottom: 1px solid var(--c-border);
+    border-left-color: transparent;
+    border-right-color: transparent;
+    border-top-color: transparent;
+}
+
+.grid--list .tile:active { transform: none; }
+
+/* В строке значок мелкий: 58 точек высоты растянули бы весь список. */
+.grid--list .tile__icon--file { width: 26px; height: 32px; border-radius: 5px; padding-bottom: 4px; }
+.grid--list .tile__icon--file::after { width: 9px; height: 9px; border-top-right-radius: 5px; }
+.grid--list .tile__ext { font-size: 7px; letter-spacing: 0; }
+.grid--list .tile__icon .icon--lg { width: 30px; height: 30px; }
+
+.grid--list .tile__name {
+    min-height: 0;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    font-size: 14px;
+    overflow-wrap: normal;
+    word-break: break-all;
+}
+
+/* В строке у каждой подписи свой столбец, а не общая ячейка. */
+.grid--list .tile__icon,
+.grid--list .tile__name,
+.grid--list .tile__size,
+.grid--list .tile__date,
+.grid--list .tile__marks { grid-column: auto; justify-self: start; }
+
+.grid--list .tile__marks { justify-content: flex-start; }
 
 .empty {
     display: flex;
@@ -1468,116 +1886,153 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 :root { --preview-w: 460px; }
 
 /*
- * Ширину панели человек может менять сам, потянув за левый край.
- * Выбранное значение подставляется в эту же переменную на элементе <html>
- * из кода страницы и запоминается в браузере — на сервер не уходит,
- * это личная настройка вида.
+ * Окно предпросмотра.
+ *
+ * Раньше это была узкая панель справа, которую можно было растягивать.
+ * Теперь — окно поверх страницы: документ надо разглядывать, и место
+ * ему нужно всё. Слева содержимое файла, справа узкая колонка сведений,
+ * которую можно убрать кнопкой в заголовке.
  */
-
-.preview {
-    position: fixed;
-    top: 56px;              /* высота верхней панели */
-    right: 0;
-    bottom: 0;
-    z-index: 60;
-    width: var(--preview-w);
-    max-width: 100vw;
+.pv {
     display: flex;
     flex-direction: column;
-    background: var(--c-surface);
-    border-left: 1px solid var(--c-border);
-    box-shadow: var(--shadow-lg);
-    transform: translateX(100%);
-    transition: transform var(--t-base) var(--ease);
+    width: min(1020px, 95vw);
+    height: min(700px, 90vh);
+    padding: 0;
+    overflow: hidden;
 }
 
-body.has-preview .preview { transform: none; }
-
-body.has-preview .page,
-body.has-preview .footer {
-    margin-left: 0;
-    margin-right: var(--preview-w);
-    max-width: calc(100vw - var(--preview-w) - 2 * var(--gap));
-}
-
-/* Полоска для растягивания. Узкая на вид, но с широкой областью захвата:
-   попасть мышью в две точки — мучение. */
-.preview__grip {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: -3px;
-    width: 9px;
-    cursor: col-resize;
-    z-index: 2;
-    background: transparent;
-    transition: background var(--t-fast) var(--ease);
-}
-
-.preview__grip::after {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 3px;
-    width: 3px;
-    height: 42px;
-    margin-top: -21px;
-    border-radius: 999px;
-    background: var(--c-border-strong);
-    opacity: 0;
-    transition: opacity var(--t-fast) var(--ease);
-}
-
-.preview__grip:hover::after,
-.preview__grip:focus-visible::after { opacity: 1; }
-.preview__grip:hover, .preview__grip:focus-visible { background: color-mix(in srgb, var(--c-accent) 12%, transparent); }
-
-/* Пока тянут — подсказки и выделение текста только мешают. */
-body.is-resizing { cursor: col-resize; user-select: none; }
-body.is-resizing .preview { transition: none; }
-body.is-resizing .page, body.is-resizing .footer { transition: none; }
-
-.preview__head {
+.pv__head {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     flex: none;
-    padding: 10px 12px 10px 16px;
+    padding: 10px 12px;
     border-bottom: 1px solid var(--c-border);
 }
 
-.preview__kind { color: var(--c-file); flex: none; }
+/* Значок файла в заголовке — тот же цветной прямоугольник, что в списке,
+   только маленький: окно должно узнаваться как «тот самый файл». */
+.pv__kind {
+    width: 24px;
+    height: 30px;
+    border-radius: 5px;
+    padding-bottom: 4px;
+    flex: none;
+}
 
-.preview__name {
+.pv__kind::after { width: 8px; height: 8px; border-top-right-radius: 5px; }
+.pv__kind .tile__ext { font-size: 6.5px; letter-spacing: 0; }
+
+.pv__name {
     flex: 1;
     min-width: 0;
-    font-weight: 560;
-    font-size: 14px;
+    font-weight: 600;
+    font-size: 14.5px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.preview__body {
+/* Масштаб картинки: две кнопки и текущее значение между ними. */
+.zoom-bar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    margin-right: 4px;
+    background: var(--c-surface-2);
+    border-radius: var(--r-md);
+}
+
+.zoom-bar .iconbtn { width: 28px; height: 28px; }
+
+.zoom-bar__value {
+    min-width: 44px;
+    text-align: center;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--c-text-muted);
+}
+
+.pv__body {
     flex: 1;
     min-height: 0;
+    display: flex;
+}
+
+.pv__viewer {
+    flex: 1;
+    min-width: 0;
     overflow: auto;
     background: var(--c-surface-2);
 }
 
-/* Картинка вписывается в панель целиком, на клетчатом фоне —
-   так видно прозрачные края у PNG. */
-.preview__body img {
+/* Колонка сведений. Убирается кнопкой «Сведения» в заголовке —
+   тогда всё место достаётся документу. */
+.pv__aside {
+    width: 262px;
+    flex: none;
+    overflow-y: auto;
+    padding: 14px 16px;
+    border-left: 1px solid var(--c-border);
+    background: var(--c-surface);
+}
+
+.pv--no-aside .pv__aside { display: none; }
+
+.pv-meta { margin-bottom: 18px; }
+
+.pv-meta h3 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--c-text-muted);
+}
+
+.pv-access { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.pv-access li { padding: 3px 0; overflow-wrap: anywhere; }
+
+/* Сведения в колонке идут в одну колонку, а не в две: на 262 точки
+   пара «название — значение» не встанет, строки будут ломаться посередине. */
+.facts--tight { grid-template-columns: 1fr; gap: 0; margin: 0; font-size: 13px; }
+.facts--tight dt { margin-top: 8px; }
+.facts--tight dt:first-child { margin-top: 0; }
+.facts--tight dd { overflow-wrap: anywhere; }
+
+/* Картинка вписывается в окно целиком; при увеличении появляется прокрутка. */
+.pv__viewer img {
     display: block;
     max-width: 100%;
-    max-height: 100%;
     margin: auto;
     padding: 12px;
 }
 
-.preview__body iframe { display: block; width: 100%; height: 100%; border: none; background: #fff; }
+.pv__viewer iframe { display: block; width: 100%; height: 100%; border: none; background: #fff; }
 
-.preview__body pre {
+/* Видео и звук. Видео растягивается на всё окно, звуку хватает полоски. */
+.player { display: block; margin: auto; }
+.player--video { width: 100%; height: 100%; background: #000; }
+.player--audio { width: min(520px, 90%); margin-top: 40px; }
+
+/* Список содержимого архива. */
+.zip-list { border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; }
+
+.zip-row {
+    display: flex;
+    gap: 12px;
+    padding: 7px 12px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--c-border);
+}
+
+.zip-row:last-child { border-bottom: none; }
+.zip-row:nth-child(odd) { background: var(--c-surface-2); }
+.zip-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.zip-size { flex: none; color: var(--c-text-muted); font-variant-numeric: tabular-nums; }
+
+.pv__viewer pre {
     margin: 0;
     padding: 14px 16px;
     font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
@@ -1946,31 +2401,67 @@ body.is-resizing .page, body.is-resizing .footer { transition: none; }
 }
 
 /* ====================================================================== */
-/* Узкие экраны                                                           */
+/* 9. Узкие экраны                                                        */
 /* ====================================================================== */
 
-@media (max-width: 720px) {
-    .topbar { height: auto; flex-wrap: wrap; padding: 10px 14px; gap: 10px; }
-    .topbar__user { margin-left: auto; }
+/*
+ * Ниже 1100 точек боковое меню перестаёт помещаться рядом с содержимым.
+ * Оно уезжает за левый край и выдвигается поверх страницы по кнопке
+ * с тремя полосками. Рядом появляется затемнение: нажатие по нему
+ * закрывает меню — привычное поведение для телефона.
+ */
+@media (max-width: 1100px) {
+    .burger { display: inline-flex; }
+
+    .sidebar {
+        position: fixed;
+        top: var(--topbar-h);
+        left: 0;
+        bottom: 0;
+        z-index: 60;
+        transform: translateX(-100%);
+        transition: transform var(--t-base) var(--ease);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .sidebar.is-open { transform: none; }
+
+    .scrim {
+        display: block;
+        position: fixed;
+        inset: var(--topbar-h) 0 0 0;
+        z-index: 55;
+        background: rgba(16, 24, 40, .4);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity var(--t-base) var(--ease);
+    }
+
+    .scrim.is-open { opacity: 1; pointer-events: auto; }
+
+    .topsearch { max-width: none; }
+}
+
+@media (max-width: 760px) {
+    .topbar { gap: 8px; padding: 0 10px; }
+    .topbar__brand span:last-child { display: none; }
     .topbar__name { display: none; }
+    .topsearch__hint { display: none; }
+    .view { padding: 14px 12px 30px; }
+
     .facts { grid-template-columns: 1fr; gap: 4px 0; }
     .facts dd { margin-bottom: 10px; }
-    .grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
+    .grid--list .grid__head,
+    .grid--list .tile { grid-template-columns: 36px minmax(0, 1fr) 90px; }
+    .grid--list .tile__date,
+    .grid--list .grid__head span:nth-child(4) { display: none; }
     .toolbar__actions { margin-left: 0; width: 100%; }
     .search { flex: 1; }
     .search input[type="search"],
     .search input[type="search"]:focus { width: 100%; }
     .table { font-size: 13px; }
     .table th, .table td { padding: 8px 6px; }
-}
 
-/*
- * Узкий экран и предпросмотр: сдвигать рабочую область некуда,
- * поэтому панель занимает его целиком и ложится поверх.
- */
-@media (max-width: 1000px) {
-    .preview { width: 100vw; top: 0; z-index: 210; }
-
-    body.has-preview .page,
-    body.has-preview .footer { margin-right: 0; max-width: var(--page-width); }
+    .pv__aside { display: none; }
 }
