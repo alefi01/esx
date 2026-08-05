@@ -169,6 +169,17 @@
                 Объявления
                 <span class="nav-item__count" data-nav-count="announcement" hidden>0</span>
             </a>
+
+            @* Лента активности видна только администратору: по ней понятно,
+               кто чем занимается, и сотрудникам друг о друге это знать незачем.
+               Остальным пункт не показывается вовсе. *@
+            @if (isAdmin)
+            {
+                <a class="nav-item @NavClass("/Admin/Activity")" asp-page="/Admin/Activity">
+                    <svg class="icon"><use href="#i-clock"></use></svg>
+                    Активность
+                </a>
+            }
         </nav>
 
         <nav class="nav-group">

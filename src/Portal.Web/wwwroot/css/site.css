@@ -813,10 +813,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     border: 1px solid var(--c-border);
 }
 
-/* Ссылка, оформленная как пометка: путь до папки в избранном. */
-.chip--link { color: var(--c-accent); }
-.chip--link:hover { text-decoration: underline; }
-
 .badge--ok, .chip--ok { background: var(--c-ok-bg); color: var(--c-ok); border-color: transparent; }
 .badge--warn, .chip--warn { background: var(--c-warn-bg); color: var(--c-warn); border-color: transparent; }
 .badge--error, .chip--error { background: var(--c-error-bg); color: var(--c-error); border-color: transparent; }
@@ -1633,11 +1629,19 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
  * оставались на месте — иначе при длинной переписке до поля ввода
  * пришлось бы каждый раз доезжать.
  */
+/*
+ * Переписки занимают всё окно по высоте, а не растут вниз: список бесед
+ * и лента сообщений прокручиваются каждый сам по себе, как в мессенджере.
+ *
+ * Высота считается от области содержимого: из окна вычитаются шапка
+ * (--topbar-h) и отступы .view сверху и снизу. Числа взяты не с потолка —
+ * они совпадают с padding у .view; правя одно, правьте и другое.
+ */
 .chat {
     display: grid;
     grid-template-columns: 300px 1fr;
     gap: var(--gap);
-    height: calc(100vh - 56px - 90px);
+    height: calc(100vh - var(--topbar-h) - 60px);
     min-height: 420px;
 }
 
@@ -1967,6 +1971,79 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     .chat[data-conversation]:not([data-conversation=""]) .chat__list { display: none; }
     .chat__pane { min-height: 60vh; }
 }
+
+/* ====================================================================== */
+/* 6б. Лента активности                                                   */
+/* ====================================================================== */
+
+.t-day {
+    margin: 22px 0 10px;
+    color: var(--c-text-muted);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+}
+
+.t-day:first-child { margin-top: 0; }
+
+/*
+ * Вертикальная линия ленты рисуется у списка, а не у каждой строки:
+ * иначе между строками оставались бы разрывы. Отступ слева освобождает
+ * место под кружок с значком, который на эту линию и садится.
+ */
+.timeline {
+    position: relative;
+    padding-left: 30px;
+}
+
+.timeline::before {
+    content: "";
+    position: absolute;
+    left: 13px;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    background: var(--c-border);
+}
+
+.t-item {
+    position: relative;
+    display: flex;
+    gap: 12px;
+    padding: 8px 0;
+}
+
+.t-dot {
+    position: absolute;
+    left: -30px;
+    top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--c-surface);
+    border: 2px solid var(--c-border);
+    color: var(--c-text-muted);
+}
+
+/* Три цвета, а не десять: обычное действие, создание, удаление.
+   Больше оттенков — и лента превращается в радугу, по которой
+   ничего не считывается. */
+.t-dot--ok { border-color: color-mix(in srgb, var(--ok) 55%, transparent); color: var(--ok); }
+.t-dot--danger { border-color: color-mix(in srgb, var(--danger) 55%, transparent); color: var(--danger); }
+
+.t-body { flex: 1; min-width: 0; }
+
+.t-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.t-top strong { font-weight: 600; font-size: 14px; }
+.t-what { color: var(--c-text-muted); font-size: 13px; }
+.t-time { margin-left: auto; color: var(--c-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.t-target { font-size: 13.5px; overflow-wrap: anywhere; }
+.t-details { margin-top: 2px; color: var(--c-text-muted); font-size: 12.5px; overflow-wrap: anywhere; }
 
 /* ====================================================================== */
 /* 7. Наложения                                                           */
