@@ -121,6 +121,64 @@ public class TrashModel : PageModel
         return RedirectToPage();
     }
 
+    /// <summary>
+    /// Стереть всё, что человек видит в корзине, одним действием.
+    ///
+    /// Именно «что видит»: обычный сотрудник вычистит только то, что удалил
+    /// сам, а администратор — всё. Проверку прав делает тот же CanAct,
+    /// что и при удалении по одному, поэтому кнопка не может стать
+    /// способом обойти разграничение доступа.
+    /// </summary>
+    public async Task<IActionResult> OnPostPurgeAllAsync(CancellationToken cancellationToken)
+    {
+        await LoadAsync(cancellationToken);
+
+        if (Items.Count == 0)
+        {
+            return RedirectToPage();
+        }
+
+        var ids = Items.Select(item => item.File.Id).ToList();
+
+        // Перечитываем с отслеживанием: список выше собран запросом
+        // без отслеживания, и удалять по нему EF не даст.
+        var files = await _db.Files.AsTracking()
+            .Where(f => ids.Contains(f.Id))
+            .ToListAsync(cancellationToken);
+
+        long freed = 0;
+
+        foreach (var file in files)
+        {
+            var folder = _tree.Get(file.FolderId);
+
+            // Файл мог быть восстановлен или стёрт, пока страница была открыта.
+            if (folder is null || file.DeletedAt is null || !CanAct(file, folder))
+            {
+                continue;
+            }
+
+            _storage.Delete(file.FolderId, file.StorageName);
+            _db.Files.Remove(file);
+
+            freed += file.SizeBytes;
+
+            _audit.Add(AuditAction.Purge, file.OriginalName,
+                $"папка «{_tree.DisplayPath(folder)}», очистка корзины");
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        StatusMessage = files.Count == 0
+            ? "Корзина уже пуста."
+            : $"Корзина очищена: стёрто файлов — {files.Count}, освобождено {UploadValidator.Format(freed)}.";
+
+        return RedirectToPage();
+    }
+
+    /// <summary>Сколько всего занимают файлы, видимые в корзине.</summary>
+    public long TotalBytes => Items.Sum(item => item.File.SizeBytes);
+
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
         await _tree.LoadAsync(cancellationToken);

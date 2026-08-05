@@ -5,8 +5,30 @@
 }
 
 <div class="page-header">
-    <h1>Корзина</h1>
-    <a class="button button--inline" asp-page="Index">К файлам</a>
+    <div class="page-header__text">
+        <h1>Корзина</h1>
+        <p class="page-header__sub">
+            Удалённые файлы лежат здесь @Model.RetentionDays дн., после чего стираются
+            с диска безвозвратно. Всё это время они продолжают занимать место
+            и учитываются в квоте папки.
+        </p>
+    </div>
+
+    @if (Model.Items.Count > 0)
+    {
+        @* Очистка всей корзины — действие необратимое, поэтому спрашиваем
+           подтверждение. Окно рисует код страницы: системное окно браузера
+           выглядит по-разному везде и выбивается из оформления. *@
+        <form method="post" asp-page-handler="PurgeAll" class="inline-form">
+            <button type="submit" class="btn btn--danger"
+                    data-confirm-action
+                    data-confirm-text="Стереть все файлы из корзины? Восстановить их будет невозможно."
+                    data-confirm-ok="Стереть всё">
+                <svg class="icon"><use href="#i-trash"></use></svg>
+                Очистить корзину
+            </button>
+        </form>
+    }
 </div>
 
 @if (!string.IsNullOrEmpty(Model.StatusMessage))
@@ -19,19 +41,22 @@
     <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
 }
 
-<div class="card">
-    <p class="hint">
-        Удалённые файлы лежат здесь @Model.RetentionDays дн., после чего стираются
-        с диска безвозвратно. Всё это время они продолжают занимать место
-        и учитываются в квоте папки.
-    </p>
-
+<div class="pane">
     @if (Model.Items.Count == 0)
     {
-        <p class="hint">Корзина пуста.</p>
+        <div class="empty">
+            <svg class="icon icon--xl"><use href="#i-trash"></use></svg>
+            <p>Корзина пуста</p>
+            <p class="muted">Удалённые файлы будут появляться здесь.</p>
+        </div>
     }
     else
     {
+        <div class="trash-total">
+            Файлов: <strong>@Model.Items.Count</strong>,
+            занимают <strong>@Portal.Web.Pages.Files.TrashModel.FormatSize(Model.TotalBytes)</strong>
+        </div>
+
         <table class="table">
             <thead>
             <tr>
@@ -47,7 +72,15 @@
             @foreach (var item in Model.Items)
             {
                 <tr>
-                    <td>@item.File.OriginalName</td>
+                    <td>
+                        <span class="trash-name">
+                            @* Тот же цветной значок, что и в списке файлов:
+                               так строка узнаётся с одного взгляда. *@
+                            <span class="tile__icon tile__icon--file trash-icon"
+                                  data-kind="@Portal.Web.Services.Storage.FileKinds.Of(item.File.OriginalName)"></span>
+                            @item.File.OriginalName
+                        </span>
+                    </td>
                     <td>@item.FolderPath</td>
                     <td>@Portal.Web.Pages.Files.TrashModel.FormatSize(item.File.SizeBytes)</td>
                     <td>@item.File.DeletedByUserName</td>
@@ -63,7 +96,10 @@
 
                         <form method="post" asp-page-handler="Purge"
                               asp-route-fileId="@item.File.Id" class="inline-form">
-                            <button type="submit" class="button button--link link--danger">Стереть</button>
+                            <button type="submit" class="button button--link link--danger"
+                                    data-confirm-action
+                                    data-confirm-text="Стереть файл «@item.File.OriginalName» окончательно? Восстановить его будет невозможно."
+                                    data-confirm-ok="Стереть">Стереть</button>
                         </form>
                     </td>
                 </tr>

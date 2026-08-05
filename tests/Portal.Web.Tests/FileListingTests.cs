@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Portal.Web.Data;
 using Portal.Web.Services.Storage;
 
@@ -296,5 +297,97 @@ public class FileListingTests
             .ToList();
 
         Assert.Contains("Бухгалтерия — запись", access);
+    }
+
+    /// <summary>Папка с двумя файлами в корзине: один удалил Иванов, другой — Петров.</summary>
+    private static PortalFactory PrepareTrash()
+    {
+        var storage = Path.Combine(Path.GetTempPath(), $"trash-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(storage);
+
+        var factory = new PortalFactory { StorageRootPath = storage };
+
+        factory.Seed(db =>
+        {
+            var folder = new StorageFolder
+            {
+                Name = "Документы",
+                CreatedAt = DateTime.UtcNow,
+                InheritPermissions = true
+            };
+
+            db.Folders.Add(folder);
+            db.SaveChanges();
+
+            db.FolderPermissions.Add(new FolderPermission
+            {
+                FolderId = folder.Id,
+                GroupName = Users,
+                Access = FolderAccess.Write
+            });
+
+            foreach (var (name, who) in new[] { ("своё.txt", "ivanov"), ("чужое.txt", "petrov") })
+            {
+                db.Files.Add(new StoredFile
+                {
+                    FolderId = folder.Id,
+                    OriginalName = name,
+                    StorageName = "s-" + name,
+                    SizeBytes = 10,
+                    ContentType = "text/plain",
+                    UploadedAt = DateTime.UtcNow.AddDays(-1),
+                    UploadedByUserName = who,
+                    UploadedByDisplayName = who,
+                    DeletedAt = DateTime.UtcNow.AddHours(-1),
+                    DeletedByUserName = who
+                });
+            }
+
+            db.SaveChanges();
+        });
+
+        return factory;
+    }
+
+    [Fact]
+    public async Task Администратор_очищает_корзину_целиком()
+    {
+        using var factory = PrepareTrash();
+        var client = await factory.LoginAsAsync("ivanov", Users, Admins);
+
+        var token = await client.GetTokenAsync("/Files/Trash");
+        var response = await client.PostFormAsync(
+            "/Files/Trash?handler=PurgeAll", token, new Dictionary<string, string>());
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+
+        var html = await client.GetStringAsync("/Files/Trash");
+
+        Assert.Contains("Корзина пуста", html);
+    }
+
+    /// <summary>
+    /// «Очистить корзину» не должна становиться способом стереть чужое.
+    /// Обычный сотрудник вычищает только то, что удалил сам, — ровно то же
+    /// правило, что и при удалении по одному файлу.
+    /// </summary>
+    [Fact]
+    public async Task Обычный_сотрудник_очищает_только_своё()
+    {
+        using var factory = PrepareTrash();
+        var client = await factory.LoginAsAsync("ivanov", Users);
+
+        var token = await client.GetTokenAsync("/Files/Trash");
+
+        await client.PostFormAsync(
+            "/Files/Trash?handler=PurgeAll", token, new Dictionary<string, string>());
+
+        // Чужой файл остался в базе, хотя в корзине этому человеку он и не виден.
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
+
+        var left = db.Files.Select(f => f.OriginalName).ToList();
+
+        Assert.Equal(["чужое.txt"], left);
     }
 }

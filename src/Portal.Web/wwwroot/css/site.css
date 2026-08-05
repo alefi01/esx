@@ -47,8 +47,23 @@
     --warn: #f59f00;
     --ok: #1e8e5a;
 
+    /*
+     * Цвет текста НА акцентном фоне — на синей кнопке «Загрузить».
+     * Отдельная переменная нужна из-за тёмной темы: там акцент светло-синий,
+     * и белые буквы на нём почти не читаются.
+     */
+    --on-accent: #ffffff;
+
     /* Рамка «посильнее» — там, где обычной не видно (кнопки, поля). */
     --border-strong: #cfd7e4;
+
+    /*
+     * Подсказка браузеру, какая тема сейчас. От неё зависит вид того,
+     * что рисует он сам и что стилями не достать: списки выбора,
+     * полосы прокрутки, календарь в поле даты. Без неё в тёмной теме
+     * попадаются светлые островки.
+     */
+    color-scheme: light;
 
     /* --- Псевдонимы: их читает остальной файл. Не правьте здесь цвета. --- */
     --c-accent: var(--accent);
@@ -129,7 +144,12 @@
         --warn: #ffc046;
         --ok: #3fc38a;
 
+        /* Акцент в тёмной теме светлый, поэтому текст на нём — тёмный. */
+        --on-accent: #0b1220;
+
         --border-strong: #3c445a;
+
+        color-scheme: dark;
 
         --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
         --shadow-md: 0 4px 12px rgba(0, 0, 0, .5);
@@ -152,7 +172,12 @@
     --warn: #ffc046;
     --ok: #3fc38a;
 
+    /* Акцент в тёмной теме светлый, поэтому текст на нём — тёмный. */
+    --on-accent: #0b1220;
+
     --border-strong: #3c445a;
+
+    color-scheme: dark;
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
     --shadow-md: 0 4px 12px rgba(0, 0, 0, .5);
@@ -466,7 +491,7 @@ body.app-shell {
     line-height: 18px;
 }
 
-.nav-item.is-active .nav-item__count { background: var(--c-accent); color: #fff; }
+.nav-item.is-active .nav-item__count { background: var(--c-accent); color: var(--on-accent); }
 .nav-item__count--alert { background: var(--c-error); color: #fff; }
 
 /* ---------- Карточка «сколько занято на диске» ---------- */
@@ -626,14 +651,14 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .btn--primary, .button--primary {
     background: var(--c-accent);
     border-color: var(--c-accent);
-    color: #fff;
+    color: var(--on-accent);
     box-shadow: var(--shadow-sm);
 }
 
 .btn--primary:hover, .button--primary:hover {
     background: var(--c-accent-hover);
     border-color: var(--c-accent-hover);
-    color: #fff;
+    color: var(--on-accent);
 }
 
 .btn--danger, .button--danger {
@@ -1352,6 +1377,28 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 .grid--list .tile__marks { justify-content: flex-start; }
 
+/* ---------- Корзина ---------- */
+
+.trash-total {
+    margin-bottom: 4px;
+    color: var(--c-text-muted);
+    font-size: 13px;
+}
+
+.trash-name { display: flex; align-items: center; gap: 10px; }
+
+/* Значок в строке таблицы — тот же цветной прямоугольник, что и в списке
+   файлов, только совсем маленький и без подписи: имя рядом и так видно. */
+.trash-icon {
+    width: 18px;
+    height: 22px;
+    border-radius: 4px;
+    padding: 0;
+    flex: none;
+}
+
+.trash-icon::after { width: 6px; height: 6px; border-top-right-radius: 4px; }
+
 .empty {
     display: flex;
     flex-direction: column;
@@ -1893,7 +1940,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
  * ему нужно всё. Слева содержимое файла, справа узкая колонка сведений,
  * которую можно убрать кнопкой в заголовке.
  */
-.pv {
+/* Селектор из двух классов, а не из одного: общее правило .modal__window
+   задаёт ширину 440 точек и стоит в файле ниже, поэтому по одному классу
+   оно бы это правило перебило, и окно осталось бы узким. */
+.modal__window.pv {
     display: flex;
     flex-direction: column;
     width: min(1020px, 95vw);
