@@ -72,6 +72,64 @@ public class IndexModel : PageModel
     public HashSet<int> FavoriteFolderIds { get; private set; } = [];
 
     /// <summary>
+    /// Содержимое страницы одним списком: папки, потом файлы.
+    ///
+    /// Разметка списка общая на все разделы (см. FileEntry), поэтому здесь
+    /// сущности из базы один раз превращаются в то, что нужно шаблону,
+    /// и шаблон больше никуда не лезет — в том числе за правами.
+    /// </summary>
+    public IReadOnlyList<Portal.Web.Pages.Shared.FileEntry> Entries { get; private set; } = [];
+
+    /// <summary>Собирает список для показа. Вызывается в самом конце подготовки страницы.</summary>
+    private void BuildEntries()
+    {
+        var list = new List<Portal.Web.Pages.Shared.FileEntry>();
+
+        if (IsSearching)
+        {
+            // В найденном главное — где файл лежит, поэтому у каждой строки
+            // показывается путь до папки.
+            foreach (var hit in SearchResults)
+            {
+                list.Add(Portal.Web.Pages.Shared.FileEntry.ForFile(
+                    hit.File,
+                    Url.Page("Index", "Download", new { fileId = hit.File.Id }) ?? "#",
+                    PreviewKindOf(hit.File),
+                    FavoriteFileIds.Contains(hit.File.Id),
+                    CanDelete(hit.File),
+                    hit.FolderPath));
+            }
+
+            Entries = list;
+
+            return;
+        }
+
+        foreach (var folder in Subfolders)
+        {
+            list.Add(Portal.Web.Pages.Shared.FileEntry.ForFolder(
+                folder,
+                Url.Page("Index", new { id = folder.Id }) ?? "#",
+                folder.Children.Count(child => _tree.IsVisible(User, child)),
+                FavoriteFolderIds.Contains(folder.Id),
+                CanManageFolder(folder),
+                ShowSizes ? FolderSizes.GetValueOrDefault(folder.Id) : null));
+        }
+
+        foreach (var file in FilesInFolder)
+        {
+            list.Add(Portal.Web.Pages.Shared.FileEntry.ForFile(
+                file,
+                Url.Page("Index", "Download", new { fileId = file.Id }) ?? "#",
+                PreviewKindOf(file),
+                FavoriteFileIds.Contains(file.Id),
+                CanDelete(file)));
+        }
+
+        Entries = list;
+    }
+
+    /// <summary>
     /// Объём каждой видимой подпапки вместе со всем вложенным, байты.
     /// Считается только для тех, кто вправе это видеть (см. ShowSizes):
     /// размер папки — косвенный признак её содержимого, и показывать его
@@ -132,7 +190,16 @@ public class IndexModel : PageModel
 
     public async Task<IActionResult> OnGetAsync(int? id, CancellationToken cancellationToken)
     {
-        return await LoadAsync(id, cancellationToken) ?? Page();
+        var redirect = await LoadAsync(id, cancellationToken);
+
+        if (redirect is not null)
+        {
+            return redirect;
+        }
+
+        BuildEntries();
+
+        return Page();
     }
 
     /// <summary>

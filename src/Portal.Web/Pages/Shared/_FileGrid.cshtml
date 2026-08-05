@@ -1,0 +1,53 @@
+@using Portal.Web.Pages.Shared
+@model IReadOnlyList<FileEntry>
+
+@*
+    Список плитками — как в макете.
+
+    Все данные, нужные коду страницы, лежат в data-атрибутах самой плитки:
+    выделение, контекстное меню и предпросмотр берут их оттуда и никуда
+    больше не ходят.
+*@
+<div class="fgrid">
+    @foreach (var item in Model)
+    {
+        <div class="tile"
+             data-id="@item.Id"
+             data-name="@item.Name"
+             data-href="@item.Href"
+             data-kind="@item.PreviewKind"
+             data-fav="@item.Favorite.ToString().ToLowerInvariant()"
+             data-can-delete="@item.CanDelete.ToString().ToLowerInvariant()"
+             data-can-manage="@item.CanManage.ToString().ToLowerInvariant()"
+             data-file="@(item.FileId?.ToString() ?? "")"
+             data-folder="@(item.FolderId?.ToString() ?? "")">
+
+            <button class="fav-star@(item.Favorite ? " on" : "")" type="button"
+                    title="@(item.Favorite ? "Убрать из избранного" : "В избранное")"
+                    aria-label="В избранное">
+                <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-star" /></svg>
+            </button>
+
+            <div class="tile-icon">
+                @if (item.IsFolder)
+                {
+                    @FileIcons.Folder()
+                }
+                else
+                {
+                    @FileIcons.File(item.Name)
+                }
+            </div>
+
+            <div class="tile-name" title="@item.Name">@item.Name</div>
+            <div class="tile-meta">@item.Meta</div>
+
+            @if (item.Path is { } path)
+            {
+                @* Путь до папки: в избранном и в поиске файлы лежат в разных
+                   местах, и без него одинаковые имена не различить. *@
+                <div class="tile-meta tile-path" title="@path">@path</div>
+            }
+        </div>
+    }
+</div>

@@ -1,0 +1,60 @@
+@using Portal.Web.Pages.Shared
+@model IReadOnlyList<FileEntry>
+
+@*
+    Тот же список строками. Столбцы: значок, имя, изменён, тип, размер.
+    Разметка и data-атрибуты те же, что у плиток, — код страницы работает
+    с обоими видами одинаково и про разницу не знает.
+
+    По умолчанию скрыт: вид выбирает человек, и выбор хранится в браузере
+    (см. app.js, раздел «Файлы»).
+*@
+<div class="flist" hidden>
+    <div class="flist-head" aria-hidden="true">
+        <div></div>
+        <div>Имя</div>
+        <div class="hide-s">Изменён</div>
+        <div class="hide-s">Тип</div>
+        <div>Размер</div>
+        <div></div>
+    </div>
+
+    @foreach (var item in Model)
+    {
+        <div class="frow"
+             data-id="@item.Id"
+             data-name="@item.Name"
+             data-href="@item.Href"
+             data-kind="@item.PreviewKind"
+             data-fav="@item.Favorite.ToString().ToLowerInvariant()"
+             data-can-delete="@item.CanDelete.ToString().ToLowerInvariant()"
+             data-can-manage="@item.CanManage.ToString().ToLowerInvariant()"
+             data-file="@(item.FileId?.ToString() ?? "")"
+             data-folder="@(item.FolderId?.ToString() ?? "")">
+
+            <div class="ficon">
+                @if (item.IsFolder)
+                {
+                    @FileIcons.Folder(30)
+                }
+                else
+                {
+                    @FileIcons.File(item.Name, 30)
+                }
+            </div>
+
+            <div class="fname">
+                <span title="@item.Name">@item.Name</span>
+                @if (item.Favorite)
+                {
+                    <span class="fav-mark"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><use href="#i-star" /></svg></span>
+                }
+            </div>
+
+            <div class="muted hide-s">@item.At.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</div>
+            <div class="muted hide-s">@item.TypeName</div>
+            <div class="muted">@item.SizeText</div>
+            <div></div>
+        </div>
+    }
+</div>

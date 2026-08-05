@@ -6,10 +6,8 @@
  * как страница уже нарисована, человек увидит вспышку — сначала светлый
  * фон, потом тёмный. Выглядит как неисправность.
  *
- * Возможны три состояния:
- *   auto  — как в системе (значение по умолчанию)
- *   light — всегда светлая
- *   dark  — всегда тёмная
+ * Состояний два, светлая и тёмная, — ровно как в макете. При первом заходе
+ * берётся та, что стоит в системе; дальше действует выбор человека.
  *
  * Выбор запоминается в localStorage, то есть отдельно на каждом компьютере
  * и в каждом браузере. На сервер он не отправляется: это личная настройка
@@ -23,36 +21,38 @@
 
     function stored() {
         try {
-            return localStorage.getItem(KEY) || 'auto';
+            var saved = localStorage.getItem(KEY);
+
+            if (saved === 'light' || saved === 'dark') {
+                return saved;
+            }
         } catch (error) {
-            // localStorage может быть отключён политиками браузера —
-            // тогда просто работаем в системном режиме.
-            return 'auto';
+            // localStorage может быть отключён политиками браузера.
         }
+
+        // Ещё не выбирали — берём настройку системы.
+        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light';
     }
 
     function apply(mode) {
-        var root = document.documentElement;
-
-        if (mode === 'auto') {
-            root.removeAttribute('data-theme');
-        } else {
-            root.setAttribute('data-theme', mode);
-        }
+        // Тема ставится на <html>, а не на <body>, как в макете: <body>
+        // в этот момент ещё не существует — скрипт выполняется в <head>.
+        // Стили принимают оба варианта, см. site.css.
+        document.documentElement.setAttribute('data-theme', mode);
 
         // Подсказка браузеру: от неё зависит вид полос прокрутки
         // и стандартных элементов управления.
         var meta = document.querySelector('meta[name="color-scheme"]');
 
         if (meta) {
-            meta.setAttribute('content', mode === 'auto' ? 'light dark' : mode);
+            meta.setAttribute('content', mode);
         }
     }
 
     apply(stored());
 
-    // Наружу отдаём минимум: текущий режим, переключение и применение.
-    // Основной код страницы пользуется этим для кнопки в шапке.
     window.portalTheme = {
         current: stored,
 
@@ -66,9 +66,9 @@
             apply(mode);
         },
 
-        /** Перебор по кругу: как в системе → светлая → тёмная → как в системе. */
-        cycle: function () {
-            var next = { auto: 'light', light: 'dark', dark: 'auto' }[stored()] || 'auto';
+        /** Переключение на противоположную. Возвращает новую тему. */
+        toggle: function () {
+            var next = stored() === 'dark' ? 'light' : 'dark';
 
             this.set(next);
 

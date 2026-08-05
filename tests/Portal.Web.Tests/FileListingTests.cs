@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Portal.Web.Data;
+using Portal.Web.Pages.Shared;
 using Portal.Web.Services.Storage;
 
 namespace Portal.Web.Tests;
@@ -138,20 +139,25 @@ public class FileListingTests
     }
 
     /// <summary>
-    /// Цвет значка задаётся атрибутом data-kind, и по нему стили выбирают
-    /// краску. Если атрибут пропадёт, весь список станет серым.
+    /// Значок файла рисуется на сервере и красится по типу файла.
+    /// Если цвет пропадёт, весь список станет одинаково серым, и по нему
+    /// перестанет читаться, где таблица, а где документ.
     /// </summary>
     [Fact]
-    public async Task Плитка_файла_несёт_семейство_для_цвета_значка()
+    public async Task Значок_файла_покрашен_по_типу()
     {
         using var factory = PrepareFolder();
         var client = await factory.LoginAsAsync("ivanov", Users, Admins);
 
         var html = await client.GetStringAsync("/Files?id=1");
 
-        Assert.Contains("data-kind=\"pdf\"", html);
-        Assert.Contains("data-kind=\"word\"", html);
-        Assert.Contains("data-kind=\"text\"", html);
+        Assert.Contains(FileIcons.Color("Акт.pdf"), html);      // красный
+        Assert.Contains(FileIcons.Color("ёлка.docx"), html);    // синий
+        Assert.Contains(FileIcons.Color("берёза.txt"), html);   // серый
+
+        // И подпись с расширением на плашке значка.
+        Assert.Contains(">PDF<", html);
+        Assert.Contains(">DOCX<", html);
     }
 
     [Theory]
