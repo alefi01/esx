@@ -1,0 +1,78 @@
+@page
+@model Portal.Web.Pages.Files.FavoritesModel
+@{
+    ViewData["Title"] = "Избранное";
+}
+
+<div class="page-header">
+    <div class="page-header__text">
+        <h1>Избранное</h1>
+        <p class="page-header__sub">
+            Папки и файлы, отмеченные звёздочкой. Отметки личные: у каждого свои.
+        </p>
+    </div>
+</div>
+
+<div class="pane">
+    @if (Model.IsEmpty)
+    {
+        <div class="empty">
+            <svg class="icon icon--xl"><use href="#i-star"></use></svg>
+            <p>В избранном пусто</p>
+            <p class="muted">
+                Наведите указатель на папку или файл в разделе «Файлы»
+                и нажмите звёздочку в углу.
+            </p>
+        </div>
+    }
+    else
+    {
+        @* Здесь всегда плитки, без переключателя вида: избранного немного
+           по самой его сути, и таблица под десяток строк ничего не даст. *@
+        <div class="grid">
+            @foreach (var item in Model.Folders)
+            {
+                <a class="tile tile--folder" asp-page="Index" asp-route-id="@item.Folder.Id">
+                    <span class="tile__icon">
+                        <svg class="icon icon--lg">
+                            <use href="@(item.Folder.InheritPermissions ? "#i-folder-solid" : "#i-folder-solid-locked")"></use>
+                        </svg>
+                    </span>
+
+                    <span class="tile__name" title="@item.Path">@item.Folder.Name</span>
+
+                    <span class="tile__size"></span>
+                    <span class="tile__date"></span>
+
+                    <span class="tile__marks">
+                        <span class="chip" title="@item.Path">папка</span>
+                    </span>
+                </a>
+            }
+
+            @foreach (var item in Model.Files)
+            {
+                <a class="tile tile--file"
+                   asp-page="Index" asp-page-handler="Download" asp-route-fileId="@item.File.Id"
+                   data-kind="@Portal.Web.Pages.Files.FavoritesModel.FileKindOf(item.File)"
+                   title="@item.FolderPath">
+
+                    <span class="tile__icon tile__icon--file">
+                        <span class="tile__ext">@Portal.Web.Pages.Files.FavoritesModel.ExtensionOf(item.File)</span>
+                    </span>
+
+                    <span class="tile__name" title="@item.File.OriginalName">@item.File.OriginalName</span>
+
+                    <span class="tile__size">@Portal.Web.Pages.Files.FavoritesModel.FormatSize(item.File.SizeBytes)</span>
+                    <span class="tile__date"></span>
+
+                    <span class="tile__marks">
+                        @* Путь до папки: в избранном лежат файлы из разных мест,
+                           и без него одинаковые имена не различить. *@
+                        <a class="chip chip--link" asp-page="Index" asp-route-id="@item.FolderId">@item.FolderPath</a>
+                    </span>
+                </a>
+            }
+        </div>
+    }
+</div>

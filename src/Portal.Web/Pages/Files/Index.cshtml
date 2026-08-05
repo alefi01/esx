@@ -305,6 +305,15 @@
 
                             <span class="tile__date">@folder.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")</span>
 
+                            @* Звёздочка «в избранном». Отдельная кнопка внутри
+                               плитки-ссылки: нажатие по ней перехватывает код
+                               страницы, чтобы не открывалась сама папка. *@
+                            <button type="button" class="fav-star @(Model.FavoriteFolderIds.Contains(folder.Id) ? "is-on" : "")"
+                                    data-favorite-folder="@folder.Id"
+                                    title="В избранное" aria-label="В избранное">
+                                <svg class="icon icon--xs"><use href="#i-star"></use></svg>
+                            </button>
+
                             <span class="tile__marks">
                                 @if (folder.RetentionDays is { } days)
                                 {
@@ -342,6 +351,12 @@
                             <span class="tile__size">@Model.FormatSize(file.SizeBytes)</span>
 
                             <span class="tile__date">@file.UploadedAt.ToLocalTime().ToString("dd.MM.yyyy")</span>
+
+                            <button type="button" class="fav-star @(Model.FavoriteFileIds.Contains(file.Id) ? "is-on" : "")"
+                                    data-favorite-file="@file.Id"
+                                    title="В избранное" aria-label="В избранное">
+                                <svg class="icon icon--xs"><use href="#i-star"></use></svg>
+                            </button>
 
                             <span class="tile__marks"></span>
                         </a>

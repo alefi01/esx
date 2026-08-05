@@ -305,6 +305,9 @@ builder.Services.AddScoped<NotificationService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<StorageUsage>();
 
+// Личные отметки «в избранном». Обращаются к базе — Scoped.
+builder.Services.AddScoped<FavoriteService>();
+
 // Переписки. Справочник сотрудников и служба бесед живут один запрос:
 // оба обращаются к базе, а контекст базы существует ровно столько же.
 // Хранилище вложений состояния не имеет, поэтому одно на всё приложение.

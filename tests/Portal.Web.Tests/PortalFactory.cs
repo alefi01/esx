@@ -141,6 +141,16 @@ public sealed class PortalFactory : WebApplicationFactory<Program>
         // Схему создаём отдельно, методом EnsureCreated (см. CreateHost).
         builder.UseSetting("Database:ApplyMigrationsOnStartup", "false");
 
+        // Не следить за изменениями appsettings.json.
+        //
+        // На боевом сервере слежка полезна: правку настроек портал подхватит
+        // без перезапуска. В тестах она вредна — каждый поднятый экземпляр
+        // приложения заводит наблюдателя за файлом, а их в Linux разрешено
+        // ограниченное число (обычно 128). Когда тестов стало больше сотни,
+        // они начали упираться в этот предел и падать с ошибкой про inotify,
+        // причём падал не тот тест, который «виноват», а любой следующий.
+        builder.UseSetting("hostBuilder:reloadConfigOnChange", "false");
+
         if (StorageRootPath is not null)
         {
             builder.UseSetting("Storage:RootPath", StorageRootPath);

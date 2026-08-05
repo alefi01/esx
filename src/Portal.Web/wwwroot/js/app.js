@@ -1245,6 +1245,18 @@
                 return;
             }
 
+            // Звёздочка «в избранном» лежит внутри плитки, а плитка — ссылка.
+            // Перехватываем нажатие раньше всего остального, иначе вместе
+            // с отметкой открылась бы сама папка или скачался файл.
+            const star = event.target.closest('.fav-star');
+
+            if (star) {
+                event.preventDefault();
+                event.stopPropagation();
+                toggleFavorite(star);
+                return;
+            }
+
             const tile = event.target.closest('.tile--file');
 
             if (!tile) {
@@ -1565,6 +1577,35 @@
             }
 
             return items;
+        }
+
+        /**
+         * Поставить или снять звёздочку.
+         *
+         * Страница при этом не перезагружается: сервер отвечает новым
+         * состоянием, а звёздочка перекрашивается на месте. Человек
+         * не теряет ни выделение, ни прокрутку — а ради одной отметки
+         * перерисовывать всю страницу было бы расточительно.
+         */
+        function toggleFavorite(star) {
+            const fileId = star.dataset.favoriteFile;
+            const folderId = star.dataset.favoriteFolder;
+
+            const address = '/Files?handler=Favorite'
+                + (fileId ? '&fileId=' + fileId : '&folderId=' + folderId);
+
+            const body = new FormData();
+            body.append('__RequestVerificationToken', antiforgeryToken());
+
+            fetch(address, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body
+            })
+                .then(response => (response.ok ? response.json() : Promise.reject(response.status)))
+                .then(data => star.classList.toggle('is-on', data.favorite))
+                .catch(() => toasts.show('Не удалось изменить избранное', 'error'));
         }
 
         /** Открыть файл в окне предпросмотра. */

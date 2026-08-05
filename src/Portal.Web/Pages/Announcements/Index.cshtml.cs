@@ -86,9 +86,14 @@ public class IndexModel : PageModel
                 PageNumber = TotalPages;
             }
 
+            // Закреплённые идут первыми независимо от даты — в этом весь
+            // смысл закрепления. Сортировка именно в запросе, а не в памяти:
+            // страницы нарезаются базой, и переставлять записи после Take
+            // означало бы менять порядок только внутри одной страницы.
             Items = await _db.Announcements
                 .Include(a => a.Files)
-                .OrderByDescending(a => a.CreatedAt)
+                .OrderByDescending(a => a.IsPinned)
+                .ThenByDescending(a => a.CreatedAt)
                 .ThenByDescending(a => a.Id)   // на случай совпадения времени до микросекунды
                 .Skip((PageNumber - 1) * pageSize)
                 .Take(pageSize)
@@ -120,6 +125,52 @@ public class IndexModel : PageModel
         }
 
         return Page();
+    }
+
+    /// <summary>
+    /// Закрепить объявление наверху ленты или снять закрепление.
+    ///
+    /// Право то же, что и на правку: кто может исправить объявление,
+    /// тот может и решить, висеть ему наверху или нет. Заводить отдельное
+    /// право ради одной галочки — лишняя сущность.
+    /// </summary>
+    public Task<IActionResult> OnPostPinAsync(int id, CancellationToken cancellationToken) =>
+        SwitchAsync(id, a => a.IsPinned = !a.IsPinned, cancellationToken);
+
+    /// <summary>Пометить объявление важным или снять пометку.</summary>
+    public Task<IActionResult> OnPostImportantAsync(int id, CancellationToken cancellationToken) =>
+        SwitchAsync(id, a => a.IsImportant = !a.IsImportant, cancellationToken);
+
+    /// <summary>
+    /// Общая часть обоих переключателей: найти, проверить право, поменять.
+    ///
+    /// Права проверяются ЗДЕСЬ, по данным из базы, а не по тому, показали ли
+    /// мы кнопку. Скрытая кнопка — это удобство интерфейса, а не защита:
+    /// такой POST можно отправить и без неё.
+    /// </summary>
+    private async Task<IActionResult> SwitchAsync(
+        int id, Action<Announcement> change, CancellationToken cancellationToken)
+    {
+        var announcement = await _db.Announcements.AsTracking()
+            .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+
+        if (announcement is null)
+        {
+            return NotFound();
+        }
+
+        if (!CanModify(announcement))
+        {
+            return Forbid();
+        }
+
+        change(announcement);
+
+        // Дату правки НЕ трогаем: закрепление не меняет текст объявления,
+        // и подпись «изменено» после него сбивала бы с толку.
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return RedirectToPage(new { PageNumber });
     }
 
     /// <summary>

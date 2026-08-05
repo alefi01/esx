@@ -24,6 +24,7 @@ public class IndexModel : PageModel
     private readonly FileStorage _storage;
     private readonly UploadValidator _validator;
     private readonly AuditLog _audit;
+    private readonly FavoriteService _favorites;
     private readonly ActiveDirectoryOptions _ad;
     private readonly TimeProvider _time;
     private readonly ILogger<IndexModel> _logger;
@@ -34,6 +35,7 @@ public class IndexModel : PageModel
         FileStorage storage,
         UploadValidator validator,
         AuditLog audit,
+        FavoriteService favorites,
         IOptions<ActiveDirectoryOptions> ad,
         TimeProvider time,
         ILogger<IndexModel> logger)
@@ -43,6 +45,7 @@ public class IndexModel : PageModel
         _storage = storage;
         _validator = validator;
         _audit = audit;
+        _favorites = favorites;
         _ad = ad.Value;
         _time = time;
         _logger = logger;
@@ -63,6 +66,10 @@ public class IndexModel : PageModel
     public long UsedBytes { get; private set; }
 
     public bool StorageConfigured => _storage.IsConfigured;
+
+    /// <summary>Что этот человек отметил звёздочкой — чтобы зажечь её на плитках.</summary>
+    public HashSet<int> FavoriteFileIds { get; private set; } = [];
+    public HashSet<int> FavoriteFolderIds { get; private set; } = [];
 
     /// <summary>
     /// Объём каждой видимой подпапки вместе со всем вложенным, байты.
@@ -629,6 +636,11 @@ public class IndexModel : PageModel
     {
         await _tree.LoadAsync(cancellationToken);
 
+        // Отметки читаются одним запросом на всю страницу, а не по запросу
+        // на каждую плитку.
+        FavoriteFileIds = await _favorites.FileIdsAsync(User, cancellationToken);
+        FavoriteFolderIds = await _favorites.FolderIdsAsync(User, cancellationToken);
+
         if (id is null)
         {
             Current = null;
@@ -1032,6 +1044,49 @@ public class IndexModel : PageModel
                 _ => "нет доступа"
             })
             .ToList();
+    }
+
+    /// <summary>
+    /// Поставить или снять звёздочку. Отвечает JSON-ом, а не перенаправлением:
+    /// страница при этом не перезагружается, и человек не теряет ни выделение,
+    /// ни прокрутку. Без JavaScript кнопка просто не появится — потери
+    /// небольшие, избранное это удобство, а не обязательная часть работы.
+    /// </summary>
+    public async Task<IActionResult> OnPostFavoriteAsync(
+        int? fileId, int? folderId, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        // Отметку можно ставить только на то, что человеку и так видно.
+        // Иначе избранное стало бы способом узнать, существует ли папка
+        // с определённым номером.
+        if (fileId is { } id)
+        {
+            var file = await _db.Files.FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
+            var parent = file is null ? null : _tree.Get(file.FolderId);
+
+            if (file is null || parent is null || !_tree.CanRead(User, parent))
+            {
+                return NotFound();
+            }
+        }
+        else if (folderId is { } fid)
+        {
+            var folder = _tree.Get(fid);
+
+            if (folder is null || !_tree.IsVisible(User, folder))
+            {
+                return NotFound();
+            }
+        }
+        else
+        {
+            return BadRequest();
+        }
+
+        var added = await _favorites.ToggleAsync(User, fileId, folderId, cancellationToken);
+
+        return new JsonResult(new { favorite = added });
     }
 
     /// <summary>Сведения о файле или папке для окна «Свойства».</summary>

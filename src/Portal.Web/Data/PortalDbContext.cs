@@ -27,6 +27,8 @@ public class PortalDbContext : DbContext
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<UserSeenState> SeenStates => Set<UserSeenState>();
 
+    public DbSet<Favorite> Favorites => Set<Favorite>();
+
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<ConversationParticipant> Participants => Set<ConversationParticipant>();
     public DbSet<Message> Messages => Set<Message>();
@@ -116,6 +118,34 @@ public class PortalDbContext : DbContext
 
             // Вычисляемое свойство, в базе его быть не должно.
             entity.Ignore(f => f.IsDeleted);
+        });
+
+        modelBuilder.Entity<Favorite>(entity =>
+        {
+            // Отметка живёт вместе с тем, что отмечено: исчез файл —
+            // исчезла и отметка. Иначе избранное со временем превратилось бы
+            // в кладбище ссылок в никуда.
+            entity.HasOne(f => f.File)
+                .WithMany()
+                .HasForeignKey(f => f.FileId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(f => f.Folder)
+                .WithMany()
+                .HasForeignKey(f => f.FolderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Один человек не может отметить один и тот же файл дважды.
+            // Индексы раздельные и частичные по той же причине, что и у папок:
+            // база считает два пустых значения РАЗНЫМИ, и общий индекс
+            // по паре «логин + файл» не помешал бы дублям среди папок.
+            entity.HasIndex(f => new { f.UserName, f.FileId })
+                .IsUnique()
+                .HasFilter("\"FileId\" IS NOT NULL");
+
+            entity.HasIndex(f => new { f.UserName, f.FolderId })
+                .IsUnique()
+                .HasFilter("\"FolderId\" IS NOT NULL");
         });
 
         modelBuilder.Entity<UserSeenState>(entity =>

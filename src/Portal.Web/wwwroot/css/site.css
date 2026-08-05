@@ -813,6 +813,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     border: 1px solid var(--c-border);
 }
 
+/* Ссылка, оформленная как пометка: путь до папки в избранном. */
+.chip--link { color: var(--c-accent); }
+.chip--link:hover { text-decoration: underline; }
+
 .badge--ok, .chip--ok { background: var(--c-ok-bg); color: var(--c-ok); border-color: transparent; }
 .badge--warn, .chip--warn { background: var(--c-warn-bg); color: var(--c-warn); border-color: transparent; }
 .badge--error, .chip--error { background: var(--c-error-bg); color: var(--c-error); border-color: transparent; }
@@ -943,6 +947,47 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     border-radius: var(--r-lg);
     box-shadow: var(--shadow-sm);
 }
+
+/*
+ * Закреплённое объявление. Тонкая рамка акцентного цвета и подложка:
+ * достаточно, чтобы карточка выделялась в ленте, и не настолько,
+ * чтобы перебивать важные.
+ */
+.post--pinned {
+    border-color: color-mix(in srgb, var(--c-accent) 40%, var(--c-border));
+    background: linear-gradient(180deg, var(--c-accent-soft), transparent 90px), var(--c-surface);
+}
+
+/*
+ * Важное объявление. Красная полоса по левому краю — приём из макета:
+ * такую карточку видно с любого места ленты, даже не читая.
+ */
+.post--important {
+    position: relative;
+    overflow: hidden;
+}
+
+.post--important::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 4px;
+    background: var(--c-error);
+}
+
+.post__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+
+/* Пометка «Закреплено» — акцентная, чтобы отличаться от «Важное». */
+.chip--pin {
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+    border-color: transparent;
+}
+
+/* Кнопка-переключатель в состоянии «включено, и это тревожно». */
+.iconbtn.is-danger { color: var(--c-error); background: var(--c-error-bg); }
 
 .post__head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 
@@ -1314,6 +1359,58 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 .tile__marks:empty { display: none; }
 
+/*
+ * Звёздочка «в избранном» в углу плитки.
+ *
+ * В обычном состоянии она видна только при наведении на плитку —
+ * иначе каждая плитка обрастает значком, который нужен изредка.
+ * Зажжённая звёздочка видна всегда: это и есть её смысл.
+ */
+.fav-star {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    color: var(--c-text-muted);
+    background: none;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+                background var(--t-fast) var(--ease);
+}
+
+.tile { position: relative; }
+
+.tile:hover .fav-star,
+.fav-star:focus-visible { opacity: 1; }
+
+.fav-star:hover { background: var(--surface3); color: var(--warn); }
+
+.fav-star.is-on {
+    opacity: 1;
+    color: var(--warn);
+}
+
+/* Отмеченная звезда — закрашенная, неотмеченная — контурная.
+   По одному цвету их не различить, особенно при наведении. */
+.fav-star.is-on .icon { fill: currentColor; }
+
+/* В режиме списка звёздочка встаёт в общий ряд, а не в угол. */
+.grid--list .fav-star {
+    position: static;
+    opacity: 1;
+    color: var(--c-border-strong);
+}
+
+.grid--list .fav-star.is-on { color: var(--warn); }
+
 /* ---------- Вид списком ---------- */
 
 /*
@@ -1325,7 +1422,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .grid--list .grid__head,
 .grid--list .tile {
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) 110px 120px auto;
+    grid-template-columns: 44px minmax(0, 1fr) 110px 120px auto 32px;
     align-items: center;
     gap: 12px;
     text-align: left;
@@ -2503,7 +2600,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     .facts dd { margin-bottom: 10px; }
     .grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
     .grid--list .grid__head,
-    .grid--list .tile { grid-template-columns: 36px minmax(0, 1fr) 90px; }
+    .grid--list .tile { grid-template-columns: 36px minmax(0, 1fr) 90px 32px; }
     .grid--list .tile__date,
     .grid--list .grid__head span:nth-child(4) { display: none; }
     .toolbar__actions { margin-left: 0; width: 100%; }

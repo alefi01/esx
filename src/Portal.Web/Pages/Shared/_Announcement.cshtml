@@ -8,7 +8,7 @@
     в двух местах: на главной и в ленте объявлений. Две копии разметки
     разошлись бы при первой же правке.
 *@
-<div class="post">
+<div class="post @(Model.Item.IsPinned ? "post--pinned" : "") @(Model.Item.IsImportant ? "post--important" : "")">
     <div class="post__head">
         <span class="post__avatar">@Model.Initials</span>
 
@@ -26,6 +26,25 @@
         @if (Model.CanModify)
         {
             <div class="post__tools">
+                @* Закрепление и пометка «важное» — обычные формы, а не кнопки
+                   с кодом: так они работают всегда, и на них действует
+                   та же проверка прав, что и на правку объявления. *@
+                <form method="post" asp-page="/Announcements/Index" asp-page-handler="Pin"
+                      asp-route-id="@Model.Item.Id" class="inline-form">
+                    <button type="submit" class="iconbtn @(Model.Item.IsPinned ? "is-active" : "")"
+                            title="@(Model.Item.IsPinned ? "Открепить" : "Закрепить наверху")">
+                        <svg class="icon"><use href="#i-pin"></use></svg>
+                    </button>
+                </form>
+
+                <form method="post" asp-page="/Announcements/Index" asp-page-handler="Important"
+                      asp-route-id="@Model.Item.Id" class="inline-form">
+                    <button type="submit" class="iconbtn @(Model.Item.IsImportant ? "is-danger" : "")"
+                            title="@(Model.Item.IsImportant ? "Снять пометку «важное»" : "Пометить как важное")">
+                        <svg class="icon"><use href="#i-warning"></use></svg>
+                    </button>
+                </form>
+
                 <a class="iconbtn" asp-page="/Announcements/Edit" asp-route-id="@Model.Item.Id" title="Изменить">
                     <svg class="icon"><use href="#i-rename"></use></svg>
                 </a>
@@ -35,6 +54,20 @@
             </div>
         }
     </div>
+
+    @if (Model.Item.IsPinned || Model.Item.IsImportant)
+    {
+        <div class="post__chips">
+            @if (Model.Item.IsPinned)
+            {
+                <span class="chip chip--pin"><svg class="icon icon--xs"><use href="#i-pin"></use></svg> Закреплено</span>
+            }
+            @if (Model.Item.IsImportant)
+            {
+                <span class="chip chip--error"><svg class="icon icon--xs"><use href="#i-warning"></use></svg> Важное</span>
+            }
+        </div>
+    }
 
     <h2 class="post__title">@Model.Item.Title</h2>
 

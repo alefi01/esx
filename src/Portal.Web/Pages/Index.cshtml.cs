@@ -81,9 +81,12 @@ public class IndexModel : PageModel
         {
             var total = await _db.Announcements.CountAsync(cancellationToken);
 
+            // Закреплённые первыми — так же, как в ленте объявлений.
+            // Иначе главная и раздел «Объявления» показывали бы разное.
             Items = await _db.Announcements
                 .Include(a => a.Files)
-                .OrderByDescending(a => a.CreatedAt)
+                .OrderByDescending(a => a.IsPinned)
+                .ThenByDescending(a => a.CreatedAt)
                 .ThenByDescending(a => a.Id)
                 .Take(FeedSize)
                 .ToListAsync(cancellationToken);
