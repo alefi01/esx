@@ -19,7 +19,19 @@ public enum PreviewKind
     /// Документ Office (docx, xlsx, pptx). Портал разбирает его сам
     /// и показывает содержимое разметкой — см. OfficeDocuments.
     /// </summary>
-    Office = 4
+    Office = 4,
+
+    /// <summary>Видео: проигрывается тегом video средствами браузера.</summary>
+    Video = 5,
+
+    /// <summary>Звук: проигрывается тегом audio средствами браузера.</summary>
+    Audio = 6,
+
+    /// <summary>
+    /// Архив ZIP. Показывается не содержимое файлов, а список того,
+    /// что внутри, — этого хватает, чтобы понять, тот ли это архив.
+    /// </summary>
+    Archive = 7
 }
 
 /// <summary>
@@ -79,7 +91,25 @@ public static class PreviewSupport
             [".xlsx"] = (PreviewKind.Office, ""),
             [".xlsm"] = (PreviewKind.Office, ""),
             [".pptx"] = (PreviewKind.Office, ""),
-            [".pptm"] = (PreviewKind.Office, "")
+            [".pptm"] = (PreviewKind.Office, ""),
+
+            // Видео и звук. Список короткий намеренно: сюда попали только те
+            // форматы, которые Chromium и Edge проигрывают сами, без кодеков.
+            // Остальное (avi, mkv, wmv) браузер показать не сможет, и честнее
+            // сразу предложить скачать файл, чем открыть чёрный прямоугольник.
+            [".mp4"] = (PreviewKind.Video, "video/mp4"),
+            [".webm"] = (PreviewKind.Video, "video/webm"),
+            [".ogv"] = (PreviewKind.Video, "video/ogg"),
+
+            [".mp3"] = (PreviewKind.Audio, "audio/mpeg"),
+            [".wav"] = (PreviewKind.Audio, "audio/wav"),
+            [".ogg"] = (PreviewKind.Audio, "audio/ogg"),
+            [".m4a"] = (PreviewKind.Audio, "audio/mp4"),
+            [".flac"] = (PreviewKind.Audio, "audio/flac"),
+
+            // Архив. Тип содержимого пуст по той же причине, что у Office:
+            // сам файл наружу не уходит, уходит только список того, что внутри.
+            [".zip"] = (PreviewKind.Archive, "")
         };
 
     /// <summary>Наибольший размер текстового файла, который имеет смысл показывать целиком.</summary>
@@ -90,12 +120,12 @@ public static class PreviewSupport
 
     /// <summary>
     /// Тип содержимого для безопасной отдачи «на просмотр».
-    /// null — файл целиком отдавать нельзя (в том числе для документов Office:
-    /// они уходят разметкой через отдельный обработчик).
+    /// null — файл целиком отдавать нельзя (в том числе для документов Office
+    /// и архивов: они уходят разметкой через отдельные обработчики).
     /// </summary>
     public static string? ContentTypeFor(string fileName) =>
         Allowed.TryGetValue(Path.GetExtension(fileName), out var entry)
-        && entry.Kind != PreviewKind.Office
+        && entry.Kind is not (PreviewKind.Office or PreviewKind.Archive)
             ? entry.ContentType
             : null;
 
@@ -105,6 +135,9 @@ public static class PreviewSupport
         PreviewKind.Image => "изображение",
         PreviewKind.Pdf => "документ PDF",
         PreviewKind.Text => "текстовый файл",
+        PreviewKind.Video => "видеозапись",
+        PreviewKind.Audio => "звукозапись",
+        PreviewKind.Archive => "архив ZIP",
         PreviewKind.Office => Path.GetExtension(fileName).ToLowerInvariant() switch
         {
             ".xlsx" or ".xlsm" => "книга Excel",
@@ -113,4 +146,54 @@ public static class PreviewSupport
         },
         _ => "файл"
     };
+}
+
+/// <summary>
+/// К какому «семейству» относится файл — для цвета значка в списке.
+///
+/// Это НЕ то же самое, что <see cref="PreviewKind"/>. Тот отвечает на вопрос
+/// «умеет ли портал это показать», и список там короткий и строгий,
+/// потому что от него зависит безопасность. Здесь же вопрос безобидный:
+/// каким цветом нарисовать плитку. Поэтому список длиннее и включает
+/// в том числе то, что портал показывать не умеет и не собирается.
+/// </summary>
+public static class FileKinds
+{
+    private static readonly Dictionary<string, string> ByExtension =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            [".png"] = "image", [".jpg"] = "image", [".jpeg"] = "image",
+            [".gif"] = "image", [".webp"] = "image", [".bmp"] = "image",
+            [".ico"] = "image", [".svg"] = "image", [".tif"] = "image", [".tiff"] = "image",
+
+            [".pdf"] = "pdf",
+
+            [".doc"] = "word", [".docx"] = "word", [".docm"] = "word",
+            [".rtf"] = "word", [".odt"] = "word",
+
+            [".xls"] = "excel", [".xlsx"] = "excel", [".xlsm"] = "excel",
+            [".csv"] = "excel", [".ods"] = "excel",
+
+            [".ppt"] = "ppt", [".pptx"] = "ppt", [".pptm"] = "ppt", [".odp"] = "ppt",
+
+            [".mp4"] = "video", [".webm"] = "video", [".ogv"] = "video",
+            [".avi"] = "video", [".mkv"] = "video", [".mov"] = "video", [".wmv"] = "video",
+
+            [".mp3"] = "audio", [".wav"] = "audio", [".ogg"] = "audio",
+            [".m4a"] = "audio", [".flac"] = "audio", [".wma"] = "audio",
+
+            [".zip"] = "zip", [".rar"] = "zip", [".7z"] = "zip",
+            [".tar"] = "zip", [".gz"] = "zip", [".cab"] = "zip",
+
+            [".xml"] = "code", [".json"] = "code", [".sql"] = "code",
+            [".html"] = "code", [".htm"] = "code", [".css"] = "code",
+            [".ps1"] = "code", [".bat"] = "code", [".cmd"] = "code",
+            [".py"] = "code", [".cs"] = "code", [".config"] = "code",
+
+            [".txt"] = "text", [".log"] = "text", [".md"] = "text", [".ini"] = "text"
+        };
+
+    /// <summary>Семейство файла: image, pdf, word, excel, ppt, video, audio, zip, code, text, other.</summary>
+    public static string Of(string fileName) =>
+        ByExtension.GetValueOrDefault(Path.GetExtension(fileName), "other");
 }

@@ -74,6 +74,65 @@ public static class OfficeDocuments
         _ => null
     };
 
+    /// <summary>Сколько строк списка показывать для архива.</summary>
+    private const int MaxArchiveEntries = 500;
+
+    /// <summary>
+    /// Список того, что лежит внутри архива ZIP.
+    ///
+    /// Сами файлы НЕ распаковываются: читается только оглавление архива,
+    /// которое хранится в нём отдельно. Поэтому даже для архива на несколько
+    /// гигабайт эта операция мгновенная и ничего не тратит.
+    ///
+    /// Задача скромная и намеренно такая: понять, тот ли это архив,
+    /// не скачивая его целиком по узкому каналу между офисами.
+    /// </summary>
+    public static string ArchiveToHtml(Stream stream)
+    {
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
+
+        // Папки внутри архива представлены записями с пустым именем файла
+        // и нулевым размером — в списке они не нужны.
+        var entries = archive.Entries
+            .Where(e => !string.IsNullOrEmpty(e.Name))
+            .OrderBy(e => e.FullName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        if (entries.Count == 0)
+        {
+            return Empty("Архив пуст.");
+        }
+
+        var builder = new StringBuilder("<div class=\"doc\"><div class=\"zip-list\">");
+
+        foreach (var entry in entries.Take(MaxArchiveEntries))
+        {
+            builder.Append("<div class=\"zip-row\"><span class=\"zip-name\">")
+                .Append(WebUtility.HtmlEncode(entry.FullName))
+                .Append("</span><span class=\"zip-size\">")
+                .Append(WebUtility.HtmlEncode(UploadValidator.Format(entry.Length)))
+                .Append("</span></div>");
+        }
+
+        builder.Append("</div>");
+
+        // Считаем по ВСЕМ записям, а не только по показанным: цифра внизу
+        // должна описывать архив, а не длину списка на экране.
+        builder.Append("<p class=\"doc__note\">Файлов: ")
+            .Append(entries.Count)
+            .Append(", в распакованном виде ")
+            .Append(WebUtility.HtmlEncode(UploadValidator.Format(entries.Sum(e => e.Length))));
+
+        if (entries.Count > MaxArchiveEntries)
+        {
+            builder.Append(". Показаны первые ").Append(MaxArchiveEntries);
+        }
+
+        builder.Append(".</p></div>");
+
+        return builder.ToString();
+    }
+
     /// <summary>
     /// Разбирает документ и возвращает КУСОК разметки для показа в панели.
     /// Не целую страницу — только содержимое.

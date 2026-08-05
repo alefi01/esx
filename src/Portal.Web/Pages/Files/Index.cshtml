@@ -31,6 +31,16 @@
 
     @* ---------- Верхняя панель папки ---------- *@
     <div class="toolbar">
+        @* Кнопка «на уровень вверх». Показываем только внутри папки:
+           на верхнем уровне возвращаться некуда. *@
+        @if (Model.Current is not null)
+        {
+            <a class="iconbtn" title="На уровень вверх" aria-label="На уровень вверх"
+               asp-page="Index" asp-route-id="@Model.Current.ParentId">
+                <svg class="icon"><use href="#i-back"></use></svg>
+            </a>
+        }
+
         <nav class="crumbs" aria-label="Путь">
             <a asp-page="Index">Файлы</a>
             @foreach (var crumb in Model.Breadcrumbs)
@@ -72,6 +82,14 @@
                 }
             </form>
 
+            @if (canCreateFolder)
+            {
+                <button type="button" class="btn" data-action="new-folder">
+                    <svg class="icon"><use href="#i-new-folder"></use></svg>
+                    Создать папку
+                </button>
+            }
+
             @if (canWrite && Model.StorageConfigured)
             {
                 @* Настоящее поле выбора файлов спрятано: нажатие на кнопку
@@ -84,26 +102,45 @@
                 </button>
             }
 
-            @if (canCreateFolder)
-            {
-                <button type="button" class="btn" data-action="new-folder">
-                    <svg class="icon"><use href="#i-new-folder"></use></svg>
-                    Создать папку
-                </button>
-            }
-
             @if (canManageCurrent)
             {
-                <a class="btn" asp-page="Settings" asp-route-id="@Model.Current!.Id">
+                <a class="iconbtn" title="Управление папкой" aria-label="Управление папкой"
+                   asp-page="Settings" asp-route-id="@Model.Current!.Id">
                     <svg class="icon"><use href="#i-settings"></use></svg>
-                    Управление
                 </a>
             }
 
-            <a class="btn btn--quiet" asp-page="Trash">
-                <svg class="icon"><use href="#i-trash"></use></svg>
-                Корзина
-            </a>
+            @* Порядок сортировки. Обычный список выбора внутри формы GET:
+               при смене значения код страницы отправляет форму, и порядок
+               попадает в адрес. Без JavaScript останется кнопка «Показать». *@
+            <form method="get" class="sortform">
+                @if (Model.Current is not null)
+                {
+                    <input type="hidden" name="id" value="@Model.Current.Id" />
+                }
+
+                <label class="sr-only" for="sort-select">Порядок</label>
+
+                <select id="sort-select" name="sort" class="sel" data-autosubmit>
+                    <option value="name" selected="@(Model.SortMode == "name")">По имени</option>
+                    <option value="date" selected="@(Model.SortMode == "date")">По дате</option>
+                    <option value="size" selected="@(Model.SortMode == "size")">По размеру</option>
+                    <option value="type" selected="@(Model.SortMode == "type")">По типу</option>
+                </select>
+
+                <noscript><button type="submit" class="btn">Показать</button></noscript>
+            </form>
+
+            @* Плитки или список. Выбор хранится в браузере и действует
+               на всех страницах — сервер про него не знает и знать не должен. *@
+            <div class="vt" role="group" aria-label="Вид списка">
+                <button type="button" class="iconbtn" data-view="grid" title="Плитками">
+                    <svg class="icon"><use href="#i-grid"></use></svg>
+                </button>
+                <button type="button" class="iconbtn" data-view="list" title="Списком">
+                    <svg class="icon"><use href="#i-list"></use></svg>
+                </button>
+            </div>
         </div>
 
         @if (Model.Current is not null && Model.Access >= FolderAccess.Read)
@@ -227,7 +264,20 @@
             }
             else
             {
-                <div class="grid">
+                @* Один и тот же список показывается плитками или строками.
+                   Разметка при этом ОДНА: вид переключается только стилями
+                   (класс grid--list). Так не приходится держать два набора
+                   разметки, которые неминуемо разъедутся при доработках. *@
+                <div class="grid" data-file-grid>
+
+                    @* Заголовок столбцов. Виден только в режиме списка. *@
+                    <div class="grid__head" aria-hidden="true">
+                        <span></span>
+                        <span>Название</span>
+                        <span>Размер</span>
+                        <span>Изменён</span>
+                    </div>
+
                     @foreach (var folder in Model.Subfolders)
                     {
                         <a class="tile tile--folder"
@@ -239,18 +289,23 @@
 
                             <span class="tile__icon">
                                 <svg class="icon icon--lg">
-                                    <use href="@(folder.InheritPermissions ? "#i-folder" : "#i-folder-locked")"></use>
+                                    <use href="@(folder.InheritPermissions ? "#i-folder-solid" : "#i-folder-solid-locked")"></use>
                                 </svg>
                             </span>
 
                             <span class="tile__name" title="@folder.Name">@folder.Name</span>
 
-                            <span class="tile__sub">
+                            <span class="tile__size">
                                 @* Пустую папку не подписываем «0 Б» — лишний шум в списке. *@
                                 @if (Model.ShowSizes && Model.FolderSizes.TryGetValue(folder.Id, out var size) && size > 0)
                                 {
-                                    <span>@Model.FormatSize(size)</span>
+                                    @Model.FormatSize(size)
                                 }
+                            </span>
+
+                            <span class="tile__date">@folder.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")</span>
+
+                            <span class="tile__marks">
                                 @if (folder.RetentionDays is { } days)
                                 {
                                     <span class="chip chip--warn" title="Файлы старше срока уходят в корзину">@days дн.</span>
@@ -270,20 +325,25 @@
                            data-file="@file.Id"
                            data-name="@file.OriginalName"
                            data-size="@file.SizeBytes"
+                           data-kind="@Portal.Web.Pages.Files.IndexModel.FileKindOf(file)"
                            data-preview-kind="@Portal.Web.Pages.Files.IndexModel.PreviewKindOf(file)"
                            data-can-delete="@Model.CanDelete(file).ToString().ToLowerInvariant()">
 
-                            <span class="tile__icon">
-                                <svg class="icon icon--lg"><use href="#i-file"></use></svg>
-                                <span class="tile__ext">@FileExtension(file.OriginalName)</span>
+                            @* Значок файла — не картинка, а прямоугольник, покрашенный
+                               по типу файла, с расширением на нём. Рисуется стилями:
+                               так не нужны ни отдельные файлы на каждый тип,
+                               ни JavaScript, ни обращение к сети. *@
+                            <span class="tile__icon tile__icon--file">
+                                <span class="tile__ext">@Portal.Web.Pages.Files.IndexModel.ExtensionOf(file)</span>
                             </span>
 
                             <span class="tile__name" title="@file.OriginalName">@file.OriginalName</span>
 
-                            <span class="tile__sub">
-                                @Model.FormatSize(file.SizeBytes)
-                                · @file.UploadedAt.ToLocalTime().ToString("dd.MM.yyyy")
-                            </span>
+                            <span class="tile__size">@Model.FormatSize(file.SizeBytes)</span>
+
+                            <span class="tile__date">@file.UploadedAt.ToLocalTime().ToString("dd.MM.yyyy")</span>
+
+                            <span class="tile__marks"></span>
                         </a>
                     }
                 </div>
@@ -301,38 +361,72 @@
     }
 </div>
 
-@* ---------- Панель предпросмотра ----------
+@* ---------- Окно предпросмотра ----------
 
-   Лежит поверх страницы справа и выезжает при открытии файла; рабочая
-   область в это время сдвигается влево (класс на <body>, стили в site.css).
-   Пустая заготовка — содержимое подставляет код страницы. *@
-<aside class="preview" data-preview hidden aria-label="Предпросмотр файла">
-    @* Полоска слева: за неё панель растягивают мышью. Ширина запоминается
-       в браузере, поэтому подбирать её каждый раз заново не придётся. *@
-    <div class="preview__grip" data-preview-grip role="separator"
-         aria-orientation="vertical" tabindex="0"
-         title="Потяните, чтобы изменить ширину. Двойное нажатие — во весь экран"></div>
+   Окно поверх страницы, а не панель сбоку: документ надо разглядывать,
+   а для этого ему нужно место. Слева содержимое файла, справа узкая
+   колонка со сведениями. Пустая заготовка — всё подставляет код страницы. *@
+<div class="modal" data-modal="preview" hidden>
+    <div class="modal__backdrop" data-modal-close></div>
 
-    <div class="preview__head">
-        <svg class="icon preview__kind"><use href="#i-file"></use></svg>
+    <div class="modal__window pv" role="dialog" aria-modal="true" aria-label="Предпросмотр файла">
 
-        <span class="preview__name" data-preview-name></span>
+        <div class="pv__head">
+            <span class="pv__kind tile__icon tile__icon--file" data-preview-kind>
+                <span class="tile__ext" data-preview-ext></span>
+            </span>
 
-        <button type="button" class="iconbtn" data-preview-wide title="Развернуть на всю ширину">
-            <svg class="icon"><use href="#i-expand"></use></svg>
-        </button>
+            <span class="pv__name" data-preview-name></span>
 
-        <a class="iconbtn" data-preview-download title="Скачать" download>
-            <svg class="icon"><use href="#i-download"></use></svg>
-        </a>
+            @* Масштаб. Показывается только для картинок: текст и документы
+               браузер масштабирует сам, своими средствами. *@
+            <div class="zoom-bar" data-preview-zoom hidden>
+                <button type="button" class="iconbtn" data-zoom="out" title="Мельче">
+                    <svg class="icon"><use href="#i-zoom-out"></use></svg>
+                </button>
+                <span class="zoom-bar__value" data-zoom-value>100%</span>
+                <button type="button" class="iconbtn" data-zoom="in" title="Крупнее">
+                    <svg class="icon"><use href="#i-zoom-in"></use></svg>
+                </button>
+            </div>
 
-        <button type="button" class="iconbtn" data-preview-close title="Закрыть (Esc)">
-            <svg class="icon"><use href="#i-close"></use></svg>
-        </button>
+            <a class="iconbtn" data-preview-download title="Скачать" download>
+                <svg class="icon"><use href="#i-download"></use></svg>
+            </a>
+
+            @* Ссылка на папку с этим файлом — для своих. Анонимного доступа
+               портал не даёт: по ссылке откроется папка, и только тому,
+               кому она и так открыта. *@
+            <button type="button" class="iconbtn" data-preview-share title="Скопировать ссылку">
+                <svg class="icon"><use href="#i-link"></use></svg>
+            </button>
+
+            <button type="button" class="iconbtn" data-preview-aside-toggle title="Сведения">
+                <svg class="icon"><use href="#i-info"></use></svg>
+            </button>
+
+            <button type="button" class="iconbtn" data-modal-close title="Закрыть (Esc)">
+                <svg class="icon"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+
+        <div class="pv__body">
+            <div class="pv__viewer" data-preview-body></div>
+
+            <aside class="pv__aside" data-preview-aside>
+                <div class="pv-meta">
+                    <h3>Сведения</h3>
+                    <dl class="facts facts--tight" data-preview-facts></dl>
+                </div>
+
+                <div class="pv-meta">
+                    <h3>Доступ</h3>
+                    <ul class="pv-access" data-preview-access></ul>
+                </div>
+            </aside>
+        </div>
     </div>
-
-    <div class="preview__body" data-preview-body></div>
-</aside>
+</div>
 
 @* ---------- Контекстное меню ---------- *@
 <div class="menu" data-context-menu hidden role="menu"></div>
@@ -412,15 +506,3 @@
 <form method="post" asp-page-handler="RenameFile" data-form="rename-file" hidden></form>
 
 <form method="post" asp-page-handler="RenameFolder" data-form="rename-folder" hidden></form>
-
-@functions {
-    // Расширение для подписи на значке файла: «PDF», «DOCX» и т.п.
-    // Комментарий обычный, а не /// с тегами: внутри @@functions разметка
-    // вроде <summary> сбивает разбор Razor-страницы.
-    static string FileExtension(string name)
-    {
-        var extension = System.IO.Path.GetExtension(name).TrimStart('.').ToUpperInvariant();
-
-        return extension.Length is 0 or > 4 ? "" : extension;
-    }
-}

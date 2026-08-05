@@ -99,6 +99,19 @@ public class IndexModel : PageModel
 
     public bool IsSearching => !string.IsNullOrWhiteSpace(Query);
 
+    /// <summary>
+    /// Порядок сортировки списка: name (по умолчанию), date, size, type.
+    ///
+    /// Сортируем НА СЕРВЕРЕ, а не в браузере. Причин две: порядок попадает
+    /// в адрес страницы, и ссылку можно послать коллеге; и список остаётся
+    /// отсортированным даже там, где JavaScript почему-то не отработал.
+    /// </summary>
+    [BindProperty(SupportsGet = true, Name = "sort")]
+    public string? Sort { get; set; }
+
+    /// <summary>Проверенное значение — чтобы чужая строка в адресе ничего не сломала.</summary>
+    public string SortMode => Sort is "date" or "size" or "type" ? Sort : "name";
+
     [TempData]
     public string? StatusMessage { get; set; }
 
@@ -626,7 +639,10 @@ public class IndexModel : PageModel
                 .Where(f => _tree.IsVisible(User, f))
                 .ToList();
 
+            // Объёмы считаются ДО сортировки: по ним сортируют «по размеру».
             await LoadFolderSizesAsync(cancellationToken);
+
+            Subfolders = SortFolders(Subfolders);
 
             if (IsSearching)
             {
@@ -656,10 +672,7 @@ public class IndexModel : PageModel
         Access = _tree.AccessFor(User, folder);
         Breadcrumbs = _tree.PathTo(folder);
 
-        Subfolders = folder.Children
-            .Where(f => _tree.IsVisible(User, f))
-            .OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
+        Subfolders = folder.Children.Where(f => _tree.IsVisible(User, f)).ToList();
 
         MaxFileSizeBytes = _tree.EffectiveMaxFileSizeBytes(folder);
         QuotaBytes = _tree.EffectiveQuotaBytes(folder);
@@ -673,14 +686,20 @@ public class IndexModel : PageModel
         // Содержимое показываем только тем, кто имеет право читать саму папку.
         // Если папка видна лишь как «дорога» к вложенной разрешённой,
         // список файлов останется пустым — и это правильно.
+        // Сортируем УЖЕ ПОСЛЕ выборки, в памяти. По-русски база сортирует
+        // по своим правилам сравнения, которые зависят от того, с какой
+        // локалью её создали, — и «Ёлка» может встать не туда. Файлов
+        // в одной папке немного, лишних затрат тут нет.
         FilesInFolder = Access >= FolderAccess.Read
-            ? await _db.Files
+            ? SortFiles(await _db.Files
                 .Where(f => f.FolderId == folder.Id && f.DeletedAt == null)
-                .OrderBy(f => f.OriginalName)
-                .ToListAsync(cancellationToken)
+                .ToListAsync(cancellationToken))
             : [];
 
+        // Объёмы считаются ДО сортировки: по ним сортируют «по размеру».
         await LoadFolderSizesAsync(cancellationToken);
+
+        Subfolders = SortFolders(Subfolders);
 
         if (IsSearching)
         {
@@ -689,6 +708,41 @@ public class IndexModel : PageModel
 
         return null;
     }
+
+    /// <summary>
+    /// Сортировка папок. У папки нет ни размера, ни типа, поэтому «по размеру»
+    /// для неё работает по объёму вложенного, а «по типу» — как по имени.
+    /// Папки при любой сортировке идут первыми: так же ведёт себя проводник.
+    /// </summary>
+    private IReadOnlyList<StorageFolder> SortFolders(IEnumerable<StorageFolder> folders) => SortMode switch
+    {
+        "date" => folders.OrderByDescending(f => f.CreatedAt).ToList(),
+
+        "size" => folders
+            .OrderByDescending(f => FolderSizes.GetValueOrDefault(f.Id))
+            .ThenBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList(),
+
+        _ => folders.OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase).ToList()
+    };
+
+    /// <summary>Сортировка файлов по выбранному в верхней панели порядку.</summary>
+    private IReadOnlyList<StoredFile> SortFiles(IEnumerable<StoredFile> files) => SortMode switch
+    {
+        // «Сначала новые»: при сортировке по дате людей интересует свежее.
+        "date" => files.OrderByDescending(f => f.UploadedAt).ToList(),
+
+        // «Сначала крупные»: по размеру сортируют, когда ищут, что занимает место.
+        "size" => files.OrderByDescending(f => f.SizeBytes).ToList(),
+
+        // По типу — то есть по расширению, а внутри одного типа по имени.
+        "type" => files
+            .OrderBy(f => Path.GetExtension(f.OriginalName), StringComparer.OrdinalIgnoreCase)
+            .ThenBy(f => f.OriginalName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList(),
+
+        _ => files.OrderBy(f => f.OriginalName, StringComparer.CurrentCultureIgnoreCase).ToList()
+    };
 
     /// <summary>
     /// Считает объём каждой видимой подпапки вместе со всем вложенным.
@@ -876,6 +930,110 @@ public class IndexModel : PageModel
         return Content(html, "text/html; charset=utf-8");
     }
 
+    /// <summary>
+    /// Предпросмотр архива ZIP: список того, что внутри.
+    ///
+    /// Сам архив наружу не отдаётся — уходит только готовая разметка списка.
+    /// Идёт отдельным обработчиком, а не через OnGetPreviewAsync, по той же
+    /// причине, что и документы Office: там отдаётся файл, здесь — разметка.
+    /// </summary>
+    public async Task<IActionResult> OnGetArchivePreviewAsync(int fileId, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        var file = await _db.Files.FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken);
+
+        if (file is null || file.DeletedAt is not null)
+        {
+            return NotFound();
+        }
+
+        var folder = _tree.Get(file.FolderId);
+
+        if (folder is null || !_tree.CanRead(User, folder))
+        {
+            return NotFound();
+        }
+
+        if (PreviewSupport.KindOf(file.OriginalName) != PreviewKind.Archive
+            || !_storage.Exists(file.FolderId, file.StorageName))
+        {
+            return NotFound();
+        }
+
+        string html;
+
+        try
+        {
+            await using var stream = _storage.OpenRead(file.FolderId, file.StorageName);
+
+            html = OfficeDocuments.ArchiveToHtml(stream);
+        }
+        catch (Exception ex)
+        {
+            // Повреждённый или защищённый паролем архив не должен ронять страницу.
+            _logger.LogWarning(ex, "Не удалось прочитать архив {File} для предпросмотра.", file.OriginalName);
+
+            return Content(
+                "<div class=\"doc\"><p class=\"doc__note\">Не удалось прочитать архив. " +
+                "Возможно, он повреждён или защищён паролем.</p></div>",
+                "text/html; charset=utf-8");
+        }
+
+        await _audit.WriteAsync(
+            AuditAction.Preview, file.OriginalName,
+            $"папка «{_tree.DisplayPath(folder)}», содержимое архива", cancellationToken);
+
+        return Content(html, "text/html; charset=utf-8");
+    }
+
+    /// <summary>
+    /// Кто имеет доступ к папке — списком строк вида «Бухгалтерия — запись».
+    ///
+    /// Права собираются вверх по дереву, пока действует наследование:
+    /// именно так их и считает FolderTree, и показывать надо то же самое,
+    /// иначе список вводил бы в заблуждение.
+    /// </summary>
+    private static List<string> DescribeAccess(StorageFolder folder)
+    {
+        // Наибольшее право на группу: одна и та же группа может быть назначена
+        // и на папку, и на её родителя — остаётся сильнейшее.
+        var best = new Dictionary<string, FolderAccess>(StringComparer.OrdinalIgnoreCase);
+
+        var current = folder;
+        var guard = 0;
+
+        while (current is not null && guard++ < 64)
+        {
+            foreach (var permission in current.Permissions)
+            {
+                if (!best.TryGetValue(permission.GroupName, out var existing) || permission.Access > existing)
+                {
+                    best[permission.GroupName] = permission.Access;
+                }
+            }
+
+            if (!current.InheritPermissions)
+            {
+                break;
+            }
+
+            current = current.Parent;
+        }
+
+        return best
+            .OrderByDescending(pair => pair.Value)
+            .ThenBy(pair => pair.Key, StringComparer.CurrentCultureIgnoreCase)
+            .Select(pair => pair.Key + " — " + pair.Value switch
+            {
+                FolderAccess.Manage => "управление",
+                FolderAccess.Write => "запись",
+                FolderAccess.Read => "чтение",
+                _ => "нет доступа"
+            })
+            .ToList();
+    }
+
     /// <summary>Сведения о файле или папке для окна «Свойства».</summary>
     public async Task<IActionResult> OnGetPropertiesAsync(
         int? fileId, int? folderId, CancellationToken cancellationToken)
@@ -904,7 +1062,13 @@ public class IndexModel : PageModel
                     new { name = "Загрузил", value = file.UploadedByDisplayName },
                     new { name = "Дата загрузки", value = file.UploadedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm") },
                     new { name = "Тип содержимого", value = file.ContentType }
-                }
+                },
+
+                // Кому открыта папка, в которой лежит файл. Показывается
+                // в окне предпросмотра блоком «Доступ»: человек сразу видит,
+                // кому он на самом деле показал документ, прежде чем
+                // отправлять на него ссылку.
+                access = DescribeAccess(parent)
             });
         }
 
@@ -1169,8 +1333,25 @@ public class IndexModel : PageModel
         PreviewKind.Pdf => "pdf",
         PreviewKind.Text => "text",
         PreviewKind.Office => "office",
+        PreviewKind.Video => "video",
+        PreviewKind.Audio => "audio",
+        PreviewKind.Archive => "archive",
         _ => ""
     };
+
+    /// <summary>Семейство файла для цвета значка: image, pdf, word, excel и так далее.</summary>
+    public static string FileKindOf(StoredFile file) => FileKinds.Of(file.OriginalName);
+
+    /// <summary>
+    /// Расширение для подписи на значке: «PDF», «DOCX».
+    /// Слишком длинное на значок не влезет, поэтому такое не подписываем.
+    /// </summary>
+    public static string ExtensionOf(StoredFile file)
+    {
+        var extension = Path.GetExtension(file.OriginalName).TrimStart('.').ToUpperInvariant();
+
+        return extension.Length is 0 or > 4 ? "" : extension;
+    }
 
     /// <summary>Предел размера текстового файла для показа целиком.</summary>
     public static long MaxTextPreviewBytes => PreviewSupport.MaxTextPreviewBytes;

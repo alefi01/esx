@@ -417,32 +417,40 @@
     window.addEventListener('scroll', hideMenu, true);
 
     // ======================================================================
-    // 6. Панель предпросмотра
+    // 6. Окно предпросмотра
     //
-    // Показывает файл справа, не уводя человека со страницы. Сама панель
-    // лежит в разметке пустой; сюда же вписано и то, что делать с файлами,
+    // Показывает файл поверх страницы, не уводя с неё человека. Окно лежит
+    // в разметке пустым; сюда же вписано и то, что делать с файлами,
     // которые браузер показать не умеет, — вместо пустоты человек получает
     // объяснение и кнопку «Скачать».
     //
-    // Содержимое подставляется тремя способами:
-    //   картинка — тегом img;
+    // Содержимое подставляется по-разному, в зависимости от вида файла:
+    //   картинка — тегом img, с масштабом;
     //   PDF      — встроенным окном (iframe), его рисует сам браузер;
-    //   текст    — забираем содержимое и выводим как текст, не как разметку.
+    //   текст    — забираем содержимое и выводим как текст, не как разметку;
+    //   документ Office и архив — сервер присылает готовую разметку;
+    //   видео и звук — тегами video и audio, проигрывает сам браузер.
     //
     // Отдаёт файлы обработчик Preview: он проверяет права заново и отдаёт
     // только то, что есть в белом списке (см. PreviewSupport.cs).
     // ======================================================================
 
     const preview = (function () {
-        const panel = $('[data-preview]');
+        const modal = $('[data-modal="preview"]');
 
-        if (!panel) {
+        if (!modal) {
             return { open() {}, close() {}, isOpen() { return false; } };
         }
 
-        const body = $('[data-preview-body]', panel);
-        const nameField = $('[data-preview-name]', panel);
-        const downloadLink = $('[data-preview-download]', panel);
+        const body = $('[data-preview-body]', modal);
+        const nameField = $('[data-preview-name]', modal);
+        const extField = $('[data-preview-ext]', modal);
+        const kindBox = $('[data-preview-kind]', modal);
+        const downloadLink = $('[data-preview-download]', modal);
+        const factsList = $('[data-preview-facts]', modal);
+        const accessList = $('[data-preview-access]', modal);
+        const zoomBar = $('[data-preview-zoom]', modal);
+        const zoomValue = $('[data-zoom-value]', modal);
 
         let currentId = null;
 
@@ -463,6 +471,51 @@
         // срок щедрый — но не бесконечный: висящее «Загрузка…»
         // хуже честного «не дождались».
         const WAIT_MS = 45000;
+
+        // ---------- Масштаб картинки ----------
+        //
+        // Ступени подобраны так, чтобы каждое нажатие давало заметную
+        // разницу. 100% здесь — это «вписать в окно», а не настоящий размер
+        // в точках: снимок экрана шириной 3840 точек иначе открывался бы
+        // кусочком своего угла.
+
+        const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
+        const ZOOM_FIT = 3;
+        let zoomIndex = ZOOM_FIT;
+
+        function applyZoom() {
+            const image = $('img', body);
+
+            if (!image) {
+                return;
+            }
+
+            const scale = ZOOM_STEPS[zoomIndex];
+
+            image.style.maxWidth = scale <= 1 ? '100%' : 'none';
+            image.style.width = scale <= 1 ? 'auto' : (scale * 100) + '%';
+
+            zoomValue.textContent = Math.round(scale * 100) + '%';
+        }
+
+        function setZoomVisible(visible) {
+            zoomBar.hidden = !visible;
+
+            if (visible) {
+                zoomIndex = ZOOM_FIT;
+                zoomValue.textContent = '100%';
+            }
+        }
+
+        $$('[data-zoom]', modal).forEach(button => {
+            button.addEventListener('click', () => {
+                zoomIndex = button.dataset.zoom === 'in'
+                    ? Math.min(ZOOM_STEPS.length - 1, zoomIndex + 1)
+                    : Math.max(0, zoomIndex - 1);
+
+                applyZoom();
+            });
+        });
 
         function note(text, icon, extra) {
             body.innerHTML = '';
@@ -556,9 +609,8 @@
          * файл шёл по сети, человек видел пустое белое место и решал,
          * что портал сломался.
          */
-        function loading(name) {
-            body.innerHTML = '';
-
+        /** Собирает полоску ожидания, ничего не трогая на странице. */
+        function loadingBox(name) {
             const box = document.createElement('div');
             box.className = 'preview__loading';
 
@@ -575,6 +627,14 @@
             box.appendChild(dial);
             box.appendChild(caption);
             box.appendChild(bar);
+
+            return box;
+        }
+
+        function loading(name) {
+            body.innerHTML = '';
+
+            const box = loadingBox(name);
 
             body.appendChild(box);
 
@@ -673,9 +733,60 @@
                 });
         }
 
+        /**
+         * Наполняет колонку «Сведения» и «Доступ».
+         *
+         * Данные берутся у того же обработчика, что и окно свойств:
+         * заводить второй, отвечающий почти тем же самым, незачем.
+         */
+        function loadFacts(fileId) {
+            factsList.innerHTML = '';
+            accessList.innerHTML = '';
+
+            request('/Files?handler=Properties&fileId=' + fileId)
+                .then(response => response.json())
+                .then(data => {
+                    // Пока ходили за сведениями, могли открыть другой файл.
+                    if (currentId !== fileId) {
+                        return;
+                    }
+
+                    (data.rows || []).forEach(row => {
+                        const name = document.createElement('dt');
+                        name.textContent = row.name;
+
+                        const value = document.createElement('dd');
+                        value.textContent = row.value;
+
+                        factsList.appendChild(name);
+                        factsList.appendChild(value);
+                    });
+
+                    const groups = data.access || [];
+
+                    if (groups.length === 0) {
+                        const item = document.createElement('li');
+                        item.className = 'muted';
+                        item.textContent = 'Отдельных прав нет — действуют права родительской папки';
+                        accessList.appendChild(item);
+                        return;
+                    }
+
+                    groups.forEach(text => {
+                        const item = document.createElement('li');
+                        item.textContent = text;
+                        accessList.appendChild(item);
+                    });
+                })
+                .catch(() => {
+                    // Сведения — дополнение, а не главное. Не получилось —
+                    // окно всё равно показывает файл, ругаться незачем.
+                });
+        }
+
         return {
             isOpen() {
-                return document.body.classList.contains('has-preview');
+                return !modal.hidden;
             },
 
             currentId() {
@@ -683,8 +794,10 @@
             },
 
             /**
-             * file: { id, name, kind, size, downloadUrl }
-             * kind — "image" | "pdf" | "text" | "" (показать нельзя)
+             * file: { id, name, kind, family, size, downloadUrl }
+             * kind — чем показывать: "image" | "pdf" | "text" | "office"
+             *        | "video" | "audio" | "archive" | "" (показать нельзя)
+             * family — каким цветом рисовать значок (см. FileKinds на сервере)
              */
             open(file, maxTextBytes) {
                 currentId = file.id;
@@ -698,10 +811,18 @@
                 nameField.title = file.name;
                 downloadLink.href = file.downloadUrl;
 
-                panel.hidden = false;
-                // Панель должна попасть в разметку до того, как начнётся
-                // движение, иначе браузер покажет её сразу на месте.
-                requestAnimationFrame(() => document.body.classList.add('has-preview'));
+                // Значок в заголовке — тот же цветной прямоугольник, что
+                // и в списке: окно должно узнаваться как «тот самый файл».
+                const dot = file.name.lastIndexOf('.');
+                const extension = dot > 0 ? file.name.slice(dot + 1).toUpperCase() : '';
+
+                extField.textContent = extension.length > 4 ? '' : extension;
+                kindBox.dataset.kind = file.family || 'other';
+
+                setZoomVisible(file.kind === 'image');
+
+                openModal('preview');
+                loadFacts(file.id);
 
                 const source = '/Files?handler=Preview&fileId=' + file.id;
 
@@ -717,6 +838,7 @@
                         }
 
                         show(image);
+                        applyZoom();
                     });
 
                     image.addEventListener('error', () => {
@@ -841,11 +963,76 @@
                     return;
                 }
 
-                // Всё остальное — архивы, чертежи и прочее. Браузер такое
+                if (file.kind === 'video' || file.kind === 'audio') {
+                    // Проигрывает сам браузер. Файл при этом качается кусками
+                    // (сервер отдаёт его с поддержкой диапазонов), поэтому
+                    // запись на сотни мегабайт начинает играть сразу,
+                    // а не после полной загрузки — важно на канале между офисами.
+                    const player = document.createElement(file.kind);
+                    player.controls = true;
+                    player.preload = 'metadata';
+                    player.className = 'player player--' + file.kind;
+                    player.hidden = true;
+
+                    const box = loadingBox(file.name);
+
+                    player.addEventListener('loadeddata', () => {
+                        if (current()) {
+                            box.remove();
+                            player.hidden = false;
+                        }
+                    });
+
+                    player.addEventListener('error', () => {
+                        if (current()) {
+                            failure(
+                                'Не удалось проиграть запись.',
+                                'браузер не понимает этот формат — скачайте файл',
+                                file);
+                        }
+                    });
+
+                    player.src = source;
+
+                    // Показываем сразу и проигрыватель, и полоску ожидания:
+                    // пока не пришли первые данные, человек должен видеть,
+                    // что что-то происходит.
+                    body.innerHTML = '';
+                    body.appendChild(box);
+                    body.appendChild(player);
+                    return;
+                }
+
+                if (file.kind === 'archive') {
+                    // Внутрь архива сервер не лезет: он читает только оглавление
+                    // и присылает готовый список. Сами файлы не распаковываются.
+                    request('/Files?handler=ArchivePreview&fileId=' + file.id)
+                        .then(response => response.text())
+                        .then(markup => {
+                            if (!current()) {
+                                return;
+                            }
+
+                            const holder = document.createElement('div');
+                            holder.innerHTML = markup;
+
+                            show(holder);
+                        })
+                        .catch(reason => {
+                            if (current()) {
+                                failure('Не удалось прочитать архив.',
+                                    describeFailure(reason), file, reason);
+                            }
+                        });
+
+                    return;
+                }
+
+                // Всё остальное — чертежи, базы, редкие форматы. Браузер такое
                 // не показывает, а разобрать сами мы умеем только документы
-                // Office (см. OfficeDocuments).
+                // Office и архивы ZIP (см. OfficeDocuments).
                 note(
-                    'Такой файл браузер показать не умеет. Нажмите «Скачать» вверху панели, ' +
+                    'Такой файл браузер показать не умеет. Нажмите «Скачать» вверху окна, ' +
                     'и файл откроется в своей программе.',
                     'i-file');
             },
@@ -853,13 +1040,14 @@
             close() {
                 currentId = null;
 
-                document.body.classList.remove('has-preview');
+                closeModal(modal);
 
                 setTimeout(() => {
-                    // Содержимое убираем ПОСЛЕ движения: иначе панель
-                    // уезжает пустой, и это заметно.
-                    if (!document.body.classList.contains('has-preview')) {
-                        panel.hidden = true;
+                    // Содержимое убираем ПОСЛЕ движения: иначе окно исчезает
+                    // пустым, и это заметно. Заодно останавливается
+                    // проигрывание — иначе видео продолжало бы играть
+                    // за закрытым окном.
+                    if (modal.hidden) {
                         body.innerHTML = '';
                     }
                 }, 250);
@@ -868,142 +1056,94 @@
     })();
 
     // ----------------------------------------------------------------------
-    // Ширина панели предпросмотра
-    //
-    // Панель можно растянуть, потянув за её левый край. Ширина запоминается
-    // в браузере: подбирать её заново при каждом открытии файла — занятие
-    // утомительное, а на сервер такая мелочь не должна ходить вовсе.
+    // Кнопки в заголовке окна предпросмотра
     // ----------------------------------------------------------------------
 
     (function () {
-        const grip = $('[data-preview-grip]');
+        const modal = $('[data-modal="preview"]');
 
-        if (!grip) {
+        if (!modal) {
             return;
         }
 
-        const KEY = 'portal.previewWidth';
-        const MIN = 320;
+        // «Сведения»: узкую колонку справа можно убрать, чтобы отдать
+        // всё место документу.
+        const asideToggle = $('[data-preview-aside-toggle]', modal);
 
-        /** Шире этого панель не пустим: рабочей области должно что-то остаться. */
-        function maxWidth() {
-            return Math.max(MIN, window.innerWidth - 360);
-        }
+        if (asideToggle) {
+            asideToggle.classList.add('is-active');
 
-        function apply(width) {
-            const value = Math.min(Math.max(width, MIN), maxWidth());
+            asideToggle.addEventListener('click', () => {
+                const hidden = modal.classList.toggle('pv--no-aside');
 
-            document.documentElement.style.setProperty('--preview-w', value + 'px');
-
-            return value;
-        }
-
-        function remember(width) {
-            try {
-                localStorage.setItem(KEY, String(width));
-            } catch (error) {
-                // Не смогли запомнить — ширина всё равно действует до перезагрузки.
-            }
-        }
-
-        // Восстанавливаем прошлый выбор.
-        try {
-            const saved = parseInt(localStorage.getItem(KEY), 10);
-
-            if (saved > 0) {
-                apply(saved);
-            }
-        } catch (error) {
-            // Настройки браузера могут запрещать хранилище — тогда ширина обычная.
-        }
-
-        let dragging = false;
-
-        grip.addEventListener('pointerdown', event => {
-            if (event.button !== 0) {
-                return;
-            }
-
-            dragging = true;
-            grip.setPointerCapture(event.pointerId);
-            document.body.classList.add('is-resizing');
-            event.preventDefault();
-        });
-
-        grip.addEventListener('pointermove', event => {
-            if (!dragging) {
-                return;
-            }
-
-            // Панель прижата к правому краю, поэтому её ширина —
-            // это расстояние от указателя до правого края окна.
-            apply(window.innerWidth - event.clientX);
-        });
-
-        ['pointerup', 'pointercancel'].forEach(name => {
-            grip.addEventListener(name, event => {
-                if (!dragging) {
-                    return;
-                }
-
-                dragging = false;
-                document.body.classList.remove('is-resizing');
-
-                if (grip.hasPointerCapture(event.pointerId)) {
-                    grip.releasePointerCapture(event.pointerId);
-                }
-
-                remember(apply(window.innerWidth - event.clientX));
+                asideToggle.classList.toggle('is-active', !hidden);
             });
-        });
-
-        // Двойное нажатие по полоске — во всю ширину и обратно.
-        grip.addEventListener('dblclick', () => toggleWide());
-
-        // Клавиатура: стрелками по 40 точек, чтобы можно было и без мыши.
-        grip.addEventListener('keydown', event => {
-            const current = parseInt(getComputedStyle(document.documentElement)
-                .getPropertyValue('--preview-w'), 10) || 460;
-
-            if (event.key === 'ArrowLeft') {
-                event.preventDefault();
-                remember(apply(current + 40));
-            } else if (event.key === 'ArrowRight') {
-                event.preventDefault();
-                remember(apply(current - 40));
-            }
-        });
-
-        function toggleWide() {
-            const current = parseInt(getComputedStyle(document.documentElement)
-                .getPropertyValue('--preview-w'), 10) || 460;
-
-            remember(apply(current >= maxWidth() - 4 ? 460 : maxWidth()));
         }
 
-        $$('[data-preview-wide]').forEach(button => {
-            button.addEventListener('click', toggleWide);
-        });
+        // «Ссылка»: копирует адрес папки с этим файлом.
+        //
+        // Ссылка ОБЫЧНАЯ, не «публичная»: анонимного доступа портал не даёт
+        // вовсе. Тот, кому вы её пошлёте, увидит папку, только если у него
+        // и так есть к ней доступ. Это сделано намеренно — иначе ссылка
+        // из переписки стала бы дырой в разграничении прав.
+        const share = $('[data-preview-share]', modal);
 
-        // Окно уменьшили — панель не должна занять его целиком.
-        window.addEventListener('resize', () => {
-            const current = parseInt(getComputedStyle(document.documentElement)
-                .getPropertyValue('--preview-w'), 10) || 460;
+        if (share) {
+            share.addEventListener('click', () => {
+                const link = location.origin + location.pathname + location.search;
 
-            apply(current);
-        });
+                // navigator.clipboard работает только по защищённому
+                // соединению. Портал пока живёт по HTTP, поэтому нужен
+                // запасной путь через временное поле ввода.
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(link)
+                        .then(() => toasts.show('Ссылка скопирована', 'info'))
+                        .catch(() => copyThroughField(link));
+                } else {
+                    copyThroughField(link);
+                }
+            });
+        }
+
+        function copyThroughField(text) {
+            const field = document.createElement('textarea');
+            field.value = text;
+            field.setAttribute('readonly', '');
+            field.style.position = 'fixed';
+            field.style.opacity = '0';
+
+            document.body.appendChild(field);
+            field.select();
+
+            let copied = false;
+
+            try {
+                copied = document.execCommand('copy');
+            } catch (error) {
+                copied = false;
+            }
+
+            field.remove();
+
+            toasts.show(
+                copied
+                    ? 'Ссылка скопирована'
+                    : 'Не удалось скопировать — возьмите адрес из строки браузера',
+                copied ? 'info' : 'error');
+        }
     })();
 
     document.addEventListener('click', event => {
-        if (event.target.closest('[data-preview-close]')) {
+        // Закрытие окна предпросмотра идёт через preview.close(), а не через
+        // общий обработчик окон: здесь нужно ещё остановить проигрывание
+        // и забыть номер открытого файла.
+        if (event.target.closest('[data-modal="preview"] [data-modal-close]')) {
             preview.close();
         }
     });
 
     document.addEventListener('keydown', event => {
-        // Esc закрывает предпросмотр, но только если нет открытого окна:
-        // у окна на Esc своё поведение, и перебивать его не надо.
-        if (event.key === 'Escape' && preview.isOpen() && !$('[data-modal].is-open')) {
+        if (event.key === 'Escape' && preview.isOpen()) {
             preview.close();
         }
     });
@@ -1131,7 +1271,7 @@
                 selection = new Set([id]);
                 lastClicked = tile;
 
-                // Если панель предпросмотра открыта, она следует за выделением —
+                // Если окно предпросмотра открыто, оно следует за выделением —
                 // так же, как область просмотра в проводнике Windows.
                 if (preview.isOpen() && tile.dataset.previewKind) {
                     showPreview(tile);
@@ -1427,12 +1567,17 @@
             return items;
         }
 
-        /** Открыть файл в правой панели. */
+        /** Открыть файл в окне предпросмотра. */
         function showPreview(tile) {
             preview.open({
                 id: parseInt(tile.dataset.file, 10),
                 name: tile.dataset.name,
+
+                // kind — чем показывать (картинка, PDF, текст…),
+                // family — каким цветом рисовать значок. Это разные вопросы:
+                // показать умеем не всё, а покрасить — всё.
                 kind: tile.dataset.previewKind || '',
+                family: tile.dataset.kind || 'other',
                 size: parseInt(tile.dataset.size, 10) || 0,
                 downloadUrl: tile.getAttribute('href')
             }, maxTextPreview);
