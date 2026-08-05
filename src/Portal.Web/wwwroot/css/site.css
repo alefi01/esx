@@ -544,7 +544,7 @@ button.fav-star.on svg{fill:currentColor}
 /* Широкое окно предпросмотра: тело должно тянуться на всю высоту. */
 .modal-body--wide{flex:1;min-height:0;padding-top:8px}
 .pv-title{display:flex;align-items:center;gap:10px;font-size:14.5px;min-width:0}
-.pv-title svg{flex:none}
+.pv-title svg{flex:none;width:26px;height:auto}
 .pv-title span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pv-actions{display:flex;gap:7px}
 .pv-actions .btn{flex:1;justify-content:center}
@@ -647,3 +647,15 @@ button.fav-star.on svg{fill:currentColor}
 .page-header__text{min-width:0}
 .page-header__sub,.hint,.muted{font-size:12.5px;color:var(--muted);line-height:1.6}
 .narrow{max-width:940px}
+
+/* Ссылки.
+
+   В макете ссылок нет вовсе — там всё сделано кнопками и переключается
+   без перезагрузки. У нас разделы это настоящие страницы со своими
+   адресами, поэтому пункты меню, хлебные крошки и плитки — теги <a>.
+   Браузер подчёркивает их по умолчанию; убираем, чтобы вид совпал
+   с макетом. Подчёркивание остаётся там, где ссылка выглядит ссылкой:
+   в тексте и в подписях. */
+a{color:inherit;text-decoration:none}
+.nav-item,.brand,.crumb,.tile,.frow,.hero-link,.notif,.zip-row{text-decoration:none}
+.alert a,.hint a,.search-note a,.pager a,.feed-all,.feed-more a,.link{text-decoration:underline}

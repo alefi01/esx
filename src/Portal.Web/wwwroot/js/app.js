@@ -597,7 +597,7 @@
         container.addEventListener('dblclick', e => {
             const node = e.target.closest('[data-id]');
 
-            if (node) { open(info(node)); }
+            if (node) { open(info(node), node); }
         });
 
         container.addEventListener('contextmenu', e => {
@@ -613,7 +613,7 @@
             }
         });
 
-        function open(item) {
+        function open(item, node) {
             if (item.folder) {
                 window.location.href = item.href;
                 return;
@@ -622,7 +622,7 @@
             // Показать умеем не всё. Что не умеем — просто скачиваем:
             // «открыть» для такого файла и есть «скачать».
             if (item.kind) {
-                openPreview(item);
+                openPreview(item, node);
             } else {
                 window.location.href = item.href;
             }
@@ -632,8 +632,8 @@
             const entries = [];
 
             entries.push(item.folder
-                ? { icon: 'folder', label: 'Открыть', fn: () => open(item) }
-                : { icon: 'eye', label: 'Предпросмотр', fn: () => open(item) });
+                ? { icon: 'folder', label: 'Открыть', fn: () => open(item, null) }
+                : { icon: 'eye', label: 'Предпросмотр', fn: () => open(item, $(`[data-id="${item.id}"]`, container)) });
 
             if (item.file) {
                 entries.push({ icon: 'download', label: 'Скачать', fn: () => { window.location.href = item.href; } });
@@ -822,7 +822,7 @@
 
             if (e.key === 'Enter') {
                 e.preventDefault();
-                open(item);
+                open(item, selected);
             }
         });
 
@@ -987,12 +987,17 @@
     /** Сколько ждём ответа, прежде чем признать, что связи нет. */
     const WAIT_MS = 45000;
 
-    function openPreview(item) {
+    function openPreview(item, node) {
         const source = '/Files?handler=Preview&fileId=' + item.file;
+
+        // Значок берём прямо из плитки: он уже нарисован сервером,
+        // и рисовать его второй раз здесь — лишнее удвоение кода,
+        // которое неминуемо разъедется с серверным.
+        const icon = node ? node.querySelector('.tile-icon svg, .ficon svg') : null;
 
         const m = openModal({
             wide: true,
-            title: `<span class="pv-title">${item.icon || ''}<span>${esc(item.name)}</span></span>`,
+            title: `<span class="pv-title">${icon ? icon.outerHTML : ''}<span>${esc(item.name)}</span></span>`,
             body: '<div class="pv-body">' +
                 '<div class="pv-viewer" id="pvViewer">' +
                 '<div class="pv-load"><div class="pv-spin"></div><p>Загружается…</p></div>' +

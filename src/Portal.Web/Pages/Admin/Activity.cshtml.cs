@@ -82,13 +82,13 @@ public class ActivityModel : PageModel
         AuditAction.MoveToTrash or AuditAction.DeleteFolder => "i-trash",
         AuditAction.RestoreFromTrash => "i-restore",
         AuditAction.Purge or AuditAction.RetentionCleanup or AuditAction.PurgeAuditLog => "i-trash",
-        AuditAction.CreateFolder => "i-new-folder",
-        AuditAction.ChangeFolderSettings => "i-settings",
-        AuditAction.ChangePermissions => "i-shield",
+        AuditAction.CreateFolder => "i-plus",
+        AuditAction.ChangeFolderSettings => "i-info",
+        AuditAction.ChangePermissions => "i-share",
         AuditAction.Move or AuditAction.Copy => "i-copy",
-        AuditAction.Rename => "i-rename",
+        AuditAction.Rename => "i-edit",
         AuditAction.Preview => "i-eye",
-        _ => "i-file"
+        _ => "i-eye"
     };
 
     /// <summary>

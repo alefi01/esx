@@ -24,10 +24,10 @@
 
             <div class="chat__listactions">
                 <button type="button" class="iconbtn" data-action="new-direct" title="Написать сотруднику">
-                    <svg class="icon"><use href="#i-pen"></use></svg>
+                    <svg class="icon"><use href="#i-edit"></use></svg>
                 </button>
                 <button type="button" class="iconbtn" data-action="new-group" title="Создать группу">
-                    <svg class="icon"><use href="#i-group"></use></svg>
+                    <svg class="icon"><use href="#i-users"></use></svg>
                 </button>
             </div>
         </div>
@@ -42,7 +42,7 @@
             @if (Model.IsSearching)
             {
                 <a class="search__clear" asp-page="Index" title="Очистить поиск">
-                    <svg class="icon icon--xs"><use href="#i-close"></use></svg>
+                    <svg class="icon icon--xs"><use href="#i-x"></use></svg>
                 </a>
             }
         </form>
@@ -63,7 +63,7 @@
                        asp-page="Index" asp-route-id="@item.Id">
 
                         <span class="chat__avatar @(item.IsGroup ? "chat__avatar--group" : "")">
-                            <svg class="icon"><use href="@(item.IsGroup ? "#i-group" : "#i-person")"></use></svg>
+                            <svg class="icon"><use href="@(item.IsGroup ? "#i-users" : "#i-users")"></use></svg>
                         </span>
 
                         <span class="chat__itembody">
@@ -140,7 +140,7 @@
         {
             <div class="chat__head">
                 <span class="chat__avatar @(Model.Current.IsGroup ? "chat__avatar--group" : "")">
-                    <svg class="icon"><use href="@(Model.Current.IsGroup ? "#i-group" : "#i-person")"></use></svg>
+                    <svg class="icon"><use href="@(Model.Current.IsGroup ? "#i-users" : "#i-users")"></use></svg>
                 </span>
 
                 <div class="chat__headtext">
@@ -154,7 +154,7 @@
                 @if (Model.Current.IsGroup)
                 {
                     <button type="button" class="btn btn--quiet" data-action="group-settings">
-                        <svg class="icon"><use href="#i-settings"></use></svg>
+                        <svg class="icon"><use href="#i-info"></use></svg>
                         Участники
                     </button>
                 }
@@ -214,7 +214,7 @@
                                 {
                                     <a class="msg__file"
                                        asp-page="Index" asp-page-handler="Attachment" asp-route-fileId="@file.Id">
-                                        <svg class="icon"><use href="#i-file"></use></svg>
+                                        <svg class="icon"><use href="#i-eye"></use></svg>
                                         <span class="msg__filename">@file.OriginalName</span>
                                         <span class="msg__filesize">@Portal.Web.Pages.Messages.IndexModel.FormatSize(file.SizeBytes)</span>
                                     </a>
@@ -250,7 +250,7 @@
 
                     <div class="chat__composeractions">
                         <button type="button" class="iconbtn" data-action="attach" title="Приложить файл">
-                            <svg class="icon"><use href="#i-clip"></use></svg>
+                            <svg class="icon"><use href="#i-copy"></use></svg>
                         </button>
 
                         <button type="submit" class="btn primary">
