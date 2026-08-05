@@ -1,91 +1,80 @@
 @page
+@using Portal.Web.Pages.Shared
 @model Portal.Web.Pages.IndexModel
 @{
     ViewData["Title"] = "Главная";
 }
 
-<div class="home narrow">
+<section class="view active">
+
     @* ---------- Приветствие ---------- *@
     <div class="hero">
-        <div class="hero__text">
-            <h1>@Model.Greeting, @Model.DisplayName</h1>
-            <p>
+        <div>
+            <h2>@Model.Greeting, @Model.DisplayName</h2>
+            <span class="sub">
                 Это корпоративный портал.
                 @if (!string.IsNullOrEmpty(Model.OfficeName))
                 {
                     <span>Вы в офисе «@Model.OfficeName».</span>
                 }
-            </p>
+            </span>
         </div>
 
-        <div class="hero__links">
-            <a class="tilelink" asp-page="/Files/Index">
-                <span class="tilelink__icon"><svg class="icon"><use href="#i-folder"></use></svg></span>
-                <span>
-                    <strong>Файлы</strong>
-                    <span class="muted">Общие документы и папки отделов</span>
-                </span>
+        <div class="hero-links">
+            <a class="hero-link" asp-page="/Files/Index">
+                <div class="npa-ic"><svg class="ic" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><use href="#i-folder" /></svg></div>
+                <div class="np-meta"><b>Файлы</b><span>Общие документы и папки отделов</span></div>
             </a>
 
-            <a class="tilelink" asp-page="/Messages/Index">
-                <span class="tilelink__icon"><svg class="icon"><use href="#i-chat"></use></svg></span>
-                <span>
-                    <strong>Переписки</strong>
-                    <span class="muted">Личные сообщения и рабочие группы</span>
-                </span>
+            <a class="hero-link" asp-page="/Messages/Index">
+                <div class="npa-ic"><svg class="ic" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><use href="#i-chat" /></svg></div>
+                <div class="np-meta"><b>Чат</b><span>Личные сообщения и рабочие группы</span></div>
             </a>
 
             @if (Model.CanPublish)
             {
-                <a class="tilelink" asp-page="/Announcements/Create">
-                    <span class="tilelink__icon"><svg class="icon"><use href="#i-pen"></use></svg></span>
-                    <span>
-                        <strong>Написать объявление</strong>
-                        <span class="muted">Увидят все сотрудники</span>
-                    </span>
+                <a class="hero-link" asp-page="/Announcements/Create">
+                    <div class="npa-ic"><svg class="ic" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-edit" /></svg></div>
+                    <div class="np-meta"><b>Написать объявление</b><span>Увидят все сотрудники</span></div>
                 </a>
             }
         </div>
     </div>
 
     @* ---------- Лента объявлений ---------- *@
-    <div class="feed">
-        <div class="feed__head">
-            <h2>Объявления</h2>
-            <a asp-page="/Announcements/Index">Все объявления</a>
+    <div class="view-head feed-head">
+        <h2>Объявления</h2>
+        <a class="feed-all" asp-page="/Announcements/Index">Все объявления</a>
+    </div>
+
+    @if (Model.DatabaseUnavailable)
+    {
+        <div class="alert err" role="alert">
+            <strong>Объявления сейчас недоступны.</strong>
+            Не удалось получить данные — сообщите администратору.
+            Остальные разделы портала работают.
         </div>
-
-        @if (Model.DatabaseUnavailable)
-        {
-            <div class="alert alert--error" role="alert">
-                <strong>Объявления сейчас недоступны.</strong>
-                Не удалось получить данные — сообщите администратору.
-                Остальные разделы портала работают.
-            </div>
-        }
-        else if (Model.Items.Count == 0)
-        {
-            <div class="empty">
-                <svg class="icon icon--xl"><use href="#i-bell"></use></svg>
-                <p>Объявлений пока нет</p>
-                @if (Model.CanPublish)
-                {
-                    <p class="muted">Вы можете написать первое.</p>
-                }
-            </div>
-        }
-
-        @foreach (var item in Model.Items)
-        {
-            @await Html.PartialAsync("_Announcement",
-                new Portal.Web.Pages.Shared.AnnouncementCard(item, Model.CanModify(item)))
-        }
+    }
+    else if (Model.Items.Count == 0)
+    {
+        <div class="empty">
+            <svg class="ic" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
+            <b>Объявлений пока нет</b>
+            <p>Здесь появятся сообщения, которые должны увидеть все сотрудники</p>
+        </div>
+    }
+    else
+    {
+        <div class="ann-list">
+            @foreach (var item in Model.Items)
+            {
+                @await Html.PartialAsync("_Announcement", new AnnouncementCard(item, Model.CanModify(item)))
+            }
+        </div>
 
         @if (Model.HasMore)
         {
-            <p class="feed__more">
-                <a class="btn" asp-page="/Announcements/Index">Смотреть все объявления</a>
-            </p>
+            <p class="feed-more"><a asp-page="/Announcements/Index">Показать все объявления →</a></p>
         }
-    </div>
-</div>
+    }
+</section>

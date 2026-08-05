@@ -4,6 +4,9 @@
     ViewData["Title"] = "Диагностика";
 }
 
+<section class="view active">
+
+
 <div class="card">
     <h1>Диагностика подключения</h1>
     <p class="hint">Раздел виден только членам группы <code>@Model.AdOptions.AdminGroup</code>.</p>
@@ -226,7 +229,7 @@
 
 @if (Model.KeysError is not null || !Model.KeysWritable)
 {
-    <div class="alert alert--error" role="alert">
+    <div class="alert err" role="alert">
         <strong>Ключи шифрования cookie некуда сохранять.</strong>
         В этом случае .NET создаёт временные ключи в памяти, и при каждом
         перезапуске рабочего процесса IIS все входы разом перестают
@@ -303,3 +306,4 @@
         </tbody>
     </table>
 </div>
+</section>

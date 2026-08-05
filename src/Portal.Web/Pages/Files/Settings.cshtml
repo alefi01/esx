@@ -5,6 +5,9 @@
     ViewData["Title"] = $"Настройки папки: {Model.Folder?.Name}";
 }
 
+<section class="view active">
+
+
 <nav class="breadcrumbs">
     <a asp-page="Index">Файлы</a>
     @foreach (var crumb in Model.Breadcrumbs)
@@ -18,19 +21,19 @@
 
 @if (!string.IsNullOrEmpty(Model.StatusMessage))
 {
-    <div class="alert alert--ok" role="status">@Model.StatusMessage</div>
+    <div class="alert ok" role="status">@Model.StatusMessage</div>
 }
 
 @if (!string.IsNullOrEmpty(Model.ErrorMessage))
 {
-    <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
+    <div class="alert err" role="alert">@Model.ErrorMessage</div>
 }
 
 <div class="card">
     <h2>Ограничения и хранение</h2>
 
     <form method="post" asp-page-handler="Save" asp-route-id="@Model.Folder?.Id">
-        <div asp-validation-summary="All" class="alert alert--error"></div>
+        <div asp-validation-summary="All" class="alert err"></div>
 
         <div class="field field--check">
             <label>
@@ -49,7 +52,7 @@
             <label asp-for="Input.MaxFileSizeMb">Предел размера одного файла, МБ</label>
             <input asp-for="Input.MaxFileSizeMb" type="number" min="0"
                    placeholder="не задано — как у родителя" />
-            <span asp-validation-for="Input.MaxFileSizeMb" class="field-error"></span>
+            <span asp-validation-for="Input.MaxFileSizeMb" class="err"></span>
             <p class="hint">
                 Пусто — берётся значение родительской папки, а если и там пусто —
                 общее по умолчанию (@Model.DefaultMaxMb МБ).
@@ -68,7 +71,7 @@
         <div class="field">
             <label asp-for="Input.QuotaMb">Квота на объём папки, МБ</label>
             <input asp-for="Input.QuotaMb" type="number" min="1" placeholder="не задано — без ограничения" />
-            <span asp-validation-for="Input.QuotaMb" class="field-error"></span>
+            <span asp-validation-for="Input.QuotaMb" class="err"></span>
             <p class="hint">
                 Сейчас занято: <strong>@Model.FormatSize(Model.UsedBytes)</strong>@(Model.EffectiveQuota is { } q ? $" из {Model.FormatSize(q)}" : ", квота не задана").
                 В занятое место входят и файлы в корзине — они всё ещё лежат на диске.
@@ -79,7 +82,7 @@
             <label asp-for="Input.RetentionDays">Автоочистка: удалять файлы старше, дней</label>
             <input asp-for="Input.RetentionDays" type="number" min="1" max="3650"
                    placeholder="пусто — автоочистка выключена" />
-            <span asp-validation-for="Input.RetentionDays" class="field-error"></span>
+            <span asp-validation-for="Input.RetentionDays" class="err"></span>
             <p class="hint">
                 По умолчанию выключена. Файлы не стираются сразу, а попадают в корзину,
                 где лежат ещё @Model.TrashDays дн. — есть время заметить ошибку в настройке.
@@ -93,7 +96,7 @@
 
         <div class="form-actions">
             <button type="submit" class="button button--primary button--inline">Сохранить</button>
-            <a class="button" asp-page="Index" asp-route-id="@Model.Folder?.Id">Назад к папке</a>
+            <a class="btn" asp-page="Index" asp-route-id="@Model.Folder?.Id">Назад к папке</a>
         </div>
     </form>
 </div>
@@ -141,7 +144,7 @@
                         <form method="post" asp-page-handler="RemovePermission"
                               asp-route-id="@Model.Folder?.Id" asp-route-permissionId="@permission.Id"
                               class="inline-form">
-                            <button type="submit" class="button button--link link--danger">Убрать</button>
+                            <button type="submit" class="link danger">Убрать</button>
                         </form>
                     </td>
                 </tr>
@@ -169,3 +172,4 @@
         Права разных групп складываются: у человека действует наибольший из полученных уровней.
     </p>
 </div>
+</section>

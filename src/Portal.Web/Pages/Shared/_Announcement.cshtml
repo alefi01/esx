@@ -1,109 +1,100 @@
 @using Portal.Web.Data
+@using Portal.Web.Pages.Shared
 @using Portal.Web.Services.Text
 @inject PlainTextFormatter TextFormatter
 @model Portal.Web.Pages.Shared.AnnouncementCard
 
 @*
-    Одно объявление. Вынесено в отдельный файл, потому что показывается
-    в двух местах: на главной и в ленте объявлений. Две копии разметки
-    разошлись бы при первой же правке.
+    Одно объявление — карточка из макета.
+
+    Вынесено в отдельный файл, потому что показывается в двух местах:
+    на главной и в ленте объявлений. Две копии разметки разошлись бы
+    при первой же правке.
 *@
-<div class="post @(Model.Item.IsPinned ? "post--pinned" : "") @(Model.Item.IsImportant ? "post--important" : "")">
-    <div class="post__head">
-        <span class="post__avatar">@Model.Initials</span>
-
-        <div class="post__who">
-            <strong>@Model.Item.AuthorDisplayName</strong>
-            <time datetime="@Model.Item.CreatedAt.ToString("O")">
-                @Model.Item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
-                @if (Model.Item.UpdatedAt is not null)
-                {
-                    <span>· изменено</span>
-                }
-            </time>
-        </div>
-
-        @if (Model.CanModify)
-        {
-            <div class="post__tools">
-                @* Закрепление и пометка «важное» — обычные формы, а не кнопки
-                   с кодом: так они работают всегда, и на них действует
-                   та же проверка прав, что и на правку объявления. *@
-                <form method="post" asp-page="/Announcements/Index" asp-page-handler="Pin"
-                      asp-route-id="@Model.Item.Id" class="inline-form">
-                    <button type="submit" class="iconbtn @(Model.Item.IsPinned ? "is-active" : "")"
-                            title="@(Model.Item.IsPinned ? "Открепить" : "Закрепить наверху")">
-                        <svg class="icon"><use href="#i-pin"></use></svg>
-                    </button>
-                </form>
-
-                <form method="post" asp-page="/Announcements/Index" asp-page-handler="Important"
-                      asp-route-id="@Model.Item.Id" class="inline-form">
-                    <button type="submit" class="iconbtn @(Model.Item.IsImportant ? "is-danger" : "")"
-                            title="@(Model.Item.IsImportant ? "Снять пометку «важное»" : "Пометить как важное")">
-                        <svg class="icon"><use href="#i-warning"></use></svg>
-                    </button>
-                </form>
-
-                <a class="iconbtn" asp-page="/Announcements/Edit" asp-route-id="@Model.Item.Id" title="Изменить">
-                    <svg class="icon"><use href="#i-rename"></use></svg>
-                </a>
-                <a class="iconbtn" asp-page="/Announcements/Delete" asp-route-id="@Model.Item.Id" title="Удалить">
-                    <svg class="icon"><use href="#i-trash"></use></svg>
-                </a>
-            </div>
-        }
-    </div>
+<div class="ann-card@(Model.Item.IsPinned ? " pinned" : "")@(Model.Item.IsImportant ? " important" : "")">
 
     @if (Model.Item.IsPinned || Model.Item.IsImportant)
     {
-        <div class="post__chips">
+        <div class="ann-tags">
             @if (Model.Item.IsPinned)
             {
-                <span class="chip chip--pin"><svg class="icon icon--xs"><use href="#i-pin"></use></svg> Закреплено</span>
+                <span class="chip pin"><svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pin" /></svg>Закреплено</span>
             }
             @if (Model.Item.IsImportant)
             {
-                <span class="chip chip--error"><svg class="icon icon--xs"><use href="#i-warning"></use></svg> Важное</span>
+                <span class="chip imp"><svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>Важно</span>
             }
         </div>
     }
 
-    <h2 class="post__title">@Model.Item.Title</h2>
+    <h3>@Model.Item.Title</h3>
 
-    @* Длинное объявление показывается не целиком: лента из полотен текста
-       нечитаема. Разворачивание делает код страницы — он же и решает,
-       нужна ли кнопка вообще. Если код на странице не работает, объявление
-       останется видно целиком: класс, обрезающий текст, ставится только
-       из кода. Это важнее красоты. *@
-    <div class="post__body" data-collapsible>
-        @* Текст хранится как обычный текст. PlainTextFormatter экранирует его
-           и превращает переносы строк в разметку — вставить в объявление
-           скрипт таким образом нельзя. *@
-        <div class="post__text">@TextFormatter.ToHtml(Model.Item.Body)</div>
+    @* Текст хранится как обычный текст. PlainTextFormatter экранирует его
+       и превращает переносы строк в разметку — вставить в объявление
+       скрипт таким образом нельзя. *@
+    <p>@TextFormatter.ToHtml(Model.Item.Body)</p>
 
-        @if (Model.Item.Files.Count > 0)
+    @if (Model.Item.Files.Count > 0)
+    {
+        <div class="ann-files">
+            @foreach (var file in Model.Item.Files.Where(f => f.IsImage))
+            {
+                <a class="ann-image"
+                   asp-page="/Announcements/Index" asp-page-handler="Attachment" asp-route-fileId="@file.Id"
+                   target="_blank" rel="noopener" title="@file.OriginalName">
+                    <img src="/Announcements?handler=Attachment&amp;fileId=@file.Id" alt="@file.OriginalName" loading="lazy" />
+                </a>
+            }
+
+            @foreach (var file in Model.Item.Files.Where(f => !f.IsImage))
+            {
+                <a class="zip-row"
+                   asp-page="/Announcements/Index" asp-page-handler="Attachment" asp-route-fileId="@file.Id">
+                    @FileIcons.File(file.OriginalName, 22)
+                    @file.OriginalName
+                    <span>@Model.FormatSize(file.SizeBytes)</span>
+                </a>
+            }
+        </div>
+    }
+
+    <div class="ann-foot">
+        <div class="avatar" data-av="@Avatars.ColorIndex(Model.Item.AuthorDisplayName)">@Model.Initials</div>
+        @Model.Item.AuthorDisplayName · @Model.Item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+        @if (Model.Item.UpdatedAt is not null)
         {
-            <div class="post__files">
-                @foreach (var file in Model.Item.Files.Where(f => f.IsImage))
-                {
-                    <a class="post__image"
-                       asp-page="/Announcements/Index" asp-page-handler="Attachment" asp-route-fileId="@file.Id"
-                       target="_blank" rel="noopener" title="@file.OriginalName">
-                        <img src="/Announcements?handler=Attachment&amp;fileId=@file.Id"
-                             alt="@file.OriginalName" loading="lazy" />
-                    </a>
-                }
+            <span>· изменено</span>
+        }
 
-                @foreach (var file in Model.Item.Files.Where(f => !f.IsImage))
-                {
-                    <a class="post__file"
-                       asp-page="/Announcements/Index" asp-page-handler="Attachment" asp-route-fileId="@file.Id">
-                        <svg class="icon"><use href="#i-file"></use></svg>
-                        <span class="post__filename">@file.OriginalName</span>
-                        <span class="post__filesize">@Model.FormatSize(file.SizeBytes)</span>
-                    </a>
-                }
+        @if (Model.CanModify)
+        {
+            <div class="ann-tools">
+                @* Закрепление и пометка «важное» — обычные формы, а не кнопки
+                   с кодом: так они работают всегда, и на них действует
+                   та же проверка прав, что и на правку объявления. *@
+                <form method="post" asp-page="/Announcements/Index" asp-page-handler="Pin"
+                      asp-route-id="@Model.Item.Id" class="head-form">
+                    <button class="icon-btn@(Model.Item.IsPinned ? " on" : "")" type="submit"
+                            title="@(Model.Item.IsPinned ? "Открепить" : "Закрепить наверху")">
+                        <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pin" /></svg>
+                    </button>
+                </form>
+
+                <form method="post" asp-page="/Announcements/Index" asp-page-handler="Important"
+                      asp-route-id="@Model.Item.Id" class="head-form">
+                    <button class="icon-btn@(Model.Item.IsImportant ? " on-danger" : "")" type="submit"
+                            title="@(Model.Item.IsImportant ? "Снять пометку «важное»" : "Пометить как важное")">
+                        <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>
+                    </button>
+                </form>
+
+                <a class="icon-btn" asp-page="/Announcements/Edit" asp-route-id="@Model.Item.Id" title="Изменить">
+                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-edit" /></svg>
+                </a>
+
+                <a class="icon-btn del" asp-page="/Announcements/Delete" asp-route-id="@Model.Item.Id" title="Удалить">
+                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash" /></svg>
+                </a>
             </div>
         }
     </div>

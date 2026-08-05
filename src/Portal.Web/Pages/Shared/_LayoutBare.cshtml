@@ -9,11 +9,12 @@
     <title>@ViewData["Title"] — Портал</title>
     <meta name="color-scheme" content="light dark" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <script src="~/js/theme.js" asp-append-version="true"></script>
 </head>
-<body>
+<body class="plain">
 <partial name="_Icons" />
 
-<main class="page page--centered">
+<main class="page page--narrow">
     @RenderBody()
 </main>
 

@@ -1,82 +1,41 @@
 @page
+@using Portal.Web.Pages.Shared
 @model Portal.Web.Pages.Files.FavoritesModel
 @{
     ViewData["Title"] = "Избранное";
 }
 
-<div class="page-header">
-    <div class="page-header__text">
-        <h1>Избранное</h1>
-        <p class="page-header__sub">
-            Папки и файлы, отмеченные звёздочкой. Отметки личные: у каждого свои.
-        </p>
+<section class="view active">
+    <div class="view-head">
+        <h2>Избранное</h2>
+        <span class="sub">@(Model.IsEmpty ? "Пока ничего не отмечено" : Model.Entries.Count + " объектов")</span>
     </div>
-</div>
 
-<div class="pane">
-    @if (Model.IsEmpty)
-    {
-        <div class="empty">
-            <svg class="icon icon--xl"><use href="#i-star"></use></svg>
-            <p>В избранном пусто</p>
-            <p class="muted">
-                Наведите указатель на папку или файл в разделе «Файлы»
-                и нажмите звёздочку в углу.
-            </p>
-        </div>
-    }
-    else
-    {
-        @* Здесь всегда плитки, без переключателя вида: избранного немного
-           по самой его сути, и таблица под десяток строк ничего не даст. *@
-        <div class="grid">
-            @foreach (var item in Model.Folders)
+    @* Тот же список, что и в разделе «Файлы», и тот же код страницы:
+       выделение, контекстное меню и предпросмотр работают одинаково. *@
+    <div class="files-area" id="filesArea"
+         data-folder-id=""
+         data-can-write="false"
+         data-can-create-folder="false">
+
+        <div id="filesContainer">
+            @if (Model.IsEmpty)
             {
-                <a class="tile tile--folder" asp-page="Index" asp-route-id="@item.Folder.Id">
-                    <span class="tile__icon">
-                        <svg class="icon icon--lg">
-                            <use href="@(item.Folder.InheritPermissions ? "#i-folder-solid" : "#i-folder-solid-locked")"></use>
-                        </svg>
-                    </span>
-
-                    <span class="tile__name" title="@item.Path">@item.Folder.Name</span>
-
-                    <span class="tile__size"></span>
-                    <span class="tile__date"></span>
-
-                    <span class="tile__marks">
-                        <span class="chip" title="@item.Path">папка</span>
-                    </span>
-                </a>
+                <div class="empty">
+                    <svg class="ic" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><use href="#i-star" /></svg>
+                    <b>Пока пусто</b>
+                    <p>Отмечайте важные файлы звёздочкой — они появятся здесь</p>
+                </div>
             }
-
-            @foreach (var item in Model.Files)
+            else
             {
-                <a class="tile tile--file"
-                   asp-page="Index" asp-page-handler="Download" asp-route-fileId="@item.File.Id"
-                   data-kind="@Portal.Web.Pages.Files.FavoritesModel.FileKindOf(item.File)"
-                   title="@item.FolderPath">
-
-                    <span class="tile__icon tile__icon--file">
-                        <span class="tile__ext">@Portal.Web.Pages.Files.FavoritesModel.ExtensionOf(item.File)</span>
-                    </span>
-
-                    <span class="tile__name" title="@item.File.OriginalName">@item.File.OriginalName</span>
-
-                    <span class="tile__size">@Portal.Web.Pages.Files.FavoritesModel.FormatSize(item.File.SizeBytes)</span>
-                    <span class="tile__date"></span>
-
-                    <span class="tile__marks">
-                        @* Путь до папки: в избранном лежат файлы из разных мест,
-                           и без него одинаковые имена не различить.
-
-                           Именно ПОДПИСЬ, а не ссылка: плитка сама уже ссылка,
-                           а ссылка внутри ссылки — недопустимая разметка,
-                           от которой браузер разваливает всю плитку. *@
-                        <span class="chip">@item.FolderPath</span>
-                    </span>
-                </a>
+                <partial name="_FileGrid" model="Model.Entries" />
+                <partial name="_FileList" model="Model.Entries" />
             }
         </div>
-    }
-</div>
+    </div>
+
+    @* Скрытая форма нужна ради antiforgery-токена: из неё его берёт
+       код страницы, когда снимает звёздочку. *@
+    <form method="post" hidden></form>
+</section>

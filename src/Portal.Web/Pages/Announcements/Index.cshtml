@@ -1,70 +1,78 @@
 @page
+@using Portal.Web.Pages.Shared
 @model Portal.Web.Pages.Announcements.IndexModel
 @{
     ViewData["Title"] = "Объявления";
 }
 
-<div class="narrow">
-<div class="page-header">
-    <h1>Объявления</h1>
+<section class="view active">
 
-    @if (Model.CanPublish)
+    @if (!string.IsNullOrEmpty(Model.StatusMessage))
     {
-        <a class="btn btn--primary" asp-page="Create">
-            <svg class="icon"><use href="#i-pen"></use></svg>
-            Написать объявление
-        </a>
+        <span data-flash="@Model.StatusMessage" data-flash-kind="ok" hidden></span>
     }
-</div>
 
-@if (!string.IsNullOrEmpty(Model.StatusMessage))
-{
-    <div class="alert alert--ok" role="status">@Model.StatusMessage</div>
-}
+    <div class="view-head">
+        <h2>Объявления</h2>
+        <span class="sub">Официальные сообщения организации</span>
 
-@if (Model.DatabaseUnavailable)
-{
-    <div class="alert alert--error" role="alert">
-        <strong>Объявления сейчас недоступны.</strong>
-        Не удалось получить данные — сообщите администратору.
-        Остальные разделы портала работают.
-
-        @if (Model.DatabaseErrorDetail is not null)
+        @if (Model.CanPublish)
         {
-            <br />
-            <span class="hint">Техническая подробность (видна только администраторам):</span>
-            <code>@Model.DatabaseErrorDetail</code>
+            <a class="btn primary head-form" asp-page="Create">
+                <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus" /></svg>Создать объявление
+            </a>
         }
     </div>
-}
 
-@if (Model.Items.Count == 0 && !Model.DatabaseUnavailable)
-{
-    <div class="card">
-        <p class="hint">Объявлений пока нет.</p>
-    </div>
-}
+    @if (Model.DatabaseUnavailable)
+    {
+        <div class="alert err" role="alert">
+            <strong>Объявления сейчас недоступны.</strong>
+            Не удалось получить данные — сообщите администратору.
+            Остальные разделы портала работают.
 
-@foreach (var item in Model.Items)
-{
-    @await Html.PartialAsync("_Announcement",
-        new Portal.Web.Pages.Shared.AnnouncementCard(item, Model.CanModify(item)))
-}
+            @if (Model.DatabaseErrorDetail is not null)
+            {
+                @* Один элемент, а не <br> с <code> подряд: разметочный блок
+                   внутри @@if должен начинаться с обычного парного тега,
+                   иначе Razor принимает продолжение за код. *@
+                <p><code>@Model.DatabaseErrorDetail</code></p>
+            }
+        </div>
+    }
 
-@if (Model.TotalPages > 1)
-{
-    <nav class="pager">
-        @if (Model.PageNumber > 1)
+    @if (Model.Items.Count == 0 && !Model.DatabaseUnavailable)
+    {
+        <div class="empty">
+            <svg class="ic" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
+            <b>Объявлений пока нет</b>
+            <p>Здесь появятся сообщения, которые должны увидеть все сотрудники</p>
+        </div>
+    }
+    else
+    {
+        <div class="ann-list">
+            @foreach (var item in Model.Items)
+            {
+                @await Html.PartialAsync("_Announcement", new AnnouncementCard(item, Model.CanModify(item)))
+            }
+        </div>
+
+        @if (Model.TotalPages > 1)
         {
-            <a asp-page="Index" asp-route-pageNumber="@(Model.PageNumber - 1)">← Новее</a>
-        }
+            <nav class="pager" aria-label="Страницы">
+                @if (Model.PageNumber > 1)
+                {
+                    <a asp-page="Index" asp-route-pageNumber="@(Model.PageNumber - 1)">← Новее</a>
+                }
 
-        <span class="hint">Страница @Model.PageNumber из @Model.TotalPages</span>
+                <span>Страница @Model.PageNumber из @Model.TotalPages</span>
 
-        @if (Model.PageNumber < Model.TotalPages)
-        {
-            <a asp-page="Index" asp-route-pageNumber="@(Model.PageNumber + 1)">Старее →</a>
+                @if (Model.PageNumber < Model.TotalPages)
+                {
+                    <a asp-page="Index" asp-route-pageNumber="@(Model.PageNumber + 1)">Старее →</a>
+                }
+            </nav>
         }
-    </nav>
-}
-</div>
+    }
+</section>

@@ -362,6 +362,33 @@
         if (text) { toast(text, holder.dataset.flashKind || 'ok'); }
     })();
 
+    /**
+     * Подтверждение перед необратимым действием.
+     *
+     * Достаточно повесить на кнопку отправки формы data-confirm с текстом
+     * вопроса. Нужно там, где отменить уже нельзя: очистка корзины,
+     * стирание файла, очистка журнала.
+     */
+    document.addEventListener('click', e => {
+        const button = e.target.closest('[data-confirm]');
+
+        if (!button || button.dataset.confirmed === '1') { return; }
+
+        e.preventDefault();
+
+        confirmDlg(
+            button.dataset.confirmTitle || 'Подтвердите действие',
+            button.dataset.confirm,
+            button.dataset.confirmOk || 'Выполнить',
+            () => {
+                // Второй раз спрашивать не надо: помечаем кнопку
+                // и нажимаем её заново, теперь уже по-настоящему.
+                button.dataset.confirmed = '1';
+                button.click();
+            },
+            true);
+    }, true);
+
     // Клавиши — те же, что в макете.
     document.addEventListener('keydown', e => {
         // Ctrl+K переводит курсор в поиск, где бы человек ни находился.

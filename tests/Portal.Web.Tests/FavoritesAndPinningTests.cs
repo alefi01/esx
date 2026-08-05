@@ -155,7 +155,7 @@ public class FavoritesAndPinningTests
         var html = await client.GetStringAsync("/Files/Favorites");
 
         Assert.DoesNotContain("секретный.txt", html);
-        Assert.Contains("В избранном пусто", html);
+        Assert.Contains("Пока пусто", html);
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public class FavoritesAndPinningTests
         var petrov = await factory.LoginAsAsync("petrov", Users);
         var html = await petrov.GetStringAsync("/Files/Favorites");
 
-        Assert.Contains("В избранном пусто", html);
+        Assert.Contains("Пока пусто", html);
     }
 
     /// <summary>Папка с двумя объявлениями: старое и новое.</summary>
@@ -313,7 +313,7 @@ public class FavoritesAndPinningTests
 
         var html = await client.GetStringAsync("/Announcements");
 
-        Assert.Contains("Важное", html);
-        Assert.Contains("post--important", html);
+        Assert.Contains("Важно", html);
+        Assert.Contains("ann-card important", html);
     }
 }

@@ -34,7 +34,10 @@ public class FavoritesModel : PageModel
     public IReadOnlyList<FolderItem> Folders { get; private set; } = [];
     public IReadOnlyList<FileItem> Files { get; private set; } = [];
 
-    public bool IsEmpty => Folders.Count == 0 && Files.Count == 0;
+    /// <summary>Список для показа — тот же тип, что и в разделе «Файлы».</summary>
+    public IReadOnlyList<Portal.Web.Pages.Shared.FileEntry> Entries { get; private set; } = [];
+
+    public bool IsEmpty => Entries.Count == 0;
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
@@ -91,6 +94,32 @@ public class FavoritesModel : PageModel
 
         Folders = folderItems;
         Files = fileItems;
+
+        var entries = new List<Portal.Web.Pages.Shared.FileEntry>();
+
+        foreach (var item in folderItems)
+        {
+            entries.Add(Portal.Web.Pages.Shared.FileEntry.ForFolder(
+                item.Folder,
+                Url.Page("Index", new { id = item.Folder.Id }) ?? "#",
+                item.Folder.Children.Count(child => _tree.IsVisible(User, child)),
+                favorite: true,
+                canManage: _tree.CanManage(User, item.Folder),
+                path: item.Path));
+        }
+
+        foreach (var item in fileItems)
+        {
+            entries.Add(Portal.Web.Pages.Shared.FileEntry.ForFile(
+                item.File,
+                Url.Page("Index", "Download", new { fileId = item.File.Id }) ?? "#",
+                IndexModel.PreviewKindOf(item.File),
+                favorite: true,
+                canDelete: false,
+                path: item.FolderPath));
+        }
+
+        Entries = entries;
     }
 
     public static string FormatSize(long bytes) => UploadValidator.Format(bytes);

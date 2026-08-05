@@ -5,6 +5,9 @@
     ViewData["Title"] = Model.Current is null ? "Переписки" : Model.Title;
 }
 
+<section class="view active">
+
+
 @*
     Данные для кода страницы — через data-атрибуты: встроенные скрипты
     запрещены политикой безопасности страницы, и это правильно.
@@ -159,17 +162,17 @@
 
             @if (!string.IsNullOrEmpty(Model.StatusMessage))
             {
-                <div class="alert alert--ok" role="status">@Model.StatusMessage</div>
+                <div class="alert ok" role="status">@Model.StatusMessage</div>
             }
 
             @if (!string.IsNullOrEmpty(Model.ErrorMessage))
             {
-                <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
+                <div class="alert err" role="alert">@Model.ErrorMessage</div>
             }
 
             @if (Model.IsOutsideObserver)
             {
-                <div class="alert alert--warn" role="status">
+                <div class="alert warn" role="status">
                     Вы смотрите эту переписку как администратор портала.
                     Писать в неё нельзя.
                 </div>
@@ -250,7 +253,7 @@
                             <svg class="icon"><use href="#i-clip"></use></svg>
                         </button>
 
-                        <button type="submit" class="btn btn--primary">
+                        <button type="submit" class="btn primary">
                             <svg class="icon"><use href="#i-send"></use></svg>
                             Отправить
                         </button>
@@ -321,7 +324,7 @@
 
             <div class="modal__actions">
                 <button type="button" class="btn" data-modal-close>Отмена</button>
-                <button type="submit" class="btn btn--primary">Создать</button>
+                <button type="submit" class="btn primary">Создать</button>
             </div>
         </form>
     </div>
@@ -367,7 +370,7 @@
                         @if (Model.IsOwner && !string.Equals(person.UserName, Model.UserName,
                             StringComparison.OrdinalIgnoreCase))
                         {
-                            <button type="button" class="button button--link"
+                            <button type="button" class="link"
                                     data-remove-member="@person.UserName">убрать</button>
                         }
                     </li>
@@ -388,7 +391,7 @@
             <div class="modal__actions">
                 @if (!Model.IsOutsideObserver)
                 {
-                    <button type="button" class="btn btn--danger" data-leave-group="@Model.UserName">
+                    <button type="button" class="btn danger" data-leave-group="@Model.UserName">
                         Выйти из группы
                     </button>
                 }
@@ -398,3 +401,4 @@
         </div>
     </div>
 }
+</section>

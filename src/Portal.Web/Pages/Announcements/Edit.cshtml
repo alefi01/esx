@@ -4,16 +4,19 @@
     ViewData["Title"] = "Изменение объявления";
 }
 
+<section class="view active">
+
+
 <div class="card">
     <h1>Изменение объявления</h1>
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
-        <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
+        <div class="alert err" role="alert">@Model.ErrorMessage</div>
     }
 
     <form method="post">
-        <div asp-validation-summary="ModelOnly" class="alert alert--error"></div>
+        <div asp-validation-summary="ModelOnly" class="alert err"></div>
 
         @* Номер объявления передаём скрытым полем. Права всё равно проверяются
            по записи из базы, так что подмена номера ничего не даст. *@
@@ -22,18 +25,19 @@
         <div class="field">
             <label asp-for="Input.Title">Заголовок</label>
             <input asp-for="Input.Title" autofocus maxlength="200" />
-            <span asp-validation-for="Input.Title" class="field-error"></span>
+            <span asp-validation-for="Input.Title" class="err"></span>
         </div>
 
         <div class="field">
             <label asp-for="Input.Body">Текст</label>
             <textarea asp-for="Input.Body" rows="12" maxlength="10000"></textarea>
-            <span asp-validation-for="Input.Body" class="field-error"></span>
+            <span asp-validation-for="Input.Body" class="err"></span>
         </div>
 
         <div class="form-actions">
             <button type="submit" class="button button--primary button--inline">Сохранить</button>
-            <a class="button" asp-page="Index">Отмена</a>
+            <a class="btn" asp-page="Index">Отмена</a>
         </div>
     </form>
 </div>
+</section>

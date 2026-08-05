@@ -114,7 +114,7 @@ public class HomeAndAnnouncementTests : IDisposable
         var html = await client.GetStringAsync("/");
 
         // Картинка показывается прямо в ленте, а не ссылкой.
-        Assert.Contains("post__image", html);
+        Assert.Contains("ann-image", html);
     }
 
     [Fact]

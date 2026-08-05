@@ -5,11 +5,14 @@
     ViewData["Title"] = "Журнал действий";
 }
 
+<section class="view active">
+
+
 <h1>Журнал действий с файлами</h1>
 
 @if (!string.IsNullOrEmpty(Model.StatusMessage))
 {
-    <div class="alert alert--ok" role="status">@Model.StatusMessage</div>
+    <div class="alert ok" role="status">@Model.StatusMessage</div>
 }
 
 <div class="card">
@@ -59,7 +62,7 @@
         </form>
 
         <form method="post" asp-page-handler="PurgeAll" data-busy-form>
-            <button type="submit" class="btn btn--danger" data-confirm-action
+            <button type="submit" class="btn danger" data-confirm-action
                     data-confirm-text="Стереть весь журнал действий? Восстановить его будет нельзя. Сам факт очистки останется в журнале первой строкой."
                     data-confirm-ok="Стереть всё">
                 <svg class="icon"><use href="#i-trash"></use></svg>
@@ -71,7 +74,7 @@
 
 @if (Model.DatabaseError is not null)
 {
-    <div class="alert alert--error" role="alert">
+    <div class="alert err" role="alert">
         Не удалось прочитать журнал: <code>@Model.DatabaseError</code>
     </div>
 }
@@ -90,7 +93,7 @@
         </select>
 
         <button type="submit" class="button button--inline">Показать</button>
-        <a class="button" asp-page="Audit">Сбросить</a>
+        <a class="btn" asp-page="Audit">Сбросить</a>
     </form>
 </div>
 
@@ -149,3 +152,4 @@
         }
     </nav>
 }
+</section>

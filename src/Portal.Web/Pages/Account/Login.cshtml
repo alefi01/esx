@@ -7,19 +7,19 @@
     Layout = "_LayoutBare";
 }
 
-<div class="card card--narrow">
+<div class="card">
     <h1>Вход на портал</h1>
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
-        <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
+        <div class="alert err" role="alert">@Model.ErrorMessage</div>
     }
 
     @* asp-* — это tag helpers ASP.NET Core. Они разворачиваются в обычные атрибуты HTML
        и, что важнее, автоматически добавляют в форму скрытый antiforgery-токен,
        без которого POST будет отклонён. *@
     <form method="post">
-        <div asp-validation-summary="ModelOnly" class="alert alert--error"></div>
+        <div asp-validation-summary="ModelOnly" class="alert err"></div>
 
         <div class="field">
             <label asp-for="Input.UserName">Логин</label>
@@ -27,7 +27,7 @@
                    autocomplete="username"
                    autofocus
                    placeholder="@Model.LoginHint" />
-            <span asp-validation-for="Input.UserName" class="field-error"></span>
+            <span asp-validation-for="Input.UserName" class="err"></span>
             <p class="hint">Доменная учётная запись. Можно вводить как <code>ivanov</code>,
                 <code>@Model.LoginHint</code> или <code>ivanov@@domen.pro</code>.</p>
         </div>
@@ -35,9 +35,9 @@
         <div class="field">
             <label asp-for="Input.Password">Пароль</label>
             <input asp-for="Input.Password" type="password" autocomplete="current-password" />
-            <span asp-validation-for="Input.Password" class="field-error"></span>
+            <span asp-validation-for="Input.Password" class="err"></span>
         </div>
 
-        <button type="submit" class="button button--primary">Войти</button>
+        <button type="submit" class="btn primary">Войти</button>
     </form>
 </div>

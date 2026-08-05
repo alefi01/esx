@@ -6,12 +6,15 @@
     ViewData["Title"] = "Удаление объявления";
 }
 
+<section class="view active">
+
+
 <div class="card">
     <h1>Удалить объявление?</h1>
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
-        <div class="alert alert--error" role="alert">@Model.ErrorMessage</div>
+        <div class="alert err" role="alert">@Model.ErrorMessage</div>
     }
 
     @if (Model.Announcement is not null)
@@ -30,8 +33,9 @@
         <form method="post">
             <div class="form-actions">
                 <button type="submit" class="button button--danger button--inline">Удалить</button>
-                <a class="button" asp-page="Index">Отмена</a>
+                <a class="btn" asp-page="Index">Отмена</a>
             </div>
         </form>
     }
 </div>
+</section>
