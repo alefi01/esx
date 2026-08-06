@@ -30,8 +30,20 @@ public enum FolderAccess
 /// эффект: пользовательские имена никогда не попадают в путь файловой
 /// системы, а значит и выйти за пределы хранилища через «..\..\» нельзя.
 /// </summary>
-public class StorageFolder
+public class StorageFolder : ISyncable
 {
+    // ---------- Синхронизация между филиалами (см. ISyncable) ----------
+
+    /// <summary>Общий для всех филиалов номер объекта.</summary>
+    public Guid GlobalId { get; set; } = Guid.NewGuid();
+
+    /// <summary>Код филиала, где объект создан.</summary>
+    [MaxLength(40)]
+    public string OriginBranch { get; set; } = "";
+
+    /// <summary>Время последнего изменения, UTC. По нему решается спор между филиалами.</summary>
+    public DateTime ChangedAt { get; set; }
+
     public int Id { get; set; }
 
     [Required(ErrorMessage = "Введите название папки")]
@@ -122,8 +134,20 @@ public class FolderPermission
 /// <summary>
 /// Файл в хранилище. Сам файл лежит на диске, здесь — только сведения о нём.
 /// </summary>
-public class StoredFile
+public class StoredFile : ISyncable
 {
+    // ---------- Синхронизация между филиалами (см. ISyncable) ----------
+
+    /// <summary>Общий для всех филиалов номер объекта.</summary>
+    public Guid GlobalId { get; set; } = Guid.NewGuid();
+
+    /// <summary>Код филиала, где объект создан.</summary>
+    [MaxLength(40)]
+    public string OriginBranch { get; set; } = "";
+
+    /// <summary>Время последнего изменения, UTC. По нему решается спор между филиалами.</summary>
+    public DateTime ChangedAt { get; set; }
+
     public int Id { get; set; }
 
     public int FolderId { get; set; }

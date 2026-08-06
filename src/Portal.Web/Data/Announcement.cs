@@ -13,8 +13,20 @@ namespace Portal.Web.Data;
 /// по ним EF задаёт тип колонки и ограничения в базе, и по ним же
 /// ASP.NET Core проверяет данные из формы, прежде чем что-то сохранять.
 /// </summary>
-public class Announcement
+public class Announcement : ISyncable
 {
+    // ---------- Синхронизация между филиалами (см. ISyncable) ----------
+
+    /// <summary>Общий для всех филиалов номер объекта.</summary>
+    public Guid GlobalId { get; set; } = Guid.NewGuid();
+
+    /// <summary>Код филиала, где объект создан.</summary>
+    [MaxLength(40)]
+    public string OriginBranch { get; set; } = "";
+
+    /// <summary>Время последнего изменения, UTC. По нему решается спор между филиалами.</summary>
+    public DateTime ChangedAt { get; set; }
+
     /// <summary>
     /// Первичный ключ. Значение выдаёт база данных (последовательность),
     /// в коде его заполнять не нужно.
@@ -130,6 +142,12 @@ public class Favorite
 /// </summary>
 public class AnnouncementFile
 {
+    /// <summary>
+    /// Общий для всех филиалов номер вложения. По нему сосед забирает
+    /// содержимое файла: /api/sync/blob?kind=…&amp;globalId=…
+    /// </summary>
+    public Guid GlobalId { get; set; } = Guid.NewGuid();
+
     public int Id { get; set; }
 
     public int AnnouncementId { get; set; }

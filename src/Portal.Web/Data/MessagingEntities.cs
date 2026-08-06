@@ -13,8 +13,20 @@ namespace Portal.Web.Data;
 /// устроено одинаково. Две таблицы означали бы два почти одинаковых набора
 /// кода, которые со временем разъедутся.
 /// </summary>
-public class Conversation
+public class Conversation : ISyncable
 {
+    // ---------- Синхронизация между филиалами (см. ISyncable) ----------
+
+    /// <summary>Общий для всех филиалов номер объекта.</summary>
+    public Guid GlobalId { get; set; } = Guid.NewGuid();
+
+    /// <summary>Код филиала, где объект создан.</summary>
+    [MaxLength(40)]
+    public string OriginBranch { get; set; } = "";
+
+    /// <summary>Время последнего изменения, UTC. По нему решается спор между филиалами.</summary>
+    public DateTime ChangedAt { get; set; }
+
     public int Id { get; set; }
 
     /// <summary>true — группа, false — переписка двоих.</summary>
@@ -88,8 +100,20 @@ public class ConversationParticipant
 }
 
 /// <summary>Сообщение в беседе.</summary>
-public class Message
+public class Message : ISyncable
 {
+    // ---------- Синхронизация между филиалами (см. ISyncable) ----------
+
+    /// <summary>Общий для всех филиалов номер объекта.</summary>
+    public Guid GlobalId { get; set; } = Guid.NewGuid();
+
+    /// <summary>Код филиала, где объект создан.</summary>
+    [MaxLength(40)]
+    public string OriginBranch { get; set; } = "";
+
+    /// <summary>Время последнего изменения, UTC. По нему решается спор между филиалами.</summary>
+    public DateTime ChangedAt { get; set; }
+
     public int Id { get; set; }
 
     public int ConversationId { get; set; }
@@ -144,6 +168,12 @@ public class Message
 /// </summary>
 public class MessageFile
 {
+    /// <summary>
+    /// Общий для всех филиалов номер вложения. По нему сосед забирает
+    /// содержимое файла: /api/sync/blob?kind=…&amp;globalId=…
+    /// </summary>
+    public Guid GlobalId { get; set; } = Guid.NewGuid();
+
     public int Id { get; set; }
 
     public int MessageId { get; set; }

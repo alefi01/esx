@@ -14,8 +14,20 @@ namespace Portal.Web.Data;
 /// </summary>
 public class PortalDbContext : DbContext
 {
-    public PortalDbContext(DbContextOptions<PortalDbContext> options) : base(options)
+    /// <summary>
+    /// Код филиала берётся из настроек прямо здесь, а не передаётся
+    /// в каждый вызов сохранения: подписывать изменения филиалом должен
+    /// сам контекст, иначе об этом придётся помнить в каждой странице.
+    ///
+    /// Если синхронизация выключена, код пуст — и журнал изменений
+    /// не ведётся вовсе, лишних строк в базе не появляется.
+    /// </summary>
+    public PortalDbContext(
+        DbContextOptions<PortalDbContext> options,
+        Microsoft.Extensions.Options.IOptions<Configuration.SyncOptions> sync)
+        : base(options)
     {
+        BranchCode = sync.Value.Enabled ? sync.Value.BranchCode : "";
     }
 
     public DbSet<Announcement> Announcements => Set<Announcement>();
@@ -33,6 +45,11 @@ public class PortalDbContext : DbContext
     public DbSet<ConversationParticipant> Participants => Set<ConversationParticipant>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<MessageFile> MessageFiles => Set<MessageFile>();
+
+    // Синхронизация между филиалами.
+    public DbSet<SyncOutboxEntry> SyncOutbox => Set<SyncOutboxEntry>();
+    public DbSet<SyncPeerState> SyncPeers => Set<SyncPeerState>();
+    public DbSet<PortalSetting> Settings => Set<PortalSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -218,5 +235,168 @@ public class PortalDbContext : DbContext
             entity.HasIndex(a => a.UserName);
             entity.HasIndex(a => a.Action);
         });
+
+        // ------------------------------------------------------------------
+        // Синхронизация между филиалами
+        // ------------------------------------------------------------------
+
+        modelBuilder.Entity<SyncOutboxEntry>(entity =>
+        {
+            // Соседи спрашивают «что после номера N» — это основной и,
+            // по сути, единственный запрос к журналу.
+            entity.HasIndex(e => e.Id);
+
+            // Уборка старых записей ищет по дате.
+            entity.HasIndex(e => e.ChangedAt);
+        });
+
+        // По одной строке на соседа.
+        modelBuilder.Entity<SyncPeerState>().HasIndex(e => e.PeerCode).IsUnique();
+
+        modelBuilder.Entity<PortalSetting>().HasKey(s => s.Key);
+
+        // Общий номер объекта уникален в пределах базы. Индекс нужен ещё
+        // и потому, что применение изменения от соседа начинается именно
+        // с поиска «есть ли уже такой объект».
+        modelBuilder.Entity<Announcement>().HasIndex(a => a.GlobalId).IsUnique();
+        modelBuilder.Entity<AnnouncementFile>().HasIndex(f => f.GlobalId).IsUnique();
+        modelBuilder.Entity<StorageFolder>().HasIndex(f => f.GlobalId).IsUnique();
+        modelBuilder.Entity<StoredFile>().HasIndex(f => f.GlobalId).IsUnique();
+        modelBuilder.Entity<Conversation>().HasIndex(c => c.GlobalId).IsUnique();
+        modelBuilder.Entity<Message>().HasIndex(m => m.GlobalId).IsUnique();
+        modelBuilder.Entity<MessageFile>().HasIndex(f => f.GlobalId).IsUnique();
     }
+
+    // ======================================================================
+    // Журнал изменений для синхронизации
+    // ======================================================================
+
+    /// <summary>
+    /// Не записывать изменения в журнал при следующем сохранении.
+    ///
+    /// Ставится ровно в одном месте — когда мы применяем изменение,
+    /// ПРИШЕДШЕЕ от соседа. Иначе получилось бы, что мы объявляем чужое
+    /// изменение своим и рассылаем его дальше по кругу.
+    ///
+    /// Пересылать чужие изменения не нужно: каждый филиал спрашивает
+    /// каждого напрямую (см. пояснение в SyncOptions).
+    /// </summary>
+    public bool SuppressSyncOutbox { get; set; }
+
+    /// <summary>
+    /// Код филиала, которым подписываются изменения. Заполняется из настроек
+    /// при создании контекста; пусто — синхронизация выключена, и журнал
+    /// не ведётся вовсе.
+    /// </summary>
+    public string BranchCode { get; set; } = "";
+
+    public override int SaveChanges()
+    {
+        RecordSyncChanges();
+
+        return base.SaveChanges();
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        RecordSyncChanges();
+
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Добавляет в журнал по записи на каждый изменённый объект, который
+    /// расходится по филиалам.
+    ///
+    /// ПОЧЕМУ ЗДЕСЬ, А НЕ В КАЖДОМ МЕСТЕ, ГДЕ ЧТО-ТО МЕНЯЕТСЯ
+    ///
+    /// Мест, где портал меняет объявления, переписку и файлы, около двадцати:
+    /// публикация, правка, закрепление, отправка сообщения, загрузка файла,
+    /// переименование, корзина, восстановление, автоочистка… Расставить
+    /// вызов в каждом — значит однажды забыть про один, и филиал начнёт
+    /// молча расходиться с остальными. Такую ошибку почти невозможно найти:
+    /// всё работает, просто в одном офисе чего-то нет.
+    ///
+    /// Здесь же место одно, и мимо него изменение пройти не может:
+    /// сохранение в базу идёт только через этот метод.
+    ///
+    /// ЧТО ИМЕННО ЗАПИСЫВАЕТСЯ
+    ///
+    /// Только вид объекта и его общий номер — БЕЗ самого содержимого.
+    /// Содержимое сосед получит, когда придёт спрашивать: тогда портал
+    /// прочитает объект из базы в его нынешнем виде. Так журнал остаётся
+    /// маленьким, а сосед всегда получает свежее состояние, а не стопку
+    /// промежуточных правок, которые всё равно перекрыли бы друг друга.
+    /// </summary>
+    private void RecordSyncChanges()
+    {
+        if (SuppressSyncOutbox || string.IsNullOrEmpty(BranchCode))
+        {
+            return;
+        }
+
+        ChangeTracker.DetectChanges();
+
+        var now = DateTime.UtcNow;
+        var entries = new List<SyncOutboxEntry>();
+
+        foreach (var tracked in ChangeTracker.Entries<ISyncable>())
+        {
+            if (tracked.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
+            {
+                continue;
+            }
+
+            var kind = KindOf(tracked.Entity);
+
+            if (kind is null)
+            {
+                continue;
+            }
+
+            // Объект, созданный здесь, подписывается нашим филиалом.
+            // Объект, пришедший от соседа, свою подпись сохраняет:
+            // «откуда» не меняется от того, что его тут поправили.
+            if (tracked.State == EntityState.Added && string.IsNullOrEmpty(tracked.Entity.OriginBranch))
+            {
+                tracked.Entity.OriginBranch = BranchCode;
+            }
+
+            if (tracked.Entity.GlobalId == Guid.Empty)
+            {
+                tracked.Entity.GlobalId = Guid.NewGuid();
+            }
+
+            if (tracked.State != EntityState.Deleted)
+            {
+                tracked.Entity.ChangedAt = now;
+            }
+
+            entries.Add(new SyncOutboxEntry
+            {
+                Kind = kind,
+                GlobalId = tracked.Entity.GlobalId,
+                OriginBranch = string.IsNullOrEmpty(tracked.Entity.OriginBranch)
+                    ? BranchCode
+                    : tracked.Entity.OriginBranch,
+                ChangedAt = now,
+                Deleted = tracked.State == EntityState.Deleted
+            });
+        }
+
+        if (entries.Count > 0)
+        {
+            Set<SyncOutboxEntry>().AddRange(entries);
+        }
+    }
+
+    private static string? KindOf(ISyncable entity) => entity switch
+    {
+        Announcement => SyncKinds.Announcement,
+        StorageFolder => SyncKinds.Folder,
+        StoredFile => SyncKinds.File,
+        Conversation => SyncKinds.Conversation,
+        Message => SyncKinds.Message,
+        _ => null
+    };
 }
