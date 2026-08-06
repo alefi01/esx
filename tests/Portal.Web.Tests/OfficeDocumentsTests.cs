@@ -301,6 +301,36 @@ public class OfficeDocumentsTests
         Assert.DoesNotContain("СУММ", html);
     }
 
+    [Fact]
+    public void Excel_числа_прижимаются_вправо_а_текст_нет()
+    {
+        // Столбец сумм, выровненный по левому краю, читается плохо:
+        // разряды не выстраиваются друг под другом. Excel прижимает
+        // числа вправо сам, и предпросмотр должен делать так же.
+        using var stream = Xlsx(
+            """<row><c r="A1" t="s"><v>0</v></c><c r="B1"><v>348200</v></c></row>""",
+            "<si><t>Материалы</t></si>");
+
+        var html = OfficeDocuments.ToHtml(stream, "смета.xlsx");
+
+        Assert.Contains("""<td class="doc__num">348200</td>""", html);
+        Assert.Contains("<td>Материалы</td>", html);
+    }
+
+    [Fact]
+    public void Excel_дата_не_считается_числом()
+    {
+        // 45678 после разбора стилей превращается в «21.01.2025».
+        // Прижимать это вправо как число было бы неправильно.
+        using var stream = Xlsx(
+            """<row><c r="A1" s="1"><v>45678</v></c></row>""",
+            stylesXml: """<cellXfs><xf numFmtId="0"/><xf numFmtId="14"/></cellXfs>""");
+
+        var html = OfficeDocuments.ToHtml(stream, "график.xlsx");
+
+        Assert.DoesNotContain("doc__num", html);
+    }
+
     // ------------------------------------------------------------------
     // PowerPoint
     // ------------------------------------------------------------------

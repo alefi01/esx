@@ -152,3 +152,38 @@ public static class FileIcons
         return new HtmlString(builder.ToString());
     }
 }
+
+/// <summary>
+/// Согласование числительных с существительными по-русски.
+///
+/// «1 объект», «2 объекта», «5 объектов» — правило простое, но если
+/// его не соблюсти, на странице получается «1 объектов», и портал
+/// выглядит недоделанным.
+/// </summary>
+public static class Plural
+{
+    /// <param name="one">форма для 1: объект</param>
+    /// <param name="few">форма для 2–4: объекта</param>
+    /// <param name="many">форма для 5–20 и всех остальных: объектов</param>
+    public static string Of(long count, string one, string few, string many)
+    {
+        var last = Math.Abs(count) % 100;
+
+        // Числа от 11 до 14 — исключение: «11 объектов», а не «11 объект».
+        if (last is >= 11 and <= 14)
+        {
+            return many;
+        }
+
+        return (last % 10) switch
+        {
+            1 => one,
+            2 or 3 or 4 => few,
+            _ => many
+        };
+    }
+
+    /// <summary>То же, но сразу с самим числом: «3 объекта».</summary>
+    public static string With(long count, string one, string few, string many) =>
+        $"{count} {Of(count, one, few, many)}";
+}

@@ -8,7 +8,9 @@
 <section class="view active">
     <div class="view-head">
         <h2>Избранное</h2>
-        <span class="sub">@(Model.IsEmpty ? "Пока ничего не отмечено" : Model.Entries.Count + " объектов")</span>
+        <span class="sub">@(Model.IsEmpty
+            ? "Пока ничего не отмечено"
+            : Plural.With(Model.Entries.Count, "объект", "объекта", "объектов"))</span>
     </div>
 
     @* Тот же список, что и в разделе «Файлы», и тот же код страницы:

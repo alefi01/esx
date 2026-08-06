@@ -696,6 +696,7 @@ a{color:inherit;text-decoration:none}
 .doc__table{border-collapse:collapse;width:100%;margin:0 0 16px;font-size:12.5px;display:block;overflow-x:auto}
 .doc__table td,.doc__table th{border:1px solid var(--border);padding:8px 12px;text-align:left;vertical-align:top;min-width:80px}
 .doc__table tr:first-child td{background:var(--surface2);font-weight:700;color:var(--accent);white-space:nowrap}
+.doc__table td.doc__num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .doc__table tr:hover td{background:var(--accent-soft)}
 .doc__table tr:first-child:hover td{background:var(--surface2)}
 
@@ -724,6 +725,13 @@ a{color:inherit;text-decoration:none}
    окна. Поле .pv-viewer по умолчанию выравнивает содержимое по верху
    и добавляет отступы — для страницы документа это правильно, а для
    просмотрщика означало бы маленькое окошко внутри большого. */
+/* Окно предпросмотра высотой 700 пикселей, а содержимое занимало только
+   свою часть и висело в верхней трети — под ним оставалась пустота.
+   Причина: .pv-body просит «растянись на всё» (flex:1), но родитель
+   не был контейнером с колоночной раскладкой, и просьба ни к чему
+   не относилась. */
+.modal-body--wide{display:flex;flex-direction:column}
+
 .pv-viewer.pv-viewer--frame{padding:0;align-items:stretch;overflow:hidden}
 .pv-viewer.pv-viewer--frame .pv-frame{width:100%;height:100%;border-radius:14px}
 
@@ -733,6 +741,10 @@ a{color:inherit;text-decoration:none}
 .pv-meta .row span{white-space:nowrap}
 .pv-meta .row b{overflow-wrap:anywhere;text-align:right;min-width:0}
 .pv-aside .acc-row{overflow-wrap:anywhere;display:block;line-height:1.5}
+
+/* Значение, которому мало места рядом с подписью, встаёт под неё. */
+.pv-meta .row--wide{grid-template-columns:1fr}
+.pv-meta .row--wide b{text-align:left;font-size:11px;line-height:1.45;opacity:.9}
 
 /* Уведомление: текст переносится и не вылезает за край панели. */
 .notif{align-items:flex-start}
@@ -748,6 +760,15 @@ a{color:inherit;text-decoration:none}
    перебить правило макета, не трогая его само. */
 .tile button.fav-star{position:absolute;top:8px;right:8px;margin:0}
 
+/* И самое главное — точка отсчёта для этой звезды.
+   Без position:relative у плитки «абсолютное» положение считается
+   не от неё, а от ближайшего предка с положением — то есть от всей
+   области содержимого. Из-за этого звёзды всех плиток складывались
+   одной стопкой в правом верхнем углу страницы (это и была «лишняя
+   звезда справа» в избранном), а нажатие на них не работало:
+   попадало не в ту плитку. */
+.tile{position:relative}
+
 
 /* ======================================================================
    19. Переписки — то, чего не было в макете
@@ -757,6 +778,16 @@ a{color:inherit;text-decoration:none}
    окно управления группой. Всё ниже сделано в том же наборе переменных
    и тех же скруглениях, что и макет, — чтобы разница была незаметна.
    ====================================================================== */
+
+/* ---------- Шапка списка ---------- */
+
+/* Колонка бесед узкая (300 пикселей), и заголовок с двумя кнопками
+   в одну строку в неё не влезает — «Группа» уезжала за край.
+   Поэтому заголовок занимает всю строку, а кнопки становятся под ним
+   и делят ширину поровну. */
+.convo-head{flex-wrap:wrap;padding:13px 12px}
+.convo-head b{flex:1 0 100%;margin-bottom:2px}
+.convo-head .btn{flex:1;justify-content:center;min-width:0}
 
 /* ---------- Поиск по перепискам ---------- */
 .convo-search{display:flex;align-items:center;gap:8px;margin:8px 10px 0;padding:7px 11px;
@@ -769,6 +800,10 @@ a{color:inherit;text-decoration:none}
 /* Заголовок «найдено в сообщениях» отделяет вторую часть списка от первой. */
 .convo-found{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;
   letter-spacing:.4px;padding:12px 10px 6px;border-top:1px solid var(--border);margin-top:8px}
+
+/* Если бесед по названию не нашлось, заголовок оказывается первым —
+   и черта над ним отделяла бы его от пустоты. */
+.convo-found:first-child{border-top:none;margin-top:0;padding-top:6px}
 
 /* Найденное слово в отрывке сообщения. Собственный фон нужен потому,
    что браузерный по умолчанию жёлтый и в тёмной теме слепит. */
@@ -823,6 +858,10 @@ a{color:inherit;text-decoration:none}
    а окно не должно вылезать за экран. */
 .people{max-height:280px;overflow-y:auto;margin-top:4px}
 .people .hint{padding:14px 4px;font-size:12.5px;color:var(--muted);line-height:1.55}
+
+/* Строка списка — это кнопка, а кнопка по умолчанию сжимается по тексту.
+   Из-за этого строки получались разной длины, как рваный край. */
+.people .member-row{width:100%;text-align:left}
 
 /* Отметка «выбран» — кружок справа, как галочка в списке. */
 .member-mark{margin-left:auto;width:18px;height:18px;border-radius:50%;flex:none;

@@ -506,6 +506,42 @@ public class MessagingTests : IDisposable
         Assert.NotEqual(HttpStatusCode.OK, response.StatusCode);
     }
 
+    /// <summary>
+    /// Страница беседы отдаёт коду страницы всё, что ему нужно для работы:
+    /// номер беседы, свой логин, название, состав группы.
+    ///
+    /// Проверка появилась после того, как переписанная разметка разошлась
+    /// с кодом страницы и раздел перестал работать целиком: окно «Участники»
+    /// открывалось пустым, а поле названия — незаполненным. Ошибка была
+    /// не в логике, а в том, что данные до кода просто не доезжали,
+    /// и ни один тест этого не замечал.
+    /// </summary>
+    [Fact]
+    public async Task Страница_группы_отдаёт_данные_для_кода_страницы()
+    {
+        using var factory = CreateFactory();
+        var id = AddConversation(factory, isGroup: true, "Отдел кадров", "ivanov", "petrov", "sidorov");
+
+        var client = await factory.LoginAsAsync("ivanov", Users);
+
+        var html = await client.GetStringAsync($"/Messages?id={id}");
+
+        Assert.Contains("data-chat", html);
+        Assert.Contains($"data-conversation=\"{id}\"", html);
+        Assert.Contains("data-me=\"ivanov\"", html);
+        Assert.Contains("data-title=\"Отдел кадров\"", html);
+        Assert.Contains("data-is-group=\"true\"", html);
+        Assert.Contains("data-is-owner=\"true\"", html);
+
+        // Состав группы — по строке на человека, с логином, именем
+        // и отметкой создателя.
+        Assert.Contains("data-participant=\"ivanov\"", html);
+        Assert.Contains("data-participant=\"petrov\"", html);
+        Assert.Contains("data-participant=\"sidorov\"", html);
+        Assert.Contains("data-owner=\"true\"", html);
+        Assert.Contains("data-name=\"Пользователь ivanov\"", html);
+    }
+
     private static async Task UploadAsync(
         HttpClient client, int conversationId, string fileName, string content)
     {

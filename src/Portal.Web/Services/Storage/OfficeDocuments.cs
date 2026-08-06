@@ -488,7 +488,14 @@ public static class OfficeDocuments
                     break;
                 }
 
-                html.Append("<td>").Append(Encode(CellText(cell, shared, dateStyles))).Append("</td>");
+                var text = CellText(cell, shared, dateStyles);
+
+                // Числа прижимаем вправо, как это делает сам Excel.
+                // Столбец сумм, выровненный по левому краю, читается плохо:
+                // разряды не выстраиваются друг под другом.
+                html.Append(IsNumeric(cell, text) ? "<td class=\"doc__num\">" : "<td>")
+                    .Append(Encode(text))
+                    .Append("</td>");
             }
 
             html.Append("</tr>");
@@ -505,6 +512,25 @@ public static class OfficeDocuments
     /// чтобы не показывать «45678» вместо «03.02.2026», приходится
     /// заглядывать в стиль ячейки.
     /// </summary>
+    /// <summary>
+    /// Число ли в ячейке. Смотрим и на тип ячейки (строки Excel помечает
+    /// сам), и на получившийся текст: дата после разбора стилей выглядит
+    /// как «21.01.2025» и числом уже не является.
+    /// </summary>
+    private static bool IsNumeric(XElement cell, string text)
+    {
+        var type = cell.Attribute("t")?.Value;
+
+        if (type is "s" or "str" or "inlineStr" or "b" or "e")
+        {
+            return false;
+        }
+
+        return text.Length > 0
+               && double.TryParse(text, System.Globalization.NumberStyles.Any,
+                   System.Globalization.CultureInfo.InvariantCulture, out _);
+    }
+
     private static string CellText(XElement cell, List<string> shared, HashSet<int> dateStyles)
     {
         var type = cell.Attribute("t")?.Value;

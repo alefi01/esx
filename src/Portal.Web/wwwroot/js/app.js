@@ -1426,8 +1426,17 @@
             .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
             .then(data => {
                 $('#pvFacts', m).innerHTML = '<h4>Сведения</h4>' +
-                    (data.rows || []).map(row =>
-                        `<div class="row"><span>${esc(row.name)}</span><b>${esc(row.value)}</b></div>`).join('');
+                    (data.rows || []).map(row => {
+                        // Длинное значение без пробелов (например, тип содержимого
+                        // application/vnd.openxmlformats-officedocument…) в узкую
+                        // колонку рядом с подписью не помещается и рвётся посреди
+                        // слова. Такие значения ставим под подписью, во всю ширину.
+                        const value = String(row.value === null || row.value === undefined ? '' : row.value);
+                        const wide = value.length > 28 && !value.includes(' ');
+
+                        return `<div class="row${wide ? ' row--wide' : ''}">` +
+                            `<span>${esc(row.name)}</span><b>${esc(value)}</b></div>`;
+                    }).join('');
 
                 const groups = data.access || [];
 
