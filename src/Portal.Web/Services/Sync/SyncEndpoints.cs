@@ -138,15 +138,15 @@ public static class SyncEndpoints
 
         var presented = http.Request.Headers[SyncClient.KeyHeader].ToString();
 
-        return Same(presented, options.Key) ? null : Results.Unauthorized();
+        return Same(presented, SyncClient.Fingerprint(options.Key)) ? null : Results.Unauthorized();
     }
 
     /// <summary>
     /// Сравнение с постоянным временем.
     ///
-    /// Сравниваем не сами строки, а их отпечатки: так длина строк
-    /// всегда одинакова, и по времени ответа нельзя судить даже о том,
-    /// насколько пароль длинный.
+    /// Сравниваются отпечатки паролей (см. SyncClient.Fingerprint), а не
+    /// сами пароли: длина у них всегда одна и та же, и по времени ответа
+    /// нельзя судить даже о том, насколько пароль длинный.
     /// </summary>
     private static bool Same(string presented, string expected) =>
         CryptographicOperations.FixedTimeEquals(

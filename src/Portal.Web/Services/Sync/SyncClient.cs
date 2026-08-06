@@ -1,4 +1,6 @@
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Portal.Web.Configuration;
@@ -17,8 +19,30 @@ namespace Portal.Web.Services.Sync;
 /// </summary>
 public sealed class SyncClient
 {
-    /// <summary>Заголовок с общим паролем обмена.</summary>
+    /// <summary>Заголовок с отпечатком общего пароля обмена.</summary>
     public const string KeyHeader = "X-Portal-Sync-Key";
+
+    /// <summary>
+    /// Отпечаток пароля: SHA-256, шестнадцатеричной строкой.
+    ///
+    /// В заголовок кладётся ИМЕННО отпечаток, а не сам пароль, по двум
+    /// причинам, и обе одинаково важны.
+    ///
+    /// Первая — техническая. В заголовках HTTP допустима только латиница.
+    /// Пароль, набранный по-русски (а его именно так и наберут), отправить
+    /// в заголовке нельзя вовсе: запрос падает с ошибкой ещё до отправки.
+    /// Отпечаток — это всегда 64 знака из «0123456789abcdef».
+    ///
+    /// Вторая — здравый смысл. Портал пока работает по HTTP, и сам пароль
+    /// шёл бы по сети открытым текстом, попадая заодно в журналы прокси
+    /// и сетевого оборудования. Отпечаток вместо него этого не допускает.
+    ///
+    /// Оговорка, о которой нужно знать честно: подслушанный отпечаток
+    /// работает так же, как подслушанный пароль, — это не замена HTTPS,
+    /// а только защита самого пароля от попадания в чужие журналы.
+    /// </summary>
+    public static string Fingerprint(string key) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key ?? "")));
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -40,7 +64,7 @@ public sealed class SyncClient
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
 
-        request.Headers.TryAddWithoutValidation(KeyHeader, _options.Key);
+        request.Headers.TryAddWithoutValidation(KeyHeader, Fingerprint(_options.Key));
 
         using var response = await _http.SendAsync(
             request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -68,7 +92,7 @@ public sealed class SyncClient
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
 
-        request.Headers.TryAddWithoutValidation(KeyHeader, _options.Key);
+        request.Headers.TryAddWithoutValidation(KeyHeader, Fingerprint(_options.Key));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
 
         using var response = await _http.SendAsync(request, cancellationToken);
