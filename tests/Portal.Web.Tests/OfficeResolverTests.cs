@@ -167,6 +167,10 @@ public class OfficeResolverTests
         Assert.NotNull(offices);
         Assert.NotEmpty(offices.Items);
 
+        var ad = configuration.GetSection(ActiveDirectoryOptions.SectionName).Get<ActiveDirectoryOptions>();
+
+        Assert.NotNull(ad);
+
         var resolver = new OfficeResolver(
             Options.Create(offices),
             Options.Create(new ActiveDirectoryOptions()),
@@ -175,7 +179,23 @@ public class OfficeResolverTests
         foreach (var office in offices.Items)
         {
             Assert.NotEmpty(office.Subnets);
-            Assert.NotEmpty(office.DomainControllers);
+
+            // Свой контроллер домена есть не у каждого офиса: в третьем его
+            // адрес пока не назван. Такой офис работает через запасной
+            // список — вход идёт к контроллерам соседних офисов по каналу
+            // между площадками. Медленнее, но работает. А вот если пуст
+            // и запасной список, войти из этого офиса будет некуда,
+            // и это уже ошибка настройки.
+            if (office.DomainControllers.Length == 0)
+            {
+                Assert.True(
+                    ad.FallbackDomainControllers.Length > 0,
+                    $"У офиса '{office.Code}' не задан контроллер домена, " +
+                    "и запасной список ActiveDirectory:FallbackDomainControllers тоже пуст. " +
+                    "Войти из этого офиса будет не через что.");
+
+                continue;
+            }
 
             foreach (var dc in office.DomainControllers)
             {

@@ -78,6 +78,30 @@ public static class OfficeDocuments
     private const int MaxArchiveEntries = 500;
 
     /// <summary>
+    /// Кодировка имён внутри архивов, созданных проводником Windows.
+    ///
+    /// Читается один раз при первом обращении. Кодовые страницы вроде 866
+    /// в .NET по умолчанию не подключены — их приносит отдельный пакет,
+    /// уже входящий в состав платформы; регистрируем его здесь.
+    /// </summary>
+    private static readonly Encoding OemEncoding = CreateOemEncoding();
+
+    private static Encoding CreateOemEncoding()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+        try
+        {
+            return Encoding.GetEncoding(866);
+        }
+        catch (Exception)
+        {
+            // Кодовой страницы в системе нет — читаем как UTF-8, как раньше.
+            return Encoding.UTF8;
+        }
+    }
+
+    /// <summary>
     /// Список того, что лежит внутри архива ZIP.
     ///
     /// Сами файлы НЕ распаковываются: читается только оглавление архива,
@@ -89,7 +113,17 @@ public static class OfficeDocuments
     /// </summary>
     public static string ArchiveToHtml(Stream stream)
     {
-        using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
+        // ЯВНАЯ кодировка имён — иначе русские имена внутри архива
+        // превращаются в «╨Ф╨╛╨│╨╛╨▓╨╛╤А».
+        //
+        // В формате ZIP имя файла лежит просто набором байтов, и то, какими
+        // буквами его читать, указывается флагом. Проводник Windows и старые
+        // архиваторы этот флаг НЕ ставят и пишут имена в кодировке MS-DOS
+        // (866). .NET по умолчанию читает такие имена как UTF-8 и получает
+        // мусор. Указываем 866 явно: у архивов с флагом UTF-8 .NET всё равно
+        // возьмёт UTF-8 — флаг сильнее этой настройки, — так что правильно
+        // прочитаются и те, и другие.
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true, OemEncoding);
 
         // Папки внутри архива представлены записями с пустым именем файла
         // и нулевым размером — в списке они не нужны.

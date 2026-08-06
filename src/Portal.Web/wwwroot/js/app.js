@@ -142,6 +142,46 @@
         form.submit();
     }
 
+    /**
+     * Кладёт текст в буфер обмена и говорит об этом человеку.
+     *
+     * Путей два, и оба нужны. Штатный navigator.clipboard работает только
+     * по защищённому соединению (HTTPS), а портал пока живёт по HTTP —
+     * поэтому есть запасной: невидимое поле ввода и старая команда copy.
+     * Она устарела, но работает везде и без всяких условий.
+     */
+    function copyText(text, okMessage) {
+        const fallback = () => {
+            const field = document.createElement('textarea');
+
+            field.value = text;
+            field.setAttribute('readonly', '');
+            field.style.position = 'fixed';
+            field.style.opacity = '0';
+
+            document.body.appendChild(field);
+            field.select();
+
+            let ok = false;
+
+            try { ok = document.execCommand('copy'); } catch (error) { ok = false; }
+
+            field.remove();
+
+            return ok;
+        };
+
+        const done = ok => toast(
+            ok ? (okMessage || 'Скопировано') : 'Не удалось скопировать — возьмите адрес из строки браузера',
+            ok ? 'ok' : 'warn');
+
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(() => done(true)).catch(() => done(fallback()));
+        } else {
+            done(fallback());
+        }
+    }
+
     // ======================================================================
     // 2. Всплывающие сообщения
     //
@@ -469,13 +509,27 @@
                     ? items.map(n => {
                         const kind = n.kind === 'message' ? 'message' : 'announcement';
 
-                        return `<a class="notif" href="${esc(n.url)}">` +
+                        // Ссылка, а не кнопка: нажатие ведёт к самому событию —
+                        // к объявлению или к переписке. Всё непрочитанное
+                        // при этом отмечается прочитанным, иначе счётчик
+                        // на колокольчике висел бы до отдельного нажатия.
+                        return `<a class="notif" href="${esc(n.url)}" data-seen>` +
                             `<div class="n-ic n-ic--${kind}">${ic(NOTIF_ICON[kind], 17)}</div>` +
-                            `<p>${esc(n.title)}<time>${esc(n.author)} · ${esc(relTime(n.at))}</time></p>` +
+                            `<p><b>${esc(n.title)}</b>` +
+                            `<time>${esc(n.author)} · ${esc(relTime(n.at))}</time></p>` +
                             '<div class="ndot"></div></a>';
                     }).join('')
                     : '<div class="empty notif-empty"><p>Нет уведомлений</p></div>') +
                 '</div>';
+
+            // Переход по уведомлению = «я это видел».
+            $$('[data-seen]', panel).forEach(link => {
+                link.addEventListener('click', () => {
+                    // Ждать ответа не нужно: человек уже уходит на страницу,
+                    // а отметка успеет дойти до сервера сама.
+                    post('/api/notifications/seen', {}).catch(() => { /* не страшно */ });
+                });
+            });
 
             $('#readAllBtn', panel).onclick = e => {
                 e.stopPropagation();
@@ -704,43 +758,11 @@
 
         function copyLink(item) {
             // Ссылка ОБЫЧНАЯ, не «публичная»: анонимного доступа портал
-            // не даёт вовсе. Тот, кому её пошлют, откроет папку, только
-            // если у него и так есть к ней доступ.
-            const link = item.folder
-                ? location.origin + '/Files?id=' + item.folder
-                : location.origin + location.pathname + location.search;
-
-            const done = ok => toast(
-                ok ? 'Ссылка скопирована' : 'Не удалось скопировать — возьмите адрес из строки браузера',
-                ok ? 'ok' : 'warn');
-
-            // navigator.clipboard работает только по защищённому соединению.
-            // Портал пока живёт по HTTP, поэтому нужен запасной путь.
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(link).then(() => done(true)).catch(() => done(fallbackCopy(link)));
-            } else {
-                done(fallbackCopy(link));
-            }
-        }
-
-        function fallbackCopy(text) {
-            const field = document.createElement('textarea');
-
-            field.value = text;
-            field.setAttribute('readonly', '');
-            field.style.position = 'fixed';
-            field.style.opacity = '0';
-
-            document.body.appendChild(field);
-            field.select();
-
-            let ok = false;
-
-            try { ok = document.execCommand('copy'); } catch (error) { ok = false; }
-
-            field.remove();
-
-            return ok;
+            // не даёт вовсе. Тот, кому её пошлют, откроет файл или папку,
+            // только если у него и так есть к ней доступ.
+            copyText(
+                location.origin + (item.folder ? '/Files?id=' + item.folder : item.href),
+                item.folder ? 'Ссылка на папку скопирована' : 'Ссылка на файл скопирована');
         }
 
         function rename(item) {
@@ -984,6 +1006,367 @@
     // в белом списке (см. PreviewSupport.cs).
     // ======================================================================
 
+
+    // ======================================================================
+    // 9. Переписки
+    //
+    // Страница обычная, серверная: список бесед и сообщения приходят готовыми.
+    // Здесь только то, ради чего нужен код на странице:
+    //   * отправка по Enter и растущее поле ввода;
+    //   * выбор собеседников (окно с поиском по справочнику);
+    //   * управление группой;
+    //   * проверка, не написал ли кто-нибудь, пока страница открыта.
+    // ======================================================================
+
+    const chat = $('[data-chat]');
+
+    if (chat) {
+        const settings = chat.dataset;
+        const conversationId = settings.conversation || '';
+
+        // ---------- Лента сообщений ----------
+        const msgs = $('#msgs');
+
+        // Прокручиваем к последнему: человек открывает переписку, чтобы
+        // увидеть свежее, а не то, что писали полгода назад.
+        if (msgs) { msgs.scrollTop = msgs.scrollHeight; }
+
+        // ---------- Поле ввода ----------
+        const form = $('#chatForm');
+        const text = $('#chatText');
+        const files = $('#chatFiles');
+        const attached = $('#chatAttached');
+
+        if (text) {
+            // Поле растёт вместе с текстом, но не выше предела из стилей.
+            const grow = () => {
+                text.style.height = 'auto';
+                text.style.height = Math.min(text.scrollHeight, 110) + 'px';
+            };
+
+            text.addEventListener('input', grow);
+            grow();
+
+            text.addEventListener('keydown', e => {
+                // Enter отправляет, Shift+Enter переводит строку — так же,
+                // как в любом мессенджере. Иначе придётся тянуться к мыши
+                // после каждой реплики.
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+
+                    if (text.value.trim() || (files && files.files.length)) {
+                        form.requestSubmit();
+                    }
+                }
+            });
+        }
+
+        const attachBtn = $('#attachBtn');
+
+        if (attachBtn && files) {
+            attachBtn.onclick = () => files.click();
+
+            files.onchange = () => {
+                if (!attached) { return; }
+
+                attached.hidden = files.files.length === 0;
+
+                attached.innerHTML = [...files.files]
+                    .map(f => `<span class="chip">${esc(f.name)} · ${fmtSize(f.size)}</span>`)
+                    .join('');
+            };
+        }
+
+        // ---------- Удаление сообщения ----------
+        chat.addEventListener('click', e => {
+            const button = e.target.closest('[data-delete-message]');
+
+            if (!button) { return; }
+
+            confirmDlg('Удалить сообщение?',
+                'Сообщение исчезнет у всех участников переписки. Отменить это нельзя.',
+                'Удалить',
+                () => submit('/Messages?handler=DeleteMessage&id=' + conversationId,
+                    { messageId: button.dataset.deleteMessage }),
+                true);
+        });
+
+        // ---------- Выбор людей ----------
+        //
+        // Один и тот же список сотрудников нужен в трёх местах: «написать»,
+        // «создать группу», «добавить в группу». Поэтому он собран одной
+        // функцией, а различается только тем, что делать с выбранным.
+
+        /**
+         * Окно со строкой поиска и списком сотрудников.
+         *
+         * multi = false — нажатие сразу выполняет действие и закрывает окно;
+         * multi = true  — выбранные накапливаются, действие по кнопке внизу.
+         */
+        function peoplePicker(options) {
+            const chosen = new Map();
+
+            const m = openModal({
+                title: esc(options.title),
+                body: (options.extra || '') +
+                    '<div class="field"><label for="peopleSearch">' + esc(options.label) + '</label>' +
+                    '<input type="text" id="peopleSearch" autocomplete="off" ' +
+                    'placeholder="Начните вводить фамилию или логин"></div>' +
+                    '<div class="chosen" id="peopleChosen" hidden></div>' +
+                    '<div class="people" id="peopleList"><p class="hint">Загружается…</p></div>',
+                foot: options.multi
+                    ? '<button class="btn" type="button" data-mclose>Отмена</button>' +
+                      '<button class="btn primary" type="button" id="peopleOk">' + esc(options.okLabel) + '</button>'
+                    : '<button class="btn" type="button" data-mclose>Отмена</button>'
+            });
+
+            const search = $('#peopleSearch', m);
+            const list = $('#peopleList', m);
+            const chosenBox = $('#peopleChosen', m);
+
+            const paintChosen = () => {
+                chosenBox.hidden = chosen.size === 0;
+
+                chosenBox.innerHTML = [...chosen.values()]
+                    .map(p => `<span class="chip">${esc(p.displayName)}</span>`).join('');
+            };
+
+            const load = () => {
+                fetch('/Messages?handler=People&q=' + encodeURIComponent(search.value.trim()), {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                    .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                    .then(people => {
+                        if (people.length === 0) {
+                            list.innerHTML = '<p class="hint">Никого не нашлось. ' +
+                                'Справочник сотрудников читается из Active Directory.</p>';
+                            return;
+                        }
+
+                        list.innerHTML = people.map(p =>
+                            `<button class="member-row" type="button" data-login="${esc(p.userName)}" ` +
+                            `data-name="${esc(p.displayName)}">` +
+                            `<div class="avatar" data-av="${avatarIndex(p.displayName)}">${esc(initials(p.displayName))}</div>` +
+                            `<div><b>${esc(p.displayName)}</b><span>${esc(p.userName)}</span></div>` +
+                            (options.multi ? '<span class="member-mark"></span>' : '') +
+                            '</button>').join('');
+
+                        $$('.member-row', list).forEach(row => {
+                            const login = row.dataset.login;
+
+                            if (chosen.has(login)) { row.classList.add('on'); }
+
+                            row.onclick = () => {
+                                if (!options.multi) {
+                                    closeModal();
+                                    options.onPick(login, row.dataset.name);
+                                    return;
+                                }
+
+                                if (chosen.has(login)) {
+                                    chosen.delete(login);
+                                    row.classList.remove('on');
+                                } else {
+                                    chosen.set(login, { userName: login, displayName: row.dataset.name });
+                                    row.classList.add('on');
+                                }
+
+                                paintChosen();
+                            };
+                        });
+                    })
+                    .catch(() => {
+                        list.innerHTML = '<p class="hint">Не удалось получить список сотрудников. ' +
+                            'Возможно, недоступен контроллер домена.</p>';
+                    });
+            };
+
+            // Ждём, пока человек допечатает: запрос уходит в Active Directory,
+            // и дёргать его на каждую букву незачем.
+            let timer = null;
+
+            search.addEventListener('input', () => {
+                clearTimeout(timer);
+                timer = setTimeout(load, 250);
+            });
+
+            setTimeout(() => search.focus(), 60);
+            load();
+
+            if (options.multi) {
+                $('#peopleOk', m).onclick = () => {
+                    if (chosen.size === 0) {
+                        toast('Никто не выбран', 'warn');
+                        return;
+                    }
+
+                    closeModal();
+                    options.onDone([...chosen.keys()], m);
+                };
+            }
+
+            return m;
+        }
+
+        /** Те же буквы и цвет кружка, что считает сервер (см. Avatars). */
+        function initials(name) {
+            const parts = String(name || '').split(/[\s._-]+/).filter(Boolean);
+
+            if (parts.length === 0) { return '?'; }
+
+            return (parts.length === 1 ? parts[0][0] : parts[0][0] + parts[1][0]).toUpperCase();
+        }
+
+        function avatarIndex(name) {
+            let sum = 0;
+
+            for (const c of String(name || '')) {
+                sum = (sum * 31 + c.charCodeAt(0)) & 0x7fffffff;
+            }
+
+            return sum % 8;
+        }
+
+        // ---------- Кнопки ----------
+        const newDirect = $('#newDirectBtn');
+
+        if (newDirect) {
+            newDirect.onclick = () => peoplePicker({
+                title: 'Написать сотруднику',
+                label: 'Кому',
+                onPick: login => submit('/Messages?handler=Start', { withUserName: login })
+            });
+        }
+
+        const newGroup = $('#newGroupBtn');
+
+        if (newGroup) {
+            newGroup.onclick = () => {
+                const m = peoplePicker({
+                    title: 'Создать группу',
+                    label: 'Кого добавить',
+                    multi: true,
+                    okLabel: 'Создать',
+                    extra: '<div class="field"><label for="groupTitle">Название группы</label>' +
+                        '<input type="text" id="groupTitle" maxlength="120" placeholder="Например: Отдел кадров"></div>',
+                    onDone: logins => {
+                        const title = ($('#groupTitle', m) || {}).value || '';
+
+                        submit('/Messages?handler=CreateGroup', {
+                            GroupTitle: title.trim() || 'Новая группа',
+                            Members: logins
+                        });
+                    }
+                });
+            };
+        }
+
+        const groupBtn = $('#groupBtn');
+
+        if (groupBtn) {
+            groupBtn.onclick = () => openGroupWindow();
+        }
+
+        /** Окно «Участники группы»: список, переименование, выход. */
+        function openGroupWindow() {
+            const isOwner = settings.isOwner === 'true';
+
+            // Список участников уже есть на странице — берём его оттуда,
+            // а не ходим на сервер второй раз за тем же самым.
+            const rows = $$('[data-participant]').map(node => ({
+                login: node.dataset.participant,
+                name: node.dataset.name,
+                owner: node.dataset.owner === 'true'
+            }));
+
+            const m = openModal({
+                title: 'Участники группы',
+                body: (isOwner
+                    ? '<div class="field"><label for="groupNewTitle">Название группы</label>' +
+                      '<div class="inline-pair"><input type="text" id="groupNewTitle" maxlength="120" ' +
+                      `value="${esc(settings.title || '')}">` +
+                      '<button class="btn" type="button" id="groupRename">Сохранить</button></div></div>'
+                    : '') +
+                    '<div class="people">' + rows.map(p =>
+                        '<div class="member-row member-row--static">' +
+                        `<div class="avatar" data-av="${avatarIndex(p.name)}">${esc(initials(p.name))}</div>` +
+                        `<div><b>${esc(p.name)}</b><span>${p.owner ? 'создатель' : 'участник'}</span></div>` +
+                        (isOwner && p.login !== settings.me
+                            ? `<button class="link danger" type="button" data-drop="${esc(p.login)}">убрать</button>`
+                            : '') +
+                        '</div>').join('') + '</div>',
+                foot: (isOwner ? '<button class="btn" type="button" id="groupAdd">Добавить человека</button>' : '') +
+                    '<button class="btn danger" type="button" id="groupLeave">Выйти из группы</button>' +
+                    '<button class="btn" type="button" data-mclose>Закрыть</button>'
+            });
+
+            const rename = $('#groupRename', m);
+
+            if (rename) {
+                rename.onclick = () => submit('/Messages?handler=RenameGroup&id=' + conversationId,
+                    { newTitle: $('#groupNewTitle', m).value });
+            }
+
+            $$('[data-drop]', m).forEach(b => {
+                b.onclick = () => submit('/Messages?handler=RemoveMember&id=' + conversationId,
+                    { memberUserName: b.dataset.drop });
+            });
+
+            const add = $('#groupAdd', m);
+
+            if (add) {
+                add.onclick = () => peoplePicker({
+                    title: 'Добавить в группу',
+                    label: 'Кого добавить',
+                    onPick: login => submit('/Messages?handler=AddMember&id=' + conversationId,
+                        { memberUserName: login })
+                });
+            }
+
+            $('#groupLeave', m).onclick = () => {
+                closeModal();
+
+                confirmDlg('Выйти из группы?',
+                    'Вы перестанете получать сообщения этой группы. Вернуться можно, только если вас добавят заново.',
+                    'Выйти',
+                    () => submit('/Messages?handler=RemoveMember&id=' + conversationId,
+                        { memberUserName: settings.me }),
+                    true);
+            };
+        }
+
+        // ---------- Не написал ли кто-нибудь, пока страница открыта ----------
+        if (conversationId) {
+            const CHECK_MS = 8000;
+
+            let lastId = parseInt(settings.lastMessage, 10) || 0;
+            let told = false;
+
+            setInterval(() => {
+                if (document.visibilityState !== 'visible' || told) { return; }
+
+                fetch(`/Messages?handler=New&id=${conversationId}&afterId=${lastId}`, {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                    .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                    .then(data => {
+                        if (!data.hasNew) { return; }
+
+                        // Страницу НЕ перезагружаем сами: человек может
+                        // писать ответ, и обновление стёрло бы набранное.
+                        // Предлагаем — решает он.
+                        told = true;
+
+                        toast('В переписке есть новые сообщения', 'info',
+                            'Показать', () => window.location.reload());
+                    })
+                    .catch(() => { /* связь могла моргнуть — молчим */ });
+            }, CHECK_MS);
+        }
+    }
+
     /** Сколько ждём ответа, прежде чем признать, что связи нет. */
     const WAIT_MS = 45000;
 
@@ -1026,13 +1409,11 @@
         };
 
         $('#pvShare', m).onclick = () => {
-            const link = location.origin + location.pathname + location.search;
-
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(link).then(() => toast('Ссылка скопирована', 'ok'));
-            } else {
-                toast('Возьмите адрес из строки браузера', 'info');
-            }
+            // Ссылка именно НА ФАЙЛ, а не на страницу папки: по ней файл
+            // сразу откроется или скачается. Ссылка обычная, не публичная —
+            // анонимного доступа портал не даёт, и откроет её только тот,
+            // у кого и так есть доступ к папке.
+            copyText(location.origin + item.href, 'Ссылка на файл скопирована');
         };
     }
 
@@ -1154,6 +1535,10 @@
             // страницу, и мы бы приняли его за настоящее.
             frame.src = source;
 
+            // Просмотрщику PDF нужна ВСЯ высота окна. Обычные отступы
+            // и выравнивание по верху, годные для страницы документа,
+            // превратили бы его в маленькое окошко внутри большого.
+            viewer.classList.add('pv-viewer--frame');
             viewer.innerHTML = '';
             viewer.appendChild(frame);
 
@@ -1192,6 +1577,10 @@
 
             player.addEventListener('error', () =>
                 failed('Не удалось проиграть запись', 'браузер не понимает этот формат — скачайте файл'));
+
+            if (item.kind === 'video') {
+                viewer.classList.add('pv-viewer--frame');
+            }
 
             viewer.innerHTML = '';
             viewer.appendChild(player);

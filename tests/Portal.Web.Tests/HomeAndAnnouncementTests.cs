@@ -218,7 +218,7 @@ public class HomeAndAnnouncementTests : IDisposable
 
         var html = await client.GetStringAsync("/Messages?q=с");
 
-        Assert.Contains("Сообщения: 0", html);
+        Assert.Contains("Найдено в сообщениях: 0", html);
     }
 
     // ------------------------------------------------------------------

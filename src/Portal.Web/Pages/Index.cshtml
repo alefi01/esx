@@ -7,7 +7,10 @@
 
 <section class="view active">
 
-    @* ---------- Приветствие ---------- *@
+    @* ---------- Приветствие ----------
+       Кнопок с разделами здесь нет намеренно: те же разделы стоят
+       в боковом меню, и дублировать их значит показывать одно и то же
+       дважды на одном экране. *@
     <div class="hero">
         <div>
             <h2>@Model.Greeting, @Model.DisplayName</h2>
@@ -20,25 +23,6 @@
             </span>
         </div>
 
-        <div class="hero-links">
-            <a class="hero-link" asp-page="/Files/Index">
-                <div class="npa-ic"><svg class="ic" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><use href="#i-folder" /></svg></div>
-                <div class="np-meta"><b>Файлы</b><span>Общие документы и папки отделов</span></div>
-            </a>
-
-            <a class="hero-link" asp-page="/Messages/Index">
-                <div class="npa-ic"><svg class="ic" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><use href="#i-chat" /></svg></div>
-                <div class="np-meta"><b>Чат</b><span>Личные сообщения и рабочие группы</span></div>
-            </a>
-
-            @if (Model.CanPublish)
-            {
-                <a class="hero-link" asp-page="/Announcements/Create">
-                    <div class="npa-ic"><svg class="ic" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-edit" /></svg></div>
-                    <div class="np-meta"><b>Написать объявление</b><span>Увидят все сотрудники</span></div>
-                </a>
-            }
-        </div>
     </div>
 
     @* ---------- Лента объявлений ---------- *@

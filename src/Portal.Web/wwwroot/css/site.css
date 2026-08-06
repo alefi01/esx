@@ -659,3 +659,188 @@ button.fav-star.on svg{fill:currentColor}
 a{color:inherit;text-decoration:none}
 .nav-item,.brand,.crumb,.tile,.frow,.hero-link,.notif,.zip-row{text-decoration:none}
 .alert a,.hint a,.search-note a,.pager a,.feed-all,.feed-more a,.link{text-decoration:underline}
+
+/* ======================================================================
+   17. Разобранные документы в предпросмотре
+
+   Портал сам разбирает docx, xlsx и pptx (см. OfficeDocuments) и отдаёт
+   готовую разметку. Задача этих правил — показать её как документ:
+   белый лист с полями, читаемые заголовки, таблица с настоящей сеткой.
+   Точной копии исходного оформления не будет и не может быть: в файле
+   лежат шрифты, отступы и стили Word, повторять их значило бы написать
+   ещё один Word. Цель другая — чтобы документ читался и структура была
+   видна: где заголовок, где таблица, где список.
+   ====================================================================== */
+
+/* Лист документа: тот же вид, что и .doc-page в макете. */
+.doc{background:var(--surface);border-radius:8px;box-shadow:var(--shadow);max-width:760px;width:100%;padding:44px 52px;margin:0 auto}
+.doc p{font-size:13.5px;line-height:1.75;margin-bottom:11px}
+.doc p:last-child{margin-bottom:0}
+.doc strong{font-weight:700}
+.doc em{font-style:italic}
+
+/* Заголовки внутри документа — по уровням, как в исходнике. */
+.doc__h{font-weight:700;line-height:1.3;margin:22px 0 9px;letter-spacing:-.2px}
+.doc__h:first-child{margin-top:0}
+.doc__h1{font-size:20px}
+.doc__h2{font-size:17px;color:var(--accent)}
+.doc__h3{font-size:15px}
+.doc__h4,.doc__h5,.doc__h6{font-size:13.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+
+.doc__list{margin:0 0 12px 22px}
+.doc__list li{font-size:13.5px;line-height:1.7;margin-bottom:4px}
+
+/* Таблица. Сетка видимая: без неё столбцы сливаются и таблица
+   перестаёт быть таблицей. Первая строка выделена как заголовок —
+   в подавляющем большинстве служебных документов это так и есть. */
+.doc__table{border-collapse:collapse;width:100%;margin:0 0 16px;font-size:12.5px;display:block;overflow-x:auto}
+.doc__table td,.doc__table th{border:1px solid var(--border);padding:8px 12px;text-align:left;vertical-align:top;min-width:80px}
+.doc__table tr:first-child td{background:var(--surface2);font-weight:700;color:var(--accent);white-space:nowrap}
+.doc__table tr:hover td{background:var(--accent-soft)}
+.doc__table tr:first-child:hover td{background:var(--surface2)}
+
+/* Лист книги Excel. Имя листа — заголовком над таблицей. */
+.doc__sheet{margin-bottom:26px}
+.doc__sheet:last-child{margin-bottom:0}
+.doc__sheetname{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+
+/* Слайд презентации. */
+.doc__slide{margin-bottom:22px;padding-left:14px;border-left:3px solid var(--accent-soft)}
+.doc__slide:last-child{margin-bottom:0}
+.doc__slidenum{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);margin-bottom:8px}
+
+/* Служебная строка: «документ пуст», «показан не целиком». */
+.doc__note{font-size:12.5px;color:var(--muted);font-style:italic;margin-top:12px}
+
+/* Список содержимого архива: имя слева, размер справа. */
+.zip-name{flex:1;min-width:0;overflow-wrap:anywhere;font-weight:600}
+.zip-size{margin-left:auto;color:var(--muted);font-size:11.5px;font-weight:500;white-space:nowrap}
+
+/* ======================================================================
+   18. Исправления после замечаний
+   ====================================================================== */
+
+/* PDF показывает встроенный просмотрщик браузера, и ему нужна ВСЯ высота
+   окна. Поле .pv-viewer по умолчанию выравнивает содержимое по верху
+   и добавляет отступы — для страницы документа это правильно, а для
+   просмотрщика означало бы маленькое окошко внутри большого. */
+.pv-viewer.pv-viewer--frame{padding:0;align-items:stretch;overflow:hidden}
+.pv-viewer.pv-viewer--frame .pv-frame{width:100%;height:100%;border-radius:14px}
+
+/* Сведения о файле: длинное значение (полный путь, тип содержимого)
+   должно переноситься, а не вылезать за край колонки. */
+.pv-meta .row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start}
+.pv-meta .row span{white-space:nowrap}
+.pv-meta .row b{overflow-wrap:anywhere;text-align:right;min-width:0}
+.pv-aside .acc-row{overflow-wrap:anywhere;display:block;line-height:1.5}
+
+/* Уведомление: текст переносится и не вылезает за край панели. */
+.notif{align-items:flex-start}
+.notif p{min-width:0;overflow-wrap:anywhere}
+.notif p b{display:block;font-weight:600}
+.notif:hover{background:var(--surface2)}
+
+/* Звёздочка «в избранном».
+
+   Правило из макета (.tile .fav-star) сдвигало её отступом вправо и вниз —
+   там это была просто отметка, неподвижная. У нас это кнопка, на которую
+   нажимают, и ей место в углу плитки. Селектор из двух классов, чтобы
+   перебить правило макета, не трогая его само. */
+.tile button.fav-star{position:absolute;top:8px;right:8px;margin:0}
+
+
+/* ======================================================================
+   19. Переписки — то, чего не было в макете
+
+   В макете чат нарисован в общих чертах: список бесед и облачка сообщений.
+   Живому разделу нужно больше: поиск, вложения, удалённые сообщения,
+   окно управления группой. Всё ниже сделано в том же наборе переменных
+   и тех же скруглениях, что и макет, — чтобы разница была незаметна.
+   ====================================================================== */
+
+/* ---------- Поиск по перепискам ---------- */
+.convo-search{display:flex;align-items:center;gap:8px;margin:8px 10px 0;padding:7px 11px;
+  border:1px solid var(--border);background:var(--surface2);border-radius:10px;transition:.15s}
+.convo-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.convo-search svg{color:var(--muted);flex:none}
+.convo-search input{flex:1;min-width:0;border:none;background:none;outline:none;
+  font-size:12.5px;color:var(--text)}
+
+/* Заголовок «найдено в сообщениях» отделяет вторую часть списка от первой. */
+.convo-found{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.4px;padding:12px 10px 6px;border-top:1px solid var(--border);margin-top:8px}
+
+/* Найденное слово в отрывке сообщения. Собственный фон нужен потому,
+   что браузерный по умолчанию жёлтый и в тёмной теме слепит. */
+.convo.hit .c-meta p{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden}
+.convo.hit mark{background:var(--accent-soft);color:var(--accent);font-weight:700;
+  border-radius:3px;padding:0 2px}
+
+/* Пустые состояния внутри узких колонок: отступы макета (60px) там велики. */
+.convo-empty{padding:34px 14px;text-align:center}
+.convo-empty svg{width:52px;height:52px}
+.chat-empty{margin:auto}
+
+/* Предупреждение «вы смотрите как администратор» стоит между шапкой
+   беседы и лентой, поэтому нижний отступ ему не нужен. */
+.chat-note{margin:12px 18px 0}
+
+/* ---------- Сообщения ---------- */
+
+/* Кнопка удаления живёт в строке времени и появляется при наведении
+   на облачко: постоянно висящий крестик у каждой реплики — это шум. */
+.msg .b-time{display:flex;align-items:center;justify-content:flex-end;gap:6px}
+.b-del{opacity:0;color:inherit;transition:.15s;display:inline-flex}
+.msg:hover .b-del,.b-del:focus-visible{opacity:.75}
+.b-del:hover{opacity:1;color:var(--danger)}
+.msg.mine .b-del:hover{color:#fff}
+
+/* Удалённое сообщение остаётся на месте — так видно, что в разговоре
+   что-то было, и нумерация реплик не «схлопывается». */
+.b-deleted{font-style:italic;color:var(--muted);opacity:.85}
+.msg.mine .b-deleted{color:rgba(255,255,255,.8)}
+
+/* Вложение внутри облачка. */
+.b-file{display:flex;align-items:center;gap:8px;margin-top:6px;padding:7px 10px;
+  border-radius:10px;background:var(--surface);border:1px solid var(--border);
+  max-width:100%;transition:.15s}
+.b-file:hover{border-color:var(--accent)}
+.msg.mine .b-file{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.3);color:#fff}
+.msg.mine .b-file:hover{background:rgba(255,255,255,.26);border-color:rgba(255,255,255,.55)}
+.b-file svg{flex:none}
+.b-fname{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;min-width:0}
+.b-fsize{font-size:10.5px;opacity:.75;flex:none;margin-left:auto}
+
+/* ---------- Выбранные для отправки файлы ---------- */
+.chat-attached{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 12px}
+.chat-attached .chip{background:var(--surface2);border:1px solid var(--border);color:var(--muted)}
+
+/* ---------- Окна: выбор людей и управление группой ---------- */
+
+/* Список сотрудников прокручивается: в каталоге их может быть сотни,
+   а окно не должно вылезать за экран. */
+.people{max-height:280px;overflow-y:auto;margin-top:4px}
+.people .hint{padding:14px 4px;font-size:12.5px;color:var(--muted);line-height:1.55}
+
+/* Отметка «выбран» — кружок справа, как галочка в списке. */
+.member-mark{margin-left:auto;width:18px;height:18px;border-radius:50%;flex:none;
+  border:2px solid var(--border);transition:.15s}
+.member-row.on{border-color:var(--accent);background:var(--accent-soft)}
+.member-row.on .member-mark{border-color:var(--accent);background:var(--accent);
+  box-shadow:inset 0 0 0 3px var(--surface)}
+
+/* Строки в окне «Участники группы» не выбираются — только читаются. */
+.member-row--static{cursor:default}
+.member-row--static:hover{border-color:var(--border)}
+.member-row--static .link{margin-left:auto}
+
+/* Поле с кнопкой в одну строку («Название группы» + «Сохранить»). */
+.inline-pair{display:flex;gap:8px;align-items:center}
+.inline-pair input{flex:1;min-width:0}
+
+/* Кого уже выбрали — показываем над списком, чтобы не пролистывать
+   его заново и не гадать, отметил человек кого-то или нет. */
+.chosen{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.chosen .chip{background:var(--accent-soft);color:var(--accent)}
