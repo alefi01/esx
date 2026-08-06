@@ -1,0 +1,208 @@
+@page
+@model Portal.Web.Pages.Admin.SyncModel
+@{
+    ViewData["Title"] = "Филиалы";
+}
+
+<section class="view active">
+    <div class="view-head">
+        <h2>Синхронизация между филиалами</h2>
+        <span class="sub">
+            Объявления, переписка и файлы расходятся по серверам филиалов.
+            Раздел виден только администраторам
+        </span>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.StatusMessage))
+    {
+        <div class="alert ok" role="status">@Model.StatusMessage</div>
+    }
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert err" role="alert">@Model.ErrorMessage</div>
+    }
+    @if (Model.DatabaseError is not null)
+    {
+        <div class="alert err" role="alert">
+            <strong>База данных недоступна.</strong>
+            Состояние обмена показать не удалось.
+            <p><code>@Model.DatabaseError</code></p>
+        </div>
+    }
+
+    @* ---------- Что не так с настройкой ---------- *@
+    @if (Model.Problems.Count > 0)
+    {
+        <div class="alert warn" role="alert">
+            <strong>Обмен пока не работает.</strong>
+            <ul class="plain-list">
+                @foreach (var problem in Model.Problems)
+                {
+                    <li>@problem</li>
+                }
+            </ul>
+        </div>
+    }
+
+    @* ---------- Этот филиал ---------- *@
+    <div class="card">
+        <h3>Этот сервер</h3>
+
+        <div class="kv">
+            <div class="row">
+                <span>Код филиала</span>
+                <b>@(string.IsNullOrEmpty(Model.Options.BranchCode) ? "не задан" : Model.Options.BranchCode)</b>
+            </div>
+            <div class="row">
+                <span>Название</span>
+                <b>@(string.IsNullOrEmpty(Model.Options.BranchName) ? "—" : Model.Options.BranchName)</b>
+            </div>
+            <div class="row"><span>Обмен</span><b>@(Model.Options.Enabled ? "включён" : "выключен")</b></div>
+            <div class="row"><span>Записей в журнале изменений</span><b>@Model.OutboxCount</b></div>
+            <div class="row"><span>Последний номер</span><b>@Model.OutboxLastId</b></div>
+        </div>
+
+        <p class="hint">
+            Журнал изменений — это то, что забирают соседи. Каждая правка объявления,
+            каждое сообщение и каждый файл добавляют в него запись с возрастающим номером,
+            а сосед помнит, на каком номере остановился. Записи старше
+            @Model.Options.OutboxRetentionDays дней убираются автоматически.
+        </p>
+    </div>
+
+    @* ---------- Расписание ---------- *@
+    <div class="card">
+        <h3>Как часто спрашивать соседей</h3>
+
+        <form method="post" asp-page-handler="Interval" class="row-form">
+            <div class="field">
+                <label asp-for="IntervalMinutes">Промежуток, минуты</label>
+                <input asp-for="IntervalMinutes" type="number" min="1" max="1440" />
+            </div>
+
+            <button class="btn primary" type="submit">Сохранить</button>
+        </form>
+
+        <p class="hint">
+            От 1 минуты до 1440 (сутки). Чем чаще, тем быстрее объявление из другого офиса
+            появляется здесь — и тем больше запросов идёт по каналу между площадками.
+            Для двадцати сотрудников 15 минут — разумная середина.
+            Изменение действует сразу, перезапускать портал не нужно.
+        </p>
+
+        <form method="post" asp-page-handler="Pause" class="inline-form">
+            <input type="hidden" name="paused" value="@((!Model.Paused).ToString().ToLowerInvariant())" />
+
+            <button class="btn @(Model.Paused ? "primary" : "")" type="submit">
+                @(Model.Paused ? "Возобновить обмен" : "Приостановить обмен")
+            </button>
+
+            <span class="hint">
+                @if (Model.Paused)
+                {
+                    @:Обмен приостановлен. Изменения копятся и разойдутся после возобновления.
+                }
+                else
+                {
+                    @:Пауза нужна на время работ со связью или с сервером соседнего филиала.
+                }
+            </span>
+        </form>
+    </div>
+
+    @* ---------- Соседи ---------- *@
+    <div class="card">
+        <h3>Филиалы</h3>
+
+        @if (Model.Peers.Count == 0)
+        {
+            <p class="hint">
+                Соседние филиалы не перечислены. Их задают в appsettings.json,
+                в разделе <code>Sync:Peers</code>.
+            </p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Филиал</th>
+                            <th>Адрес</th>
+                            <th>Дошли до записи</th>
+                            <th>Последний удачный обмен</th>
+                            <th>Состояние</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var peer in Model.Peers)
+                        {
+                            <tr>
+                                <td>
+                                    <b>@peer.Name</b>
+                                    <span class="dim">@peer.Code</span>
+                                </td>
+                                <td>@(peer.Configured ? peer.BaseUrl : "адрес не задан")</td>
+                                <td>@peer.LastReceivedId</td>
+                                <td>
+                                    @if (peer.LastSuccessAt is { } at)
+                                    {
+                                        @at.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                                    }
+                                    else
+                                    {
+                                        @:ни разу
+                                    }
+                                </td>
+                                <td>
+                                    @if (peer.LastError is { Length: > 0 } error)
+                                    {
+                                        <span class="chip danger">не удалось</span>
+                                        <span class="dim">@error</span>
+                                    }
+                                    else if (peer.LastSuccessAt is not null)
+                                    {
+                                        <span class="chip ok">в порядке</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="chip">не проверялся</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <form method="post" asp-page-handler="Run" class="inline-form">
+            <button class="btn primary" type="submit">Синхронизировать сейчас</button>
+            <span class="hint">
+                Не дожидаясь расписания. Так удобно проверять настройку:
+                если что-то не так, ошибка будет здесь же, а не в журнале сервера.
+            </span>
+        </form>
+    </div>
+
+    @* ---------- Что где настраивается ---------- *@
+    <div class="card">
+        <h3>Что где настраивается</h3>
+
+        <p class="hint">В файле <code>appsettings.json</code>, раздел <code>Sync</code>:</p>
+
+        <ul class="plain-list hint">
+            <li><code>Enabled</code> — включён ли обмен вообще.</li>
+            <li><code>BranchCode</code> — код ЭТОГО филиала. На разных серверах должен быть разным.</li>
+            <li><code>Key</code> — общий пароль обмена. На всех серверах ОДИНАКОВЫЙ. Лучше задавать переменной окружения <code>Sync__Key</code>, чтобы он не попадал в резервные копии конфигурации.</li>
+            <li><code>Peers</code> — соседние филиалы: код, название и адрес портала.</li>
+            <li><code>OutboxRetentionDays</code> — сколько дней хранить журнал изменений. Должно быть заведомо больше самого долгого возможного простоя филиала.</li>
+        </ul>
+
+        <p class="hint">
+            Здесь, на странице, меняются только промежуток между обменами и пауза:
+            это то, что подкручивают по ходу дела. Адреса и пароль — часть устройства
+            сети, и менять их через веб-страницу было бы опаснее, чем удобнее.
+        </p>
+    </div>
+</section>

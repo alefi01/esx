@@ -25,7 +25,10 @@ public class FolderAccessTests : IDisposable
             .UseSqlite($"Data Source={_databasePath}")
             .Options;
 
-        _db = new PortalDbContext(options);
+        // Синхронизация здесь не проверяется, поэтому настройки пустые:
+        // с выключенным обменом контекст не ведёт журнал изменений
+        // и работает ровно как раньше.
+        _db = new PortalDbContext(options, Options.Create(new SyncOptions()));
         _db.Database.EnsureCreated();
     }
 

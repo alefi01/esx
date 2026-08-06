@@ -883,3 +883,42 @@ a{color:inherit;text-decoration:none}
    его заново и не гадать, отметил человек кого-то или нет. */
 .chosen{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
 .chosen .chip{background:var(--accent-soft);color:var(--accent)}
+
+
+/* ======================================================================
+   20. Страница синхронизации между филиалами
+
+   Своих приёмов оформления здесь нет — те же карточки, таблицы и метки,
+   что и в остальной панели администратора. Ниже только то, чего в наборе
+   ещё не было: пары «название — значение», обёртка для таблицы
+   и две метки состояния.
+   ====================================================================== */
+
+/* Пары «название — значение». Значение прижато вправо, чтобы взгляд
+   находил его по одной вертикали, а не искал в каждой строке заново. */
+.kv .row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:baseline;
+  font-size:13px;padding:6px 0;border-bottom:1px solid var(--border)}
+.kv .row:last-child{border-bottom:none}
+.kv .row span{color:var(--muted)}
+.kv .row b{font-weight:600;text-align:right;overflow-wrap:anywhere}
+
+/* Таблица шире экрана прокручивается внутри себя, а не растягивает
+   страницу вбок. На узком экране это единственный приемлемый выход. */
+.table-wrap{overflow-x:auto;margin-bottom:12px}
+
+/* Список без маркеров-точек, но с отступом — для перечней в подсказках. */
+.plain-list{list-style:none;padding:0;margin:6px 0 0}
+.plain-list li{padding:4px 0 4px 14px;position:relative;line-height:1.55}
+.plain-list li::before{content:'—';position:absolute;left:0;color:var(--muted)}
+
+/* Кнопка и пояснение к ней в одну строку. */
+.inline-form{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.inline-form .hint{flex:1;min-width:220px;margin:0}
+
+/* Приглушённая приписка: код филиала под его названием, текст ошибки. */
+.dim{display:block;font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:3px;
+  overflow-wrap:anywhere}
+
+/* Метки состояния обмена. Тот же вид, что у меток «закреплено»/«важно». */
+.chip.ok{background:rgba(30,142,90,.12);color:var(--ok)}
+.chip.danger{background:rgba(229,72,77,.1);color:var(--danger)}
