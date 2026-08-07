@@ -88,6 +88,7 @@ public class ActivityModel : PageModel
         AuditAction.Move or AuditAction.Copy => "i-copy",
         AuditAction.Rename => "i-edit",
         AuditAction.Preview => "i-eye",
+        AuditAction.ViewConversation => "i-chat",
         _ => "i-eye"
     };
 

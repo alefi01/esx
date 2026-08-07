@@ -1,0 +1,115 @@
+@page
+@model Portal.Web.Pages.Admin.ConversationsModel
+@{
+    ViewData["Title"] = "Переписки";
+}
+
+<section class="view active">
+
+<h1>Переписки сотрудников</h1>
+
+@if (!string.IsNullOrEmpty(Model.DatabaseError))
+{
+    <div class="alert err" role="alert">@Model.DatabaseError</div>
+}
+
+<div class="card">
+    <p class="hint">
+        Здесь видно, <strong>кто с кем переписывается</strong>: участники, число
+        сообщений и время последнего. Сами сообщения на этой странице не
+        показываются и в поиск не попадают — чтобы прочитать переписку, её нужно
+        осознанно открыть, и это действие записывается в
+        <a asp-page="Audit">журнал</a> вместе с вашим логином.
+    </p>
+    <p class="hint">
+        Писать в чужую переписку нельзя никому, включая администратора портала:
+        открытая беседа показывается только для чтения.
+    </p>
+</div>
+
+<div class="card">
+    <form method="get" class="row-form">
+        <input asp-for="Who" placeholder="логин или имя участника" />
+
+        <select asp-for="Kind">
+            <option value="">все переписки</option>
+            <option value="pair">только личные</option>
+            <option value="group">только группы</option>
+        </select>
+
+        <button type="submit" class="btn primary">Показать</button>
+        <a class="btn" asp-page="Conversations">Сбросить</a>
+    </form>
+</div>
+
+<div class="card">
+    @if (Model.Rows.Count == 0)
+    {
+        <p class="hint">
+            @(string.IsNullOrWhiteSpace(Model.Who) && string.IsNullOrWhiteSpace(Model.Kind)
+                ? "Переписок пока нет."
+                : "По этому условию ничего не нашлось.")
+        </p>
+    }
+    else
+    {
+        <p class="hint">Всего переписок: <strong>@Model.TotalCount</strong>.</p>
+
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                <tr>
+                    <th>Переписка</th>
+                    <th>Вид</th>
+                    <th>Участники</th>
+                    <th>Сообщений</th>
+                    <th>Последнее</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var row in Model.Rows)
+                {
+                    <tr>
+                        <td>@row.Title</td>
+                        <td>@(row.IsGroup ? "группа" : "личная")</td>
+                        <td class="hint">@row.Participants</td>
+                        <td>
+                            @row.Messages
+                            @if (row.Deleted > 0)
+                            {
+                                <span class="dim">из них удалено: @row.Deleted</span>
+                            }
+                        </td>
+                        <td>@row.LastMessageAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</td>
+                        <td>
+                            <a class="btn sm" asp-page="/Messages/Index" asp-route-id="@row.Id">Открыть</a>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@if (Model.TotalPages > 1)
+{
+    <nav class="pager">
+        @if (Model.PageNumber > 1)
+        {
+            <a asp-page="Conversations" asp-route-page="@(Model.PageNumber - 1)"
+               asp-route-who="@Model.Who" asp-route-kind="@Model.Kind">← Свежее</a>
+        }
+
+        <span class="hint">Страница @Model.PageNumber из @Model.TotalPages</span>
+
+        @if (Model.PageNumber < Model.TotalPages)
+        {
+            <a asp-page="Conversations" asp-route-page="@(Model.PageNumber + 1)"
+               asp-route-who="@Model.Who" asp-route-kind="@Model.Kind">Давнее →</a>
+        }
+    </nav>
+}
+
+</section>

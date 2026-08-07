@@ -21,7 +21,11 @@
          data-title="@Model.Title"
          data-can-write="@Model.CanWrite.ToString().ToLowerInvariant()"
          data-is-owner="@Model.IsOwner.ToString().ToLowerInvariant()"
-         data-is-group="@((Model.Current?.IsGroup ?? false).ToString().ToLowerInvariant())">
+         data-is-group="@((Model.Current?.IsGroup ?? false).ToString().ToLowerInvariant())"
+         @* Предел на вложение — числом, чтобы браузер сказал «файл слишком
+            большой» ДО отправки, а не после того как человек прождал передачу.
+            0 — предела нет. Проверка на сервере при этом остаётся. *@
+         data-max-attachment="@Model.MaxAttachmentBytes">
 
     @if (!string.IsNullOrEmpty(Model.StatusMessage))
     {

@@ -539,7 +539,7 @@ button.fav-star.on svg{fill:currentColor}
 .notif-empty{padding:30px}
 
 /* Текст в окне подтверждения. */
-.dlg-text{font-size:13.5px;line-height:1.6;color:var(--muted)}
+.dlg-text{font-size:13.5px;line-height:1.6;color:var(--muted);white-space:pre-line;overflow-wrap:anywhere}
 
 /* Широкое окно предпросмотра: тело должно тянуться на всю высоту. */
 .modal-body--wide{flex:1;min-height:0;padding-top:8px}

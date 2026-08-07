@@ -30,6 +30,7 @@ public class IndexModel : PageModel
     private readonly MessageStorage _storage;
     private readonly IUserDirectory _directory;
     private readonly UploadValidator _validator;
+    private readonly AuditLog _audit;
     private readonly StorageOptions _storageOptions;
     private readonly ActiveDirectoryOptions _ad;
     private readonly TimeProvider _time;
@@ -41,6 +42,7 @@ public class IndexModel : PageModel
         MessageStorage storage,
         IUserDirectory directory,
         UploadValidator validator,
+        AuditLog audit,
         IOptions<StorageOptions> storageOptions,
         IOptions<ActiveDirectoryOptions> ad,
         TimeProvider time,
@@ -51,6 +53,7 @@ public class IndexModel : PageModel
         _storage = storage;
         _directory = directory;
         _validator = validator;
+        _audit = audit;
         _storageOptions = storageOptions.Value;
         _ad = ad.Value;
         _time = time;
@@ -161,7 +164,23 @@ public class IndexModel : PageModel
             .OrderBy(m => m.Id)
             .ToListAsync(cancellationToken);
 
-        if (!IsOutsideObserver)
+        if (IsOutsideObserver)
+        {
+            // Администратор портала открыл ЧУЖУЮ переписку. Право на это
+            // у него есть, но след остаться должен: иначе «администратор
+            // может читать всё» означает «никто не знает, что он читал».
+            //
+            // Отметку прочтения при этом не ставим — она принадлежит
+            // участникам беседы, и посторонний не должен её сдвигать:
+            // человек увидел бы, что сообщение «прочитано», хотя собеседник
+            // его не открывал.
+            await _audit.WriteAsync(
+                AuditAction.ViewConversation,
+                Title,
+                $"переписка №{conversation.Id}, участников: {conversation.Participants.Count}",
+                cancellationToken);
+        }
+        else
         {
             await _conversations.MarkReadAsync(conversation.Id, UserName, cancellationToken);
         }

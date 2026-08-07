@@ -130,10 +130,18 @@
        Данные для кода страницы передаются через data-атрибуты, а не через
        вставленный <script>: политика безопасности запрещает встроенные
        скрипты, и это правильно — так на страницу не попадёт чужой код. *@
+    @* Пределы едут на страницу числами, чтобы браузер мог сказать «этот файл
+       больше разрешённого» ДО отправки, а не после того как человек прождал
+       передачу гигабайта по каналу между офисами. Проверка на сервере при этом
+       никуда не девается (UploadValidator) — здесь только удобство. *@
     <div class="files-area" id="filesArea"
          data-folder-id="@(Model.Current?.Id.ToString() ?? "")"
          data-can-write="@canWrite.ToString().ToLowerInvariant()"
-         data-can-create-folder="@canCreateFolder.ToString().ToLowerInvariant()">
+         data-can-create-folder="@canCreateFolder.ToString().ToLowerInvariant()"
+         data-max-file-size="@Model.MaxFileSizeBytes"
+         data-quota="@(Model.QuotaBytes?.ToString() ?? "")"
+         data-used="@Model.UsedBytes"
+         data-blocked="@string.Join(" ", Model.BlockedExtensions)">
 
         <div id="filesContainer">
             @if (empty)

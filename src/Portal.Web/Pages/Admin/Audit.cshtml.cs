@@ -198,6 +198,7 @@ public class AuditModel : PageModel
         AuditAction.Preview => "предпросмотр",
         AuditAction.Move => "перемещение",
         AuditAction.PurgeAuditLog => "очистка журнала",
+        AuditAction.ViewConversation => "чтение переписки",
         _ => action.ToString()
     };
 }

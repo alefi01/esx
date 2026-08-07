@@ -62,6 +62,13 @@ public class IndexModel : PageModel
     public bool IsAdmin => User.IsInRole(_ad.AdminGroup);
 
     public long MaxFileSizeBytes { get; private set; }
+
+    /// <summary>
+    /// Запрещённые расширения — для проверки в браузере ДО отправки файла.
+    /// Настоящая проверка всё равно на сервере (см. UploadValidator);
+    /// здесь она нужна, чтобы не гнать по каналу то, что всё равно отвергнут.
+    /// </summary>
+    public IReadOnlyCollection<string> BlockedExtensions => _validator.BlockedExtensions;
     public long? QuotaBytes { get; private set; }
     public long UsedBytes { get; private set; }
 

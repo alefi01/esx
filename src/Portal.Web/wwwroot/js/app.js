@@ -285,6 +285,23 @@
         $('#cOk', m).onclick = () => { closeModal(); onOk(); };
     }
 
+    /**
+     * Окно «просто сообщение», с одной кнопкой.
+     *
+     * Отдельно от confirmDlg намеренно: там две кнопки, и вторая «Отмена»
+     * рядом с сообщением, которое ничего не запускает, заставляет искать
+     * разницу между ними там, где её нет.
+     */
+    function alertDlg(title, text, okLabel) {
+        const m = openModal({
+            title: esc(title),
+            body: `<p class="dlg-text">${esc(text)}</p>`,
+            foot: `<button class="btn primary" type="button" data-mclose>${esc(okLabel || 'Понятно')}</button>`
+        });
+
+        $$('[data-mclose]', m).forEach(b => { b.onclick = closeModal; });
+    }
+
     /** Окно с одним полем ввода: создать папку, переименовать. */
     function promptDlg(title, label, value, okLabel, onOk) {
         const m = openModal({
@@ -1068,8 +1085,97 @@
         })();
 
         // ---------- Загрузка файлов ----------
+
+        /** Размер по-человечески — теми же единицами, что и на сервере. */
+        function size(bytes) {
+            const units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+
+            let value = bytes;
+            let unit = 0;
+
+            while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+
+            return unit === 0
+                ? bytes + ' ' + units[0]
+                : value.toFixed(value < 10 ? 1 : 0).replace('.0', '').replace('.', ',') + ' ' + units[unit];
+        }
+
+        /**
+         * Что из выбранного сервер точно не примет.
+         *
+         * ЗАЧЕМ ПРОВЕРЯТЬ В БРАУЗЕРЕ, ЕСЛИ ЕСТЬ ПРОВЕРКА НА СЕРВЕРЕ
+         *
+         * Сервер отвергает негодный файл ПОСЛЕ того, как получит его целиком:
+         * иначе он не знает ни настоящего размера, ни имени. На канале между
+         * офисами это означает, что человек десять минут смотрит на полосу
+         * загрузки, чтобы в конце прочитать «файл больше разрешённого».
+         * Здесь размер известен сразу, ещё до первого отправленного байта.
+         *
+         * Проверка в браузере — УДОБСТВО, а не защита: код в браузере можно
+         * отключить и обойти. Настоящая проверка остаётся на сервере,
+         * в UploadValidator, и правила здесь повторяют её один в один.
+         */
+        function rejected(list) {
+            const maxFile = parseInt(settings.maxFileSize, 10) || 0;
+            const quota = settings.quota === '' ? null : parseInt(settings.quota, 10);
+            const blocked = (settings.blocked || '').split(' ').filter(Boolean);
+
+            let used = parseInt(settings.used, 10) || 0;
+
+            const bad = [];
+
+            [...list].forEach(file => {
+                const dot = file.name.lastIndexOf('.');
+                const extension = dot > 0 ? file.name.slice(dot).toLowerCase() : '';
+
+                if (file.size === 0) {
+                    bad.push(`«${file.name}» — файл пустой`);
+                    return;
+                }
+
+                if (extension && blocked.indexOf(extension) >= 0) {
+                    bad.push(`«${file.name}» — файлы ${extension} загружать запрещено`);
+                    return;
+                }
+
+                if (maxFile > 0 && file.size > maxFile) {
+                    bad.push(`«${file.name}» — ${size(file.size)}, ` +
+                        `а для этой папки разрешено не больше ${size(maxFile)}`);
+                    return;
+                }
+
+                if (quota !== null && used + file.size > quota) {
+                    bad.push(`«${file.name}» — в папке не хватает места: ` +
+                        `свободно ${size(Math.max(0, quota - used))}, нужно ${size(file.size)}`);
+                    return;
+                }
+
+                // Место, занятое годными файлами, учитываем сразу: иначе
+                // десять файлов по гигабайту поодиночке «влезают» в квоту,
+                // а вместе — нет, и об этом сообщил бы уже сервер.
+                used += file.size;
+            });
+
+            return bad;
+        }
+
         function upload(list) {
             if (!list || !list.length || !canWrite) { return; }
+
+            const bad = rejected(list);
+
+            if (bad.length) {
+                // Годные файлы всё равно не отправляем: человек выбрал папку
+                // целиком и ждёт, что уедет она целиком. Отправить половину
+                // молча — худший из вариантов, потому что заметят это нескоро.
+                alertDlg(
+                    bad.length === 1 ? 'Этот файл загрузить нельзя' : `Не пройдут проверку: ${bad.length}`,
+                    bad.slice(0, 10).join('\n')
+                        + (bad.length > 10 ? `\n…и ещё ${bad.length - 10}` : '')
+                        + '\n\nНичего не загружено. Уберите эти файлы из выбранного и повторите.');
+
+                return;
+            }
 
             const data = new FormData();
 
@@ -1225,6 +1331,28 @@
             attachBtn.onclick = () => files.click();
 
             files.onchange = () => {
+                // Слишком крупное вложение отсеиваем сразу. Сервер узнаёт
+                // настоящий размер, только получив файл целиком, — то есть
+                // сообщил бы об отказе после всего ожидания.
+                const limit = parseInt(settings.maxAttachment, 10) || 0;
+
+                const tooBig = limit > 0
+                    ? [...files.files].filter(f => f.size > limit)
+                    : [];
+
+                if (tooBig.length) {
+                    alertDlg(
+                        'Вложение слишком большое',
+                        tooBig.map(f => `«${f.name}» — ${fmtSize(f.size)}`).join('\n')
+                            + `\n\nВ переписку можно приложить файл не больше ${fmtSize(limit)}.`
+                            + '\nКрупный файл загрузите в «Файлы» и пришлите ссылку на него.');
+
+                    // Сбрасываем ВЕСЬ выбор, а не только крупные файлы:
+                    // выборочно вычистить FileList нельзя, а отправить часть
+                    // молча — худший вариант, такое замечают нескоро.
+                    files.value = '';
+                }
+
                 if (!attached) { return; }
 
                 attached.hidden = files.files.length === 0;
