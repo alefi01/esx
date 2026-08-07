@@ -97,12 +97,15 @@ public class FavoritesModel : PageModel
 
         var entries = new List<Portal.Web.Pages.Shared.FileEntry>();
 
+        var childCounts = await _tree.ChildCountsAsync(
+            User, folderItems.Select(i => i.Folder).ToList(), cancellationToken);
+
         foreach (var item in folderItems)
         {
             entries.Add(Portal.Web.Pages.Shared.FileEntry.ForFolder(
                 item.Folder,
                 Url.Page("Index", new { id = item.Folder.Id }) ?? "#",
-                item.Folder.Children.Count(child => _tree.IsVisible(User, child)),
+                childCounts.GetValueOrDefault(item.Folder.Id),
                 favorite: true,
                 canManage: _tree.CanManage(User, item.Folder),
                 path: item.Path));

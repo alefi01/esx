@@ -193,10 +193,27 @@
                         <div class="msg sys"><div class="bubble">Сообщений пока нет. Напишите первое.</div></div>
                     }
 
+                    @* День отбивается один раз — там, где он меняется.
+                       Под сообщением стоит только время, и без такой отбивки
+                       вчерашнее «14:20» ничем не отличается от сегодняшнего. *@
+                    @{
+                        var today = DateTime.Now.Date;
+                        var lastDay = default(DateTime?);
+                    }
+
                     @foreach (var message in Model.Items)
                     {
                         var mine = string.Equals(message.AuthorUserName, Model.UserName,
                             StringComparison.OrdinalIgnoreCase);
+
+                        var at = message.CreatedAt.ToLocalTime();
+
+                        if (lastDay != at.Date)
+                        {
+                            lastDay = at.Date;
+
+                            <div class="day-sep"><span>@Portal.Web.Pages.Messages.IndexModel.DayLabel(at.Date, today)</span></div>
+                        }
 
                         <div class="msg@(mine ? " mine" : "")" data-message="@message.Id">
                             @if (!mine)
@@ -235,8 +252,11 @@
                                     }
                                 }
 
-                                <div class="b-time">
-                                    @message.CreatedAt.ToLocalTime().ToString("HH:mm")
+                                @* В подсказке — полные дата и время: разделитель
+                                   дня отвечает на вопрос «когда» для всей пачки
+                                   сообщений, а здесь его можно уточнить по одному. *@
+                                <div class="b-time" title="@at.ToString("dd.MM.yyyy HH:mm")">
+                                    @at.ToString("HH:mm")
 
                                     @if (message.DeletedAt is null && (mine || Model.IsOutsideObserver))
                                     {

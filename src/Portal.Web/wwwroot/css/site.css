@@ -922,3 +922,34 @@ a{color:inherit;text-decoration:none}
 /* Метки состояния обмена. Тот же вид, что у меток «закреплено»/«важно». */
 .chip.ok{background:rgba(30,142,90,.12);color:var(--ok)}
 .chip.danger{background:rgba(229,72,77,.1);color:var(--danger)}
+
+/* ======================================================================
+   Одиночный сервер: правки предпросмотра
+   ====================================================================== */
+
+/* Видео не должно вылезать за края окна предпросмотра.
+   Раньше проигрывателю задавалась только ширина, а высота оставалась
+   «сколько получится по кадру»: вертикальная запись или запись 4:3
+   вырастала выше окна, и нижний край с кнопками уезжал за границу.
+   Теперь размер задан по обеим сторонам, а object-fit:contain вписывает
+   кадр внутрь целиком — без обрезки и без искажения пропорций. */
+.pv-viewer.pv-viewer--frame .player-media--video{
+  width:100%;height:100%;max-width:100%;max-height:100%;
+  margin:0;object-fit:contain;background:#000;border-radius:14px}
+
+/* Книга Excel: полоса прокрутки вбок — одна, внизу всего окна.
+   Раньше прокручивался каждый лист по отдельности (.doc__table
+   с overflow-x), и полоса пряталась под следующим листом: чтобы сдвинуть
+   вправо второй лист, приходилось искать его собственную полосу.
+   Теперь листы разворачиваются на всю нужную ширину, а прокручивает
+   их .pv-viewer — тот же, что даёт вертикальную полосу справа. */
+.pv-viewer.pv-viewer--book{justify-content:flex-start}
+.doc.doc--book{max-width:none;width:max-content;min-width:100%;flex:none}
+.doc.doc--book .doc__table{display:table;width:auto;overflow:visible}
+
+/* Отбивка дня в переписке: подпись по центру, черта по бокам. */
+.day-sep{display:flex;align-items:center;gap:10px;margin:6px 0 2px;color:var(--muted);
+  font-size:11px;font-weight:600}
+.day-sep::before,.day-sep::after{content:'';flex:1;height:1px;background:var(--border)}
+.day-sep span{flex:none;background:var(--surface2);border:1px solid var(--border);
+  border-radius:999px;padding:3px 11px;white-space:nowrap}

@@ -654,7 +654,27 @@
             if (node) { open(info(node), node); }
         });
 
-        container.addEventListener('contextmenu', e => {
+        // Меню открывается по ВСЕЙ рабочей области страницы, а не только
+        // по плиткам и пустому месту между ними. Раньше слушатель висел
+        // на списке, и правее последней плитки — там, где список кончается, —
+        // выпадало меню самого браузера. Человек при этом целится в «пустое
+        // место рабочей области», и разницу между «пусто внутри списка»
+        // и «пусто под списком» видит только разметка.
+        const area = files.closest('.view') || files;
+
+        area.addEventListener('contextmenu', e => {
+            // Поля ввода и уже выделенный текст оставляем браузеру: там его
+            // меню и нужно — «вставить», «проверить орфографию», «копировать».
+            if (e.target.closest('input, textarea, select')) {
+                return;
+            }
+
+            const selection = window.getSelection();
+
+            if (selection && !selection.isCollapsed && e.target.closest('a, p, .search-note')) {
+                return;
+            }
+
             const node = e.target.closest('[data-id]');
 
             e.preventDefault();
@@ -663,6 +683,7 @@
                 select(node);
                 itemMenu(info(node), e.clientX, e.clientY);
             } else {
+                select(null);
                 areaMenu(e.clientX, e.clientY);
             }
         });
@@ -692,6 +713,25 @@
             if (item.file) {
                 entries.push({ icon: 'download', label: 'Скачать', fn: () => { window.location.href = item.href; } });
             }
+
+            // Ускоренное скачивание. Портал сжимает выбранное в архив и отдаёт
+            // одним потоком: документы ужимаются в разы, а папка приходит
+            // одним файлом вместо десятков отдельных скачиваний.
+            //
+            // Адрес открывается сменой location, а не fetch: скачивание должен
+            // вести сам браузер — со своей полосой в списке загрузок, паузой
+            // и возобновлением. Забрать архив в память страницы значило бы
+            // держать в ней целую папку.
+            entries.push({
+                icon: 'download',
+                label: item.folder ? 'Скачать папку архивом' : 'Скачать архивом (быстрее)',
+                fn: () => {
+                    toast('Готовим архив, скачивание начнётся само', 'info');
+
+                    window.location.href = '/Files?handler=DownloadZip&'
+                        + (item.file ? 'fileId=' + item.file : 'folderId=' + item.folder);
+                }
+            });
 
             entries.push({
                 icon: 'star',
@@ -729,6 +769,18 @@
 
             if (canWrite) {
                 entries.push({ icon: 'upload', label: 'Загрузить файлы', fn: () => $('#fileInput').click() });
+            }
+
+            if (folderId) {
+                entries.push({
+                    icon: 'download',
+                    label: 'Скачать эту папку архивом',
+                    fn: () => {
+                        toast('Готовим архив, скачивание начнётся само', 'info');
+
+                        window.location.href = '/Files?handler=DownloadZip&folderId=' + folderId;
+                    }
+                });
             }
 
             entries.push({ sep: 1 });
@@ -1555,7 +1607,21 @@
         }
 
         if (item.kind === 'office') {
-            html('/Files?handler=OfficePreview&fileId=' + item.file);
+            html('/Files?handler=OfficePreview&fileId=' + item.file, markup => {
+                // Книга Excel шире окна, и прокручивает её само окно
+                // предпросмотра — одной полосой внизу, вместо своей полосы
+                // у каждого листа. Но окно выравнивает содержимое по центру,
+                // а то, что шире центрирующего его поля, вылезает за края
+                // С ОБЕИХ сторон — и до левого края потом не доехать никакой
+                // прокруткой. Поэтому книге выравнивание переключается
+                // на «от левого края».
+                if (markup.indexOf('doc--book') >= 0) {
+                    viewer.classList.add('pv-viewer--book');
+                }
+
+                return markup;
+            });
+
             return;
         }
 

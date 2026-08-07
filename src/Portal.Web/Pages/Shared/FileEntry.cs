@@ -44,6 +44,10 @@ public sealed record FileEntry(
     /// Объём показывается не всем: размер папки — косвенный признак того,
     /// что в ней лежит. Кому его видно, решает страница (см. ShowSizes),
     /// и передаёт сюда уже готовое значение либо null.
+    ///
+    /// В childCount входят И подпапки, И файлы. Считать одни подпапки нельзя:
+    /// папка с двумя десятками документов, но без вложенных папок, подписывалась
+    /// бы «пусто» — прямая неправда, из-за которой в неё не заходят.
     /// </summary>
     public static FileEntry ForFolder(
         StorageFolder folder, string href, int childCount, bool favorite, bool canManage,

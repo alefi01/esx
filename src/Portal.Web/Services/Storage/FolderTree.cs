@@ -154,6 +154,51 @@ public sealed class FolderTree
         return folder.Children.Any(child => IsVisible(user, child));
     }
 
+    /// <summary>
+    /// Сколько элементов лежит в каждой из перечисленных папок: видимые
+    /// подпапки плюс файлы самой папки.
+    ///
+    /// Нужно для подписи под плиткой — «пусто» или «7 элем.». Считать одни
+    /// подпапки нельзя: папка с документами, но без вложенных папок,
+    /// подписывалась бы «пусто», и в неё просто не стали бы заходить.
+    ///
+    /// Файлы считаются одним запросом на весь список, а не запросом на папку:
+    /// по запросу на строку списка — это классический способ незаметно
+    /// посадить страницу. Файлы учитываются только там, куда человеку
+    /// разрешено смотреть: количество файлов в закрытой папке — тоже сведения.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<int, int>> ChildCountsAsync(
+        ClaimsPrincipal user,
+        IReadOnlyCollection<StorageFolder> folders,
+        CancellationToken cancellationToken = default)
+    {
+        var counts = new Dictionary<int, int>();
+
+        if (folders.Count == 0)
+        {
+            return counts;
+        }
+
+        var readable = folders.Where(f => CanRead(user, f)).Select(f => f.Id).ToList();
+
+        var files = readable.Count == 0
+            ? []
+            : await _db.Files
+                .Where(f => readable.Contains(f.FolderId) && f.DeletedAt == null)
+                .GroupBy(f => f.FolderId)
+                .Select(g => new { FolderId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.FolderId, x => x.Count, cancellationToken);
+
+        foreach (var folder in folders)
+        {
+            counts[folder.Id] =
+                folder.Children.Count(child => IsVisible(user, child))
+                + files.GetValueOrDefault(folder.Id);
+        }
+
+        return counts;
+    }
+
     /// <summary>Путь от корня до папки — для «хлебных крошек» и журнала действий.</summary>
     public IReadOnlyList<StorageFolder> PathTo(StorageFolder folder)
     {

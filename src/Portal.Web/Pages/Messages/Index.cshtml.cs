@@ -617,4 +617,38 @@ public class IndexModel : PageModel
     }
 
     public static string FormatSize(long bytes) => UploadValidator.Format(bytes);
+
+    /// <summary>
+    /// Подпись разделителя дня в переписке: «Сегодня», «Вчера» либо дата.
+    ///
+    /// Под каждым сообщением стоит только время — этого достаточно, пока
+    /// читаешь сегодняшнюю переписку, и совершенно недостаточно во всех
+    /// остальных случаях: «14:20» без дня не говорит ничего. Дату к каждому
+    /// сообщению не приписываем — она повторялась бы десятки раз подряд;
+    /// вместо этого день отбивается один раз, там, где он меняется.
+    ///
+    /// Год показывается только у прошлых лет: в этом году он и так понятен,
+    /// а строка от него становится длиннее без всякой пользы.
+    /// </summary>
+    public static string DayLabel(DateTime localDay, DateTime localToday)
+    {
+        if (localDay == localToday)
+        {
+            return "Сегодня";
+        }
+
+        if (localDay == localToday.AddDays(-1))
+        {
+            return "Вчера";
+        }
+
+        // Culture задаётся явно, а не берётся у сервера: на английской
+        // сборке Windows названия месяцев были бы английскими, и в русской
+        // переписке появилось бы «12 August».
+        var ru = System.Globalization.CultureInfo.GetCultureInfo("ru-RU");
+
+        return localDay.Year == localToday.Year
+            ? localDay.ToString("d MMMM", ru)
+            : localDay.ToString("d MMMM yyyy", ru);
+    }
 }
