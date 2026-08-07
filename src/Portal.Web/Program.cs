@@ -39,6 +39,10 @@ builder.Services.Configure<SecurityOptions>(
 builder.Services.Configure<StorageOptions>(
     builder.Configuration.GetSection(StorageOptions.SectionName));
 
+// Как портал называется и чем подписан — см. BrandingOptions.
+builder.Services.Configure<BrandingOptions>(
+    builder.Configuration.GetSection(BrandingOptions.SectionName));
+
 // Часть настроек нужна прямо здесь, при сборке конвейера, а не через DI.
 var security = builder.Configuration
     .GetSection(SecurityOptions.SectionName).Get<SecurityOptions>() ?? new SecurityOptions();
@@ -304,6 +308,14 @@ builder.Services.AddScoped<NotificationService>();
 // и лежит в памяти минуту (см. StorageUsage), но берётся из базы — Scoped.
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<StorageUsage>();
+
+// Настройки, которые администратор меняет из браузера (общий объём
+// хранилища). Лежат в базе — Scoped.
+builder.Services.AddScoped<PortalSettings>();
+
+// Список фоновых тем — картинок из папки wwwroot\img\themes. К базе
+// не обращается, читает папку раз в минуту, поэтому Singleton.
+builder.Services.AddSingleton<Portal.Web.Services.Appearance.BackgroundCatalog>();
 
 // Личные отметки «в избранном». Обращаются к базе — Scoped.
 builder.Services.AddScoped<FavoriteService>();
@@ -597,6 +609,42 @@ app.MapPost("/api/notifications/seen", async (
 // Простая точка проверки живости — открывается без входа.
 // Удобна для мониторинга и для проверки, что сайт вообще поднялся.
 app.MapGet("/healthz", () => Results.Text("ok")).AllowAnonymous();
+
+// ---------------------------------------------------------------------------
+// Значок вкладки браузера.
+//
+// Рисуется КОДОМ, а не лежит файлом: тогда он сам меняется вслед
+// за названием портала и фирменным цветом из секции Branding, и класть
+// на сервер ещё одну картинку не нужно. Если у организации есть готовый
+// логотип, укажите его в Branding:LogoFile — тогда значком станет он
+// (см. _Layout.cshtml), а этот адрес просто останется невостребованным.
+//
+// Открывается БЕЗ входа: значок браузер запрашивает раньше, чем человек
+// успевает войти, и на странице входа он тоже должен быть.
+// ---------------------------------------------------------------------------
+app.MapGet("/favicon.svg", (Microsoft.Extensions.Options.IOptions<BrandingOptions> branding) =>
+{
+    var value = branding.Value;
+
+    var letter = string.IsNullOrWhiteSpace(value.Title)
+        ? "П"
+        : value.Title.TrimStart()[..1].ToUpperInvariant();
+
+    // Цвет и буква подставляются в разметку, поэтому кодируются: значение
+    // приходит из файла настроек, но правило «всё, что подставляется,
+    // кодируется» не должно знать исключений.
+    var color = System.Net.WebUtility.HtmlEncode(value.AccentColor);
+    var text = System.Net.WebUtility.HtmlEncode(letter);
+
+    var svg =
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\">" +
+        $"<rect width=\"64\" height=\"64\" rx=\"14\" fill=\"{color}\"/>" +
+        "<text x=\"32\" y=\"44\" text-anchor=\"middle\" fill=\"#fff\" " +
+        $"font-family=\"Segoe UI, Arial, sans-serif\" font-size=\"38\" font-weight=\"700\">{text}</text>" +
+        "</svg>";
+
+    return Results.Text(svg, "image/svg+xml");
+}).AllowAnonymous();
 
 app.Run();
 

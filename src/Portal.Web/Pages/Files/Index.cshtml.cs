@@ -522,6 +522,12 @@ public class IndexModel : PageModel
     /// Снимки, видео и уже готовые архивы сжаты внутри себя и от второго
     /// прохода не уменьшаются ни на процент — только отнимают время
     /// у остальных файлов. Их кладём в архив как есть.
+    ///
+    /// Всё остальное жмём НА МАКСИМУМ (SmallestSize). Портал отдаёт архив
+    /// по сети, и узкое место здесь — канал, а не процессор сервера:
+    /// лишние секунды сжатия окупаются меньшим объёмом передачи. На папках
+    /// с документами разница с обычным сжатием — проценты объёма, но платит
+    /// за них сервер, а выигрывает каждый скачивающий.
     /// </summary>
     private static System.IO.Compression.CompressionLevel CompressionFor(string name) =>
         Path.GetExtension(name).ToLowerInvariant() switch
@@ -531,7 +537,7 @@ public class IndexModel : PageModel
                 or ".zip" or ".7z" or ".rar" or ".gz" or ".xz"
                 => System.IO.Compression.CompressionLevel.NoCompression,
 
-            _ => System.IO.Compression.CompressionLevel.Optimal
+            _ => System.IO.Compression.CompressionLevel.SmallestSize
         };
 
     public async Task<IActionResult> OnPostUploadAsync(

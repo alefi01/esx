@@ -1,0 +1,73 @@
+@page
+@model Portal.Web.Pages.Admin.SettingsModel
+@{
+    ViewData["Title"] = "Настройки портала";
+}
+
+<section class="view active">
+
+<h1>Настройки портала</h1>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert ok" role="status">@Model.StatusMessage</div>
+}
+
+<div class="card">
+    <h2>Размер портала</h2>
+
+    <form method="post">
+        @* Полоса с ошибками рисуется, только когда ошибки есть: пустая
+           красная рамка над формой выглядит как «что-то не так»
+           на странице, которую человек ещё и открыть не успел. *@
+        @if (!ViewData.ModelState.IsValid)
+        {
+            <div asp-validation-summary="All" class="alert err"></div>
+        }
+
+        <div class="field">
+            <label asp-for="Input.TotalCapacityGb">Максимальный размер портала, ГБ</label>
+            <input asp-for="Input.TotalCapacityGb" type="number" min="0" max="1000000" />
+            <span asp-validation-for="Input.TotalCapacityGb" class="err"></span>
+            <p class="hint">
+                Это число показывается в карточке «Хранилище» внизу бокового меню:
+                по нему видно, сколько места уже занято и сколько осталось.
+                <strong>0 — предел не задан</strong>, портал показывает только занятое.
+                <br />
+                Портал <strong>ничего не запрещает</strong> по этому числу: загрузка
+                не остановится, когда место кончится. Предел на отдельную папку
+                задаётся в настройках самой папки — там он и действует.
+                <br />
+                Сейчас занято: <strong>@Model.Usage.Caption</strong>.
+            </p>
+        </div>
+
+        <div class="inline-form">
+            <button class="btn primary" type="submit">Сохранить</button>
+            <p class="hint">
+                Значение хранится в базе и действует сразу, перезапускать
+                пул приложений не нужно. Цифра в боковом меню обновляется
+                в течение минуты — она кэшируется.
+            </p>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Что настраивается в файле</h2>
+
+    <p class="hint">
+        Название портала, подпись под ним и логотип задаются в секции
+        <code>Branding</code> файла <code>appsettings.json</code>, названия офисов —
+        в секции <code>Offices</code>. Эти строки меняют раз в несколько лет,
+        и держать ради них поле ввода в портале незачем.
+    </p>
+
+    <p class="hint">
+        Фоны рабочего пространства — картинки в папке <code>wwwroot\img\themes</code>
+        рядом с приложением. Имя файла становится названием темы в списке,
+        показываются первые пять по алфавиту.
+    </p>
+</div>
+
+</section>

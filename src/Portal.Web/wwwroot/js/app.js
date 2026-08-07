@@ -368,27 +368,133 @@
 
         if (!burger || !sidebar) { return; }
 
-        burger.onclick = () => sidebar.classList.toggle('open');
+        // Ширина, ниже которой меню становится выезжающим. Держится
+        // в одном месте со стилями: то же число стоит в site.css.
+        const NARROW = '(max-width:1100px)';
+
+        const narrow = () => window.matchMedia(NARROW).matches;
+
+        // Три полоски работают при ЛЮБОЙ ширине окна, а не только
+        // на узком экране. На широком меню не выезжает поверх страницы,
+        // а убирается совсем — рабочая область становится шире, и это
+        // единственное, ради чего его там прячут. Раньше кнопка на широком
+        // экране просто не показывалась, и убрать меню было нельзя.
+        burger.onclick = () => {
+            if (narrow()) {
+                sidebar.classList.toggle('open');
+            } else {
+                document.body.classList.toggle('nav-hidden');
+            }
+        };
+
+        // Окно растянули на весь экран — выезжающее меню закрываем:
+        // иначе оно осталось бы висеть поверх страницы уже без причины.
+        window.addEventListener('resize', () => {
+            if (!narrow()) { sidebar.classList.remove('open'); }
+        });
 
         // Нажали пункт меню — оно закрывается: после перехода на другую
-        // страницу открытое меню только мешает.
+        // страницу открытое меню только мешает. На широком экране меню
+        // не трогаем: там оно спрятано осознанно и само возвращаться
+        // не должно.
         sidebar.addEventListener('click', e => {
             if (e.target.closest('.nav-item')) { sidebar.classList.remove('open'); }
         });
     })();
 
-    // Переключатель темы.
+    // Фирменный цвет квадрата с логотипом (Branding:AccentColor).
+    //
+    // Цвет приходит из настроек сервера, поэтому задаётся кодом: встроенный
+    // стиль style="background:…" запрещён политикой безопасности страницы.
+    // Если браузер не понимает color-mix, присваивание молча не подействует
+    // и останется гладиент из стилей — это допустимо, квадрат просто будет
+    // прежнего цвета.
+    (function () {
+        const logo = $('.brand-logo');
+        const color = document.body.dataset.accent;
+
+        if (!logo || !color) { return; }
+
+        logo.style.background =
+            `linear-gradient(135deg, color-mix(in srgb, ${color} 62%, #fff), ${color})`;
+    })();
+
+    // Оформление: тема и фон рабочего пространства.
     (function () {
         const button = $('#themeBtn');
+        const panel = $('#themePanel');
         const iconUse = $('#themeIconUse');
 
         if (!button || !window.portalTheme) { return; }
 
-        const paint = mode => iconUse.setAttribute('href', mode === 'dark' ? '#i-sun' : '#i-moon');
+        // Запомненный фон ставится здесь, а не в theme.js: там, в <head>,
+        // слоя под картинку ещё не существует.
+        window.portalTheme.restoreBackground();
 
-        paint(window.portalTheme.current());
+        // Значок на кнопке показывает, что произойдёт при смене темы:
+        // на светлой — луна, на тёмной — солнце.
+        const paint = () => {
+            const mode = window.portalTheme.current();
+            const background = window.portalTheme.background();
 
-        button.onclick = () => paint(window.portalTheme.toggle());
+            iconUse.setAttribute('href', mode === 'dark' ? '#i-sun' : '#i-moon');
+
+            if (!panel) { return; }
+
+            $$('[data-theme-mode]', panel).forEach(row =>
+                row.classList.toggle('on', row.dataset.themeMode === mode));
+
+            $$('[data-theme-bg]', panel).forEach(row =>
+                row.classList.toggle('on', row.dataset.themeBg === background));
+        };
+
+        paint();
+
+        // Панели нет только если разметка старая — но кнопка должна
+        // работать в любом случае, иначе тему станет не сменить вовсе.
+        if (!panel) {
+            button.onclick = () => { window.portalTheme.toggle(); paint(); };
+
+            return;
+        }
+
+        const close = () => {
+            panel.hidden = true;
+            button.setAttribute('aria-expanded', 'false');
+        };
+
+        button.onclick = e => {
+            e.stopPropagation();
+
+            panel.hidden = !panel.hidden;
+            button.setAttribute('aria-expanded', String(!panel.hidden));
+        };
+
+        panel.addEventListener('click', e => {
+            const row = e.target.closest('[data-theme-mode],[data-theme-bg]');
+
+            if (!row) { return; }
+
+            if (row.dataset.themeMode) {
+                window.portalTheme.set(row.dataset.themeMode);
+            } else {
+                window.portalTheme.setBackground(row.dataset.themeBg, row.dataset.themeUrl || '');
+            }
+
+            paint();
+
+            // Список не закрываем: тему и фон обычно выбирают подряд,
+            // и закрытие после каждого нажатия заставляло бы открывать
+            // его заново.
+        });
+
+        document.addEventListener('click', e => {
+            if (!panel.hidden && !e.target.closest('.theme-wrap')) { close(); }
+        });
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') { close(); }
+        });
     })();
 
     // Сообщение, оставленное сервером после перезагрузки страницы.

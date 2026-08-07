@@ -70,7 +70,7 @@ input,textarea,select{font-family:inherit;color:var(--text)}
    2. Верхняя полоса
    ====================================================================== */
 .topbar{height:60px;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--topbar);backdrop-filter:blur(18px);position:relative;z-index:50}
-.burger{display:none}
+.burger{display:flex}
 .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:16px;letter-spacing:-.2px;white-space:nowrap}
 .brand-logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--accent-2),var(--accent));display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,103,192,.35)}
 .brand-logo svg{width:18px;height:18px;color:#fff}
@@ -953,3 +953,63 @@ a{color:inherit;text-decoration:none}
 .day-sep::before,.day-sep::after{content:'';flex:1;height:1px;background:var(--border)}
 .day-sep span{flex:none;background:var(--surface2);border:1px solid var(--border);
   border-radius:999px;padding:3px 11px;white-space:nowrap}
+
+/* ======================================================================
+   Оформление: меню тем, фон рабочего пространства, скрываемое меню
+   ====================================================================== */
+
+/* Пелена поверх картинки-фона. Без неё поверх фотографии не читается
+   ни один мелкий текст, а его в портале почти весь. */
+:root{--bg-veil:rgba(238,241,246,.62)}
+[data-theme="dark"]{--bg-veil:rgba(20,23,31,.66)}
+
+/* Слой с картинкой лежит ПОД содержимым рабочей области. Отдельным слоем,
+   а не фоном самой области: картинку нужно размыть, а filter размыл бы
+   вместе с ней и весь текст поверх. */
+.bg-layer{position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+
+/* Поля -40 пикселей: размытие «съедает» края и по периметру осталась бы
+   светлая кайма. Растягиваем картинку за границы и обрезаем по слою. */
+.bg-layer i{position:absolute;inset:-40px;display:block;
+  background-size:cover;background-position:center;filter:blur(7px)}
+.bg-layer::after{content:'';position:absolute;inset:0;background:var(--bg-veil)}
+
+/* Содержимое — над фоном. Без этого картинка легла бы поверх страницы. */
+.main>.view{position:relative;z-index:1}
+
+/* Меню оформления. Устроено как панель уведомлений рядом. */
+.theme-wrap{position:relative}
+.theme-panel{position:absolute;right:0;top:calc(100% + 8px);z-index:80;width:250px;
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  box-shadow:var(--shadow-lg);padding:7px;animation:fadeUp .18s ease}
+.theme-group{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--muted);padding:8px 9px 5px}
+.theme-row{display:flex;align-items:center;gap:9px;width:100%;padding:8px 9px;border-radius:9px;
+  font-size:13px;color:var(--text);background:none;border:none;cursor:pointer;text-align:left}
+.theme-row:hover{background:var(--surface2)}
+.theme-row span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.theme-row .tick{flex:none;opacity:0;color:var(--accent)}
+.theme-row.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.theme-row.on .tick{opacity:1}
+.theme-note{font-size:11.5px;line-height:1.5;color:var(--muted);padding:4px 9px 8px}
+
+/* Меню, убранное кнопкой с тремя полосками на широком экране.
+   Именно display:none, а не нулевая ширина: убранное меню не должно
+   ловить нажатия и попадать в обход по клавише Tab. */
+body.nav-hidden .sidebar{display:none}
+
+/* Длинное слово в объявлении (адрес, номер договора без пробелов)
+   не должно вылезать за карточку — переносим его по буквам.
+   Заодно и заголовок: он однострочный, но слово в нём бывает длиннее. */
+.ann-card h3,.ann-card p{overflow-wrap:anywhere;word-break:break-word;min-width:0}
+.ann-card{min-width:0}
+
+/* На узком экране меню и так выезжающее, и прячет его тот же бургер
+   классом open. Признак «убрано» здесь не действует — иначе меню,
+   спрятанное на широком экране, нельзя было бы открыть на узком. */
+@media (max-width:1100px){
+  body.nav-hidden .sidebar{display:flex}
+}
+
+/* Свой логотип картинкой вместо встроенного значка (Branding:LogoFile). */
+.brand-logo img{width:100%;height:100%;object-fit:contain;border-radius:9px;display:block}

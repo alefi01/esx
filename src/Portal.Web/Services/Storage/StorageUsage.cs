@@ -1,7 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Options;
-using Portal.Web.Configuration;
 using Portal.Web.Data;
 
 namespace Portal.Web.Services.Storage;
@@ -50,7 +48,12 @@ public sealed record StorageUsageInfo(long UsedBytes, long TrashBytes, long Tota
 /// </summary>
 public sealed class StorageUsage
 {
-    private const string CacheKey = "storage-usage";
+    /// <summary>
+    /// Ключ кэша. Не private: его сбрасывает PortalSettings, когда
+    /// администратор поменял общий объём, — иначе новая цифра появилась бы
+    /// в боковом меню только через минуту, и правка выглядела бы не сработавшей.
+    /// </summary>
+    internal const string CacheKey = "storage-usage";
     private static readonly TimeSpan CacheFor = TimeSpan.FromSeconds(60);
 
     /// <summary>Насколько запоминаем неудачу — см. комментарий в GetAsync.</summary>
@@ -58,18 +61,18 @@ public sealed class StorageUsage
 
     private readonly IMemoryCache _cache;
     private readonly PortalDbContext _db;
-    private readonly StorageOptions _options;
+    private readonly PortalSettings _settings;
     private readonly ILogger<StorageUsage> _logger;
 
     public StorageUsage(
         IMemoryCache cache,
         PortalDbContext db,
-        IOptions<StorageOptions> options,
+        PortalSettings settings,
         ILogger<StorageUsage> logger)
     {
         _cache = cache;
         _db = db;
-        _options = options.Value;
+        _settings = settings;
         _logger = logger;
     }
 
@@ -80,7 +83,9 @@ public sealed class StorageUsage
             return cached;
         }
 
-        var total = (long)_options.TotalCapacityGb * 1024 * 1024 * 1024;
+        // Общий объём задаёт администратор из портала; пока он там ничего
+        // не задал, действует значение из appsettings (см. PortalSettings).
+        var total = (long)await _settings.TotalCapacityGbAsync(cancellationToken) * 1024 * 1024 * 1024;
 
         try
         {

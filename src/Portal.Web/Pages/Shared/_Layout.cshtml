@@ -2,8 +2,16 @@
 @using Portal.Web.Configuration
 @using Portal.Web.Services.Storage
 @inject IOptions<ActiveDirectoryOptions> AdOptions
+@inject IOptions<BrandingOptions> BrandingOptions
 @inject StorageUsage Usage
+@inject Portal.Web.Services.Appearance.BackgroundCatalog Backgrounds
 @{
+    var brand = BrandingOptions.Value;
+
+    // Значок вкладки: свой файл, если он указан, иначе нарисованный
+    // порталом (см. /favicon.svg в Program.cs).
+    var favicon = string.IsNullOrWhiteSpace(brand.LogoFile) ? "/favicon.svg" : brand.LogoFile;
+
     var adminGroup = AdOptions.Value.AdminGroup;
     var isAdmin = User.IsInRole(adminGroup);
     var signedIn = User.Identity?.IsAuthenticated == true;
@@ -14,6 +22,12 @@
     var usage = signedIn
         ? await Usage.GetAsync(Context.RequestAborted)
         : new StorageUsageInfo(0, 0, 0, Known: false);
+
+    // Фоновые темы — картинки, которые администратор положил в папку.
+    // Пусто — в меню остаются только светлая и тёмная.
+    var backgrounds = signedIn
+        ? Backgrounds.All()
+        : (IReadOnlyList<Portal.Web.Services.Appearance.BackgroundTheme>)[];
 
     var path = Context.Request.Path.Value ?? "/";
 
@@ -50,7 +64,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
-    <title>@ViewData["Title"] — Портал</title>
+    <title>@ViewData["Title"] — @brand.Title</title>
+
+    @* Значок вкладки. Тип не указываем: браузер разберётся сам,
+       а .svg, .png и .ico здесь одинаково допустимы. *@
+    <link rel="icon" href="@favicon" />
 
     @* Стили, шрифт и код лежат локально: внешние CDN в вашей сети недоступны. *@
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
@@ -59,7 +77,7 @@
        человек с тёмной темой на долю секунды увидит светлый фон. *@
     <script src="~/js/theme.js" asp-append-version="true"></script>
 </head>
-<body>
+<body data-accent="@brand.AccentColor">
 
 @* Набор значков подключается один раз и дальше используется по ссылке. *@
 <partial name="_Icons" />
@@ -71,8 +89,17 @@
     </button>
 
     <a class="brand" asp-page="/Index">
-        <div class="brand-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-folder" /></svg></div>
-        <div>Портал<small>корпоративный портал</small></div>
+        <div class="brand-logo">
+            @if (string.IsNullOrWhiteSpace(brand.LogoFile))
+            {
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-@brand.LogoIcon" /></svg>
+            }
+            else
+            {
+                <img src="@brand.LogoFile" alt="" />
+            }
+        </div>
+        <div>@brand.Title<small>@brand.Subtitle</small></div>
     </a>
 
     @if (signedIn)
@@ -89,9 +116,74 @@
     <div class="top-actions">
         @if (signedIn)
         {
-            <button class="icon-btn" id="themeBtn" type="button" title="Сменить тему">
-                <svg class="ic" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-moon" id="themeIconUse" /></svg>
-            </button>
+            @* Оформление. Кнопка не переключает тему сразу, а открывает
+               список: тем стало больше двух, и «следующая по кругу»
+               перестала быть понятной — до нужной пришлось бы щёлкать
+               несколько раз, не зная, сколько именно.
+
+               Фон рабочего пространства выбирается ОТДЕЛЬНО от светлой
+               и тёмной темы, а не вместо них: цвет надписей, полей
+               и карточек задаёт тема, картинка ложится только под
+               содержимое страницы. Поэтому любой фон работает и на светлой,
+               и на тёмной. *@
+            <div class="theme-wrap">
+                <button class="icon-btn" id="themeBtn" type="button" title="Оформление"
+                        aria-haspopup="true" aria-expanded="false">
+                    <svg class="ic" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-moon" id="themeIconUse" /></svg>
+                </button>
+
+                <div class="theme-panel" id="themePanel" hidden>
+                    <div class="theme-group">Тема</div>
+
+                    <button class="theme-row" type="button" data-theme-mode="light">
+                        <svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-sun" /></svg>
+                        <span>Светлая</span>
+                        <svg class="ic tick" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
+                    </button>
+
+                    <button class="theme-row" type="button" data-theme-mode="dark">
+                        <svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-moon" /></svg>
+                        <span>Тёмная</span>
+                        <svg class="ic tick" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
+                    </button>
+
+                    <div class="theme-group">Фон рабочего пространства</div>
+
+                    <button class="theme-row" type="button" data-theme-bg="">
+                        <svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-x" /></svg>
+                        <span>Без фона</span>
+                        <svg class="ic tick" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
+                    </button>
+
+                    @foreach (var background in backgrounds)
+                    {
+                        @* Адрес картинки едет в data-атрибуте, а не во встроенном
+                           стиле: встроенные стили запрещены политикой безопасности
+                           страницы, и style="background-image:…" браузер молча
+                           отбросил бы. Ставит фон код страницы. *@
+                        <button class="theme-row" type="button"
+                                data-theme-bg="@background.Id" data-theme-url="@background.Url">
+                            <svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-image" /></svg>
+                            <span>@background.Name</span>
+                            <svg class="ic tick" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
+                        </button>
+                    }
+
+                    @if (backgrounds.Count == 0)
+                    {
+                        <p class="theme-note">
+                            @if (isAdmin)
+                            {
+                                @:Положите картинки в папку wwwroot\img\themes — они появятся здесь списком.
+                            }
+                            else
+                            {
+                                @:Фоны пока не заданы администратором.
+                            }
+                        </p>
+                    }
+                </div>
+            </div>
 
             @* Список уведомлений наполняет код страницы: он раз в минуту
                спрашивает сервер, нет ли нового. Здесь только заготовка. *@
@@ -170,6 +262,10 @@
                 <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-eye" /></svg>Журнал
             </a>
 
+            <a class="nav-item@(Nav("/Admin/Settings"))" asp-page="/Admin/Settings">
+                <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-scale" /></svg>Настройки портала
+            </a>
+
             <a class="nav-item@(Nav("/Admin/Diagnostics"))" asp-page="/Admin/Diagnostics">
                 <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-info" /></svg>Диагностика
             </a>
@@ -188,6 +284,12 @@
     </aside>
 
     <main class="main">
+        @* Картинка-фон рабочего пространства. Лежит ПОД содержимым
+           отдельным слоем, а не фоном самой области: её нужно размыть,
+           а filter размыл бы вместе с фоном и весь текст поверх него.
+           Адрес картинки проставляет код страницы — см. theme.js. *@
+        <div class="bg-layer" id="bgLayer" aria-hidden="true" hidden><i id="bgImage"></i></div>
+
         @RenderBody()
     </main>
 </div>
