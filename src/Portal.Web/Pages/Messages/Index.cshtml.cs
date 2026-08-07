@@ -8,6 +8,7 @@ using Portal.Web.Configuration;
 using Portal.Web.Data;
 using Portal.Web.Services.ActiveDirectory;
 using Portal.Web.Services.Messaging;
+using Portal.Web.Services.Notifications;
 using Portal.Web.Services.Storage;
 
 namespace Portal.Web.Pages.Messages;
@@ -31,6 +32,7 @@ public class IndexModel : PageModel
     private readonly IUserDirectory _directory;
     private readonly UploadValidator _validator;
     private readonly AuditLog _audit;
+    private readonly PresenceService _presence;
     private readonly StorageOptions _storageOptions;
     private readonly ActiveDirectoryOptions _ad;
     private readonly TimeProvider _time;
@@ -43,6 +45,7 @@ public class IndexModel : PageModel
         IUserDirectory directory,
         UploadValidator validator,
         AuditLog audit,
+        PresenceService presence,
         IOptions<StorageOptions> storageOptions,
         IOptions<ActiveDirectoryOptions> ad,
         TimeProvider time,
@@ -54,6 +57,7 @@ public class IndexModel : PageModel
         _directory = directory;
         _validator = validator;
         _audit = audit;
+        _presence = presence;
         _storageOptions = storageOptions.Value;
         _ad = ad.Value;
         _time = time;
@@ -80,6 +84,29 @@ public class IndexModel : PageModel
 
     /// <summary>Администратор смотрит чужую переписку, не будучи её участником.</summary>
     public bool IsOutsideObserver { get; private set; }
+
+    /// <summary>
+    /// Присутствие собеседников: логин → «в сети» и когда видели.
+    /// Для группы — по каждому участнику, для личной — по одному.
+    /// </summary>
+    public IReadOnlyDictionary<string, Presence> Presence { get; private set; } =
+        new Dictionary<string, Presence>();
+
+    /// <summary>
+    /// Номер последнего сообщения, которое СОБЕСЕДНИК уже прочитал.
+    ///
+    /// Всё, что не новее, помечается двойной галочкой. В группе берётся
+    /// минимум по всем остальным участникам: «прочитано» для группы
+    /// честно означает «прочитали все», иначе двойная галочка появлялась
+    /// бы, когда половина ещё не открывала беседу.
+    /// </summary>
+    public int ReadByOthersUpTo { get; private set; }
+
+    /// <summary>Подпись под именем собеседника в шапке беседы.</summary>
+    public string PresenceCaption { get; private set; } = "";
+
+    /// <summary>Собеседник (или хоть кто-то из группы) прямо сейчас в портале.</summary>
+    public bool IsOnline { get; private set; }
 
     public bool StorageConfigured => _storage.IsConfigured;
 
@@ -164,6 +191,40 @@ public class IndexModel : PageModel
             .OrderBy(m => m.Id)
             .ToListAsync(cancellationToken);
 
+        // Кто из собеседников в сети и до какого сообщения они дочитали.
+        var others = conversation.Participants
+            .Where(p => !string.Equals(p.UserName, UserName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        Presence = await _presence.ForAsync(others.Select(p => p.UserName).ToList(), cancellationToken);
+
+        ReadByOthersUpTo = others.Count == 0 ? 0 : others.Min(p => p.LastReadMessageId);
+
+        if (IsOutsideObserver)
+        {
+            // Постороннему (администратору) статусы собеседников не показываем:
+            // ему важно, ЧТО в переписке, а не кто из двоих сейчас за столом.
+            PresenceCaption = conversation.IsGroup
+                ? $"Участников: {conversation.Participants.Count}"
+                : "личная переписка";
+        }
+        else if (!conversation.IsGroup && others.Count == 1)
+        {
+            var single = Presence.GetValueOrDefault(others[0].UserName, new Presence(false, null));
+
+            IsOnline = single.Online;
+            PresenceCaption = PresenceService.Describe(single, DateTime.Now);
+        }
+        else if (conversation.IsGroup)
+        {
+            var online = others.Count(p => Presence.GetValueOrDefault(p.UserName, new Presence(false, null)).Online);
+
+            IsOnline = online > 0;
+
+            PresenceCaption = $"Участников: {conversation.Participants.Count}"
+                              + (online > 0 ? $" · в сети: {online}" : "");
+        }
+
         if (IsOutsideObserver)
         {
             // Администратор портала открыл ЧУЖУЮ переписку. Право на это
@@ -232,7 +293,11 @@ public class IndexModel : PageModel
             AuthorUserName = UserName,
             AuthorDisplayName = DisplayName,
             Body = text,
-            CreatedAt = now
+            CreatedAt = now,
+
+            // Адрес отправителя. Показывается только администратору портала
+            // и только в чужой переписке — см. Message.AuthorIp.
+            AuthorIp = HttpContext.Connection.RemoteIpAddress?.ToString()
         };
 
         var problems = new List<string>();

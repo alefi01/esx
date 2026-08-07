@@ -73,6 +73,24 @@ public sealed class PortalSettings
             cancellationToken);
     }
 
+    /// <summary>
+    /// Числовая настройка из базы. Нет записи или мусор вместо числа —
+    /// возвращается значение по умолчанию: испорченная строка в таблице
+    /// не должна менять поведение портала.
+    /// </summary>
+    public async Task<int> IntAsync(
+        string key, int fallback, CancellationToken cancellationToken = default)
+    {
+        var stored = await ValueAsync(key, cancellationToken);
+
+        return int.TryParse(stored, out var value) && value >= 0 ? value : fallback;
+    }
+
+    /// <summary>Записывает числовую настройку.</summary>
+    public Task SetIntAsync(
+        string key, int value, string userName, CancellationToken cancellationToken = default) =>
+        SetAsync(key, value.ToString(System.Globalization.CultureInfo.InvariantCulture), userName, cancellationToken);
+
     private async Task<string?> ValueAsync(string key, CancellationToken cancellationToken)
     {
         var all = await AllAsync(cancellationToken);

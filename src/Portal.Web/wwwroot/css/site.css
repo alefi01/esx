@@ -1230,3 +1230,26 @@ html.nav-hidden .sidebar *{visibility:hidden}
    в 860 пикселей задан для отдельной страницы объявлений, где столбец
    один, а здесь он оставлял пустую полосу до закреплённого. */
 .home-col-main .ann-list{max-width:none}
+
+/* ======================================================================
+   Переписки: статус собеседника, галочки, адрес отправителя
+   ====================================================================== */
+
+/* «В сети» отмечается точкой и цветом — так видно боковым зрением,
+   не вчитываясь в подпись. */
+.ch-presence{font-size:11.5px;color:var(--muted)}
+.ch-presence.online{color:var(--ok);font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.ch-presence.online::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok)}
+
+/* Галочки у своего сообщения: одна — отправлено, две — прочитано. */
+.b-ticks{display:inline-flex;align-items:center;margin-left:5px;vertical-align:-2px;opacity:.75}
+.b-ticks .ic{width:14px;height:14px}
+.b-ticks.read{opacity:1}
+.msg.mine .b-ticks{color:rgba(255,255,255,.85)}
+.msg.mine .b-ticks.read{color:#fff}
+
+/* Адрес отправителя — только в чужой переписке, открытой администратором. */
+.b-ip{font-weight:400;font-size:10.5px;color:var(--muted);margin-left:7px;
+  font-family:'Cascadia Code',Consolas,monospace}
+.msg.mine .b-ip{color:rgba(255,255,255,.75)}
+.msg.mine .b-name{color:#fff}

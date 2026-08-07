@@ -97,8 +97,19 @@ public class IndexModel : PageModel
 
         if (IsSearching)
         {
-            // В найденном главное — где файл лежит, поэтому у каждой строки
-            // показывается путь до папки.
+            // Папки первыми — как и в обычном списке. В найденном главное,
+            // ГДЕ лежит найденное, поэтому у каждой строки показывается путь.
+            foreach (var found in FoundFolders)
+            {
+                list.Add(Portal.Web.Pages.Shared.FileEntry.ForFolder(
+                    found,
+                    Url.Page("Index", new { id = found.Id }) ?? "#",
+                    ChildCounts.GetValueOrDefault(found.Id),
+                    FavoriteFolderIds.Contains(found.Id),
+                    CanManageFolder(found),
+                    path: found.ParentId is null ? "Файлы" : _tree.DisplayPath(_tree.Get(found.ParentId.Value)!)));
+            }
+
             foreach (var hit in SearchResults)
             {
                 list.Add(Portal.Web.Pages.Shared.FileEntry.ForFile(
@@ -178,6 +189,18 @@ public class IndexModel : PageModel
     public sealed record SearchHit(StoredFile File, string FolderPath, int FolderId);
 
     public IReadOnlyList<SearchHit> SearchResults { get; private set; } = [];
+
+    /// <summary>
+    /// Найденные ПАПКИ — отдельно от файлов.
+    ///
+    /// Ищут не только документы: «где лежат договоры» — такой же обычный
+    /// вопрос, как «где лежит договор №12». Раньше поиск отвечал только
+    /// на второй, и папку приходилось искать руками по дереву.
+    /// </summary>
+    public IReadOnlyList<StorageFolder> FoundFolders { get; private set; } = [];
+
+    /// <summary>Сколько всего найдено — папок и файлов вместе.</summary>
+    public int FoundCount => FoundFolders.Count + SearchResults.Count;
 
     public bool IsSearching => !string.IsNullOrWhiteSpace(Query);
 
@@ -1922,6 +1945,56 @@ public class IndexModel : PageModel
         SearchResults = found
             .Select(f => new SearchHit(f, _tree.DisplayPath(_tree.Get(f.FolderId)!), f.FolderId))
             .ToList();
+
+        // Папки ищутся ПО ДЕРЕВУ В ПАМЯТИ, а не запросом к базе: дерево
+        // уже прочитано целиком (см. FolderTree), и второй запрос за тем же
+        // самым был бы лишним. Заодно сравнение идёт по правилам русского
+        // языка — база сравнивала бы по своим, и «Ёлки» нашлись бы не всегда.
+        //
+        // Ищем среди ВИДИМЫХ папок, а не только среди читаемых: папка,
+        // видимая лишь как дорога к разрешённой вложенной, в поиске нужна —
+        // иначе до вложенной не добраться.
+        var visible = new List<StorageFolder>();
+
+        void CollectVisible(StorageFolder folder, int depth)
+        {
+            if (depth > 64)
+            {
+                return;
+            }
+
+            if (_tree.IsVisible(User, folder))
+            {
+                visible.Add(folder);
+            }
+
+            foreach (var child in folder.Children)
+            {
+                CollectVisible(child, depth + 1);
+            }
+        }
+
+        foreach (var root in roots)
+        {
+            CollectVisible(root, 0);
+        }
+
+        var needle = Query!.Trim();
+
+        var folders = visible
+            .Where(f => f.Name.Contains(needle, StringComparison.CurrentCultureIgnoreCase))
+            .OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Take(100)
+            .ToList();
+
+        FoundFolders = folders;
+
+        // Количества элементов для подписи под плиткой — тем же одним
+        // запросом, что и в обычном списке.
+        if (folders.Count > 0)
+        {
+            ChildCounts = await _tree.ChildCountsAsync(User, folders, cancellationToken);
+        }
     }
 
     public string FormatSize(long bytes) => UploadValidator.Format(bytes);

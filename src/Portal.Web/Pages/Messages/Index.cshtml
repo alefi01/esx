@@ -156,16 +156,11 @@
 
                     <div class="ch-meta">
                         <b>@Model.Title</b>
-                        <span>
-                            @if (Model.Current.IsGroup)
-                            {
-                                @($"Участников: {Model.Current.Participants.Count}")
-                            }
-                            else
-                            {
-                                @:личная переписка
-                            }
-                        </span>
+                        @* «В сети» — это не постоянное соединение, а «шевелился
+                           недавно»: портал засекает время при каждом запросе
+                           страницы, а страница раз в минуту сама спрашивает
+                           про уведомления. Подробности — в PresenceService. *@
+                        <span class="ch-presence@(Model.IsOnline ? " online" : "")">@Model.PresenceCaption</span>
                     </div>
 
                     @if (Model.Current.IsGroup)
@@ -236,7 +231,19 @@
                             }
 
                             <div class="bubble">
-                                @if (!mine && Model.Current.IsGroup)
+                                @if (Model.IsOutsideObserver)
+                                {
+                                    @* Администратор читает чужую переписку. Здесь имя
+                                       нужно у КАЖДОГО сообщения, включая «свои» по цвету:
+                                       для постороннего в этой беседе своих нет. Рядом —
+                                       адрес, с которого писали: ради разбора случаев
+                                       «с моей учётки писал не я». *@
+                                    <div class="b-name">
+                                        @message.AuthorDisplayName
+                                        <span class="b-ip">@(string.IsNullOrEmpty(message.AuthorIp) ? "адрес не записан" : message.AuthorIp)</span>
+                                    </div>
+                                }
+                                else if (!mine && Model.Current.IsGroup)
                                 {
                                     <div class="b-name">@message.AuthorDisplayName</div>
                                 }
@@ -286,6 +293,21 @@
                                     }
 
                                     @at.ToString("HH:mm")
+
+                                    @if (mine && message.DeletedAt is null && !Model.IsOutsideObserver)
+                                    {
+                                        @* Одна галочка — отправлено, две — собеседник
+                                           прочитал. В группе две галочки означают
+                                           «прочитали ВСЕ»: иначе они появлялись бы,
+                                           когда половина беседу ещё не открывала. *@
+                                        var read = message.Id <= Model.ReadByOthersUpTo;
+
+                                        <span class="b-ticks@(read ? " read" : "")"
+                                              title="@(read ? "Прочитано" : "Отправлено")"
+                                              aria-label="@(read ? "Прочитано" : "Отправлено")">
+                                            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><use href="@(read ? "#i-check-all" : "#i-check")" /></svg>
+                                        </span>
+                                    }
 
                                     @if (message.DeletedAt is null && (mine || Model.IsOutsideObserver))
                                     {

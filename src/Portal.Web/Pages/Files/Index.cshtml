@@ -15,7 +15,7 @@
     var canCreateFolder = Model.Current is null ? Model.IsAdmin : canWrite;
 
     var empty = Model.IsSearching
-        ? Model.SearchResults.Count == 0
+        ? Model.FoundCount == 0
         : Model.Subfolders.Count == 0 && Model.FilesInFolder.Count == 0;
 }
 
@@ -120,7 +120,10 @@
     @if (Model.IsSearching)
     {
         <p class="search-note">
-            Найдено: <b>@Model.SearchResults.Count</b> по запросу «@Model.Query»
+            Найдено: <b>@Model.FoundCount</b> по запросу «@Model.Query»
+            @(Model.FoundFolders.Count > 0 && Model.SearchResults.Count > 0
+                ? $"(папок: {Model.FoundFolders.Count}, файлов: {Model.SearchResults.Count})"
+                : "")
             @(Model.Current is null ? "во всём хранилище" : $"в папке «{Model.Current.Name}» и вложенных")
             — <a asp-page="Index" asp-route-id="@Model.Current?.Id">очистить</a>
         </p>
@@ -151,7 +154,7 @@
                     {
                         <svg class="ic" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><use href="#i-search" /></svg>
                         <b>Ничего не найдено</b>
-                        <p>Поиск идёт по имени файла и только там, куда у вас есть доступ.</p>
+                        <p>Поиск идёт по именам файлов и папок и только там, куда у вас есть доступ.</p>
                     }
                     else
                     {

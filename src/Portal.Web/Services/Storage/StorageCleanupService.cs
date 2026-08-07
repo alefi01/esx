@@ -91,12 +91,21 @@ public sealed class StorageCleanupService : BackgroundService
 
         var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
         var storage = scope.ServiceProvider.GetRequiredService<FileStorage>();
+        var portal = scope.ServiceProvider.GetRequiredService<PortalCleanup>();
 
         var now = _time.GetUtcNow().UtcDateTime;
 
+        // Сроки корзины и журнала администратор может задать из портала;
+        // пока он этого не сделал, действуют значения из файла настроек.
+        var (_, _, trashDays, auditDays) = await portal.DaysAsync(cancellationToken);
+
         var movedToTrash = await ApplyRetentionAsync(db, now, cancellationToken);
-        var purged = await PurgeTrashAsync(db, storage, now, cancellationToken);
-        var forgotten = await PurgeAuditAsync(db, now, cancellationToken);
+        var purged = await PurgeTrashAsync(db, storage, now, trashDays, cancellationToken);
+        var forgotten = await PurgeAuditAsync(db, now, auditDays, cancellationToken);
+
+        // Переписка и объявления — общая уборка портала, см. PortalCleanup.
+        // Она молчит, пока сроки не заданы: по умолчанию там ноль.
+        await portal.RunAsync("фоновая уборка", cancellationToken);
 
         if (movedToTrash > 0 || purged > 0)
         {
@@ -165,9 +174,9 @@ public sealed class StorageCleanupService : BackgroundService
     /// только чтобы тут же удалить — бессмысленная работа.
     /// </summary>
     private async Task<int> PurgeAuditAsync(
-        PortalDbContext db, DateTime now, CancellationToken cancellationToken)
+        PortalDbContext db, DateTime now, int daysFromPortal, CancellationToken cancellationToken)
     {
-        var days = _options.AuditRetentionDays;
+        var days = daysFromPortal > 0 ? daysFromPortal : _options.AuditRetentionDays;
 
         if (days <= 0)
         {
@@ -182,9 +191,12 @@ public sealed class StorageCleanupService : BackgroundService
     }
 
     private async Task<int> PurgeTrashAsync(
-        PortalDbContext db, FileStorage storage, DateTime now, CancellationToken cancellationToken)
+        PortalDbContext db, FileStorage storage, DateTime now, int daysFromPortal,
+        CancellationToken cancellationToken)
     {
-        var threshold = now.AddDays(-Math.Max(0, _options.TrashRetentionDays));
+        var days = daysFromPortal > 0 ? daysFromPortal : _options.TrashRetentionDays;
+
+        var threshold = now.AddDays(-Math.Max(0, days));
 
         var expired = await db.Files
             .AsTracking()

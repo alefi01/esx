@@ -304,6 +304,9 @@ builder.Services.AddScoped<FolderTree>();
 builder.Services.AddScoped<AuditLog>();
 builder.Services.AddScoped<NotificationService>();
 
+// Кто в сети. Обращается к базе — Scoped.
+builder.Services.AddScoped<PresenceService>();
+
 // Занятое место для карточки в боковом меню. Само значение общее для всех
 // и лежит в памяти минуту (см. StorageUsage), но берётся из базы — Scoped.
 builder.Services.AddMemoryCache();
@@ -312,6 +315,9 @@ builder.Services.AddScoped<StorageUsage>();
 // Настройки, которые администратор меняет из браузера (общий объём
 // хранилища). Лежат в базе — Scoped.
 builder.Services.AddScoped<PortalSettings>();
+
+// Уборка портала: сроки хранения переписки, объявлений, корзины и журнала.
+builder.Services.AddScoped<PortalCleanup>();
 
 // Список фоновых тем — картинок из папки wwwroot\img\themes. К базе
 // не обращается, читает папку раз в минуту, поэтому Singleton.
@@ -567,6 +573,38 @@ app.UseRouting();
 
 app.UseAuthentication();   // разбирает cookie и наполняет HttpContext.User
 app.UseAuthorization();    // проверяет политики
+
+// ---------------------------------------------------------------------------
+// Отметка «человек в портале» — для статуса «в сети» в переписках.
+//
+// Стоит ПОСЛЕ проверки входа (иначе имени ещё нет) и ловит любой запрос
+// страницы, включая опрос колокольчика раз в минуту: пока вкладка открыта,
+// отметка обновляется сама. В базу при этом пишется не чаще раза в минуту
+// на человека — подробности в PresenceService.
+//
+// Ошибку здесь не пропускаем дальше: «в сети» не та вещь, ради которой
+// стоит показать человеку страницу ошибки вместо портала.
+// ---------------------------------------------------------------------------
+app.Use(async (context, next) =>
+{
+    var userName = context.User.Identity?.Name;
+
+    if (!string.IsNullOrEmpty(userName) && context.User.Identity?.IsAuthenticated == true)
+    {
+        var presence = context.RequestServices.GetRequiredService<PresenceService>();
+
+        try
+        {
+            await presence.TouchAsync(userName, context.RequestAborted);
+        }
+        catch (Exception)
+        {
+            // Уже записано в журнал внутри службы.
+        }
+    }
+
+    await next();
+});
 
 app.MapRazorPages();
 

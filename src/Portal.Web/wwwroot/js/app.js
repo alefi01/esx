@@ -549,6 +549,35 @@
         setInterval(tick, 1000);
     })();
 
+    // Кнопки, которые сначала спрашивают «точно?».
+    //
+    // Отметка ставится прямо на кнопке в разметке (data-confirm-action),
+    // и без JavaScript кнопка просто отправит форму, как и раньше:
+    // подтверждение — это защита от случайного нажатия, а не от злого умысла.
+    document.addEventListener('click', e => {
+        const button = e.target.closest('[data-confirm-action]');
+
+        if (!button || button.dataset.confirmed === 'yes') { return; }
+
+        const form = button.closest('form');
+
+        if (!form) { return; }
+
+        e.preventDefault();
+
+        confirmDlg(
+            button.dataset.confirmTitle || 'Подтвердите действие',
+            button.dataset.confirmText || 'Действие нельзя отменить.',
+            button.dataset.confirmOk || 'Продолжить',
+            () => {
+                // Метка нужна, чтобы повторное нажатие, сделанное кодом,
+                // не открыло то же окно ещё раз.
+                button.dataset.confirmed = 'yes';
+                button.click();
+            },
+            true);
+    });
+
     // Сообщение, оставленное сервером после перезагрузки страницы.
     (function () {
         const holder = $('[data-flash]');
