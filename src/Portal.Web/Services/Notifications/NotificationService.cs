@@ -166,6 +166,36 @@ public sealed class NotificationService
             unreadAnnouncements + unreadMessages, unreadAnnouncements, unreadMessages, items);
     }
 
+    /// <summary>
+    /// Граница «прочитанного»: номер последнего объявления, которое человек
+    /// отметил как увиденное. Всё, что новее, для него новое.
+    ///
+    /// Нужна главной странице: она показывает только непрочитанное и должна
+    /// считать его по той же границе, что и колокольчик, — иначе числа
+    /// в шапке и на странице разъедутся.
+    ///
+    /// Первый вход человека в портал не должен вываливать на него все
+    /// объявления за всю историю как «новые»: отметки ещё нет, и границей
+    /// считается самое свежее объявление. Здесь она только читается,
+    /// а заводится при первом обращении колокольчика (см. GetAsync).
+    /// </summary>
+    public async Task<int> LastSeenAnnouncementIdAsync(
+        string userName, CancellationToken cancellationToken)
+    {
+        var state = await _db.Set<UserSeenState>()
+            .FirstOrDefaultAsync(s => s.UserName == userName, cancellationToken);
+
+        if (state is not null)
+        {
+            return state.LastSeenAnnouncementId;
+        }
+
+        return await _db.Announcements
+            .OrderByDescending(a => a.Id)
+            .Select(a => a.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     /// <summary>Отметить всё текущее прочитанным.</summary>
     public async Task MarkAllSeenAsync(string userName, CancellationToken cancellationToken)
     {

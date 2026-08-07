@@ -55,6 +55,11 @@
         return " active";
     }
 
+    // Главная устроена иначе остальных страниц: там своя крупная строка
+    // поиска посреди экрана, и вторая, мелкая, в шапке была бы той же
+    // кнопкой дважды на одном экране.
+    var isHome = path == "/";
+
     var displayName = User.Identity?.Name ?? "";
     var initials = Portal.Web.Pages.Shared.Avatars.Initials(displayName);
 }
@@ -83,7 +88,11 @@
 <partial name="_Icons" />
 
 @* ====================== Верхняя полоса ====================== *@
+@* Шапка — три полосы: слева меню и название, ПО ЦЕНТРУ поиск, справа
+   действия. Раскладка сеткой, а не потоком: при потоке строка поиска
+   стоит сразу за названием и «центр» уезжает вслед за длиной названия. *@
 <header class="topbar">
+  <div class="top-left">
     <button class="icon-btn burger" id="burgerBtn" type="button" aria-label="Меню">
         <svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-menu" /></svg>
     </button>
@@ -101,8 +110,9 @@
         </div>
         <div>@brand.Title<small>@brand.Subtitle</small></div>
     </a>
+  </div>
 
-    @if (signedIn)
+    @if (signedIn && !isHome)
     {
         @* Поиск по файлам. Обычная форма методом GET: работает и без
            JavaScript, а адрес результата можно послать коллеге ссылкой. *@
@@ -111,6 +121,12 @@
             <input id="globalSearch" type="text" name="q" placeholder="Поиск файлов и папок…" aria-label="Поиск файлов и папок" />
             <kbd>Ctrl K</kbd>
         </form>
+    }
+    else
+    {
+        @* Пустая середина. Нужна, чтобы сетка не съехала: без неё действия
+           справа переехали бы в центр. *@
+        <span></span>
     }
 
     <div class="top-actions">

@@ -22,6 +22,7 @@
          data-can-write="@Model.CanWrite.ToString().ToLowerInvariant()"
          data-is-owner="@Model.IsOwner.ToString().ToLowerInvariant()"
          data-is-group="@((Model.Current?.IsGroup ?? false).ToString().ToLowerInvariant())"
+         data-observer="@Model.IsOutsideObserver.ToString().ToLowerInvariant()"
          @* Предел на вложение — числом, чтобы браузер сказал «файл слишком
             большой» ДО отправки, а не после того как человек прождал передачу.
             0 — предела нет. Проверка на сервере при этом остаётся. *@
@@ -72,8 +73,12 @@
 
                 @foreach (var item in Model.Conversations)
                 {
+                    @* Данные для контекстного меню — в data-атрибутах: встроенные
+                       скрипты запрещены политикой безопасности страницы. *@
                     <a class="convo@(Model.Current?.Id == item.Id ? " active" : "")"
-                       asp-page="Index" asp-route-id="@item.Id">
+                       asp-page="Index" asp-route-id="@item.Id"
+                       data-convo="@item.Id" data-convo-title="@item.Title"
+                       data-convo-group="@item.IsGroup.ToString().ToLowerInvariant()">
 
                         <div class="avatar" data-av="@Avatars.ColorIndex(item.Title)">
                             @if (item.IsGroup)
@@ -219,7 +224,10 @@
                             <div class="day-sep"><span>@Portal.Web.Pages.Messages.IndexModel.DayLabel(at.Date, today)</span></div>
                         }
 
-                        <div class="msg@(mine ? " mine" : "")" data-message="@message.Id">
+                        <div class="msg@(mine ? " mine" : "")" data-message="@message.Id"
+                             data-mine="@mine.ToString().ToLowerInvariant()"
+                             data-deleted="@((message.DeletedAt is not null).ToString().ToLowerInvariant())"
+                             data-body="@message.Body">
                             @if (!mine)
                             {
                                 <div class="avatar" data-av="@Avatars.ColorIndex(message.AuthorDisplayName)">@Avatars.Initials(message.AuthorDisplayName)</div>
@@ -260,6 +268,15 @@
                                    дня отвечает на вопрос «когда» для всей пачки
                                    сообщений, а здесь его можно уточнить по одному. *@
                                 <div class="b-time" title="@at.ToString("dd.MM.yyyy HH:mm")">
+                                    @if (message.IsEdited && message.DeletedAt is null)
+                                    {
+                                        @* Пометка видна СОБЕСЕДНИКУ, и в этом её смысл:
+                                           незаметная правка означала бы, что переписке
+                                           нельзя верить. *@
+                                        <span class="b-edited"
+                                              title="Изменено @message.EditedAt!.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm")">изменено</span>
+                                    }
+
                                     @at.ToString("HH:mm")
 
                                     @if (message.DeletedAt is null && (mine || Model.IsOutsideObserver))

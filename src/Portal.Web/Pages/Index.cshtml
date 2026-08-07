@@ -5,31 +5,51 @@
     ViewData["Title"] = "Главная";
 }
 
-<section class="view active">
+@*
+    Главная — «рабочий стол»: часы, крупный поиск и то, что появилось,
+    пока человека не было. Лента объявлений целиком живёт в своём разделе;
+    повторять её здесь значило бы показывать одно и то же дважды.
 
-    @* ---------- Приветствие ----------
-       Кнопок с разделами здесь нет намеренно: те же разделы стоят
-       в боковом меню, и дублировать их значит показывать одно и то же
-       дважды на одном экране. *@
-    <div class="hero">
-        <div>
-            <h2>@Model.Greeting, @Model.DisplayName</h2>
-            <span class="sub">
-                Это корпоративный портал.
-                @if (!string.IsNullOrEmpty(Model.OfficeName))
-                {
-                    <span>Вы в офисе «@Model.OfficeName».</span>
-                }
-            </span>
+    Строки поиска в шапке на этой странице нет намеренно (см. _Layout):
+    две строки поиска на одном экране — это один и тот же вопрос, заданный
+    дважды.
+*@
+<section class="view active home">
+
+    <div class="home-top">
+
+        @* Часы. Время ставит код страницы и обновляет раз в секунду:
+           отрисованное сервером отстало бы уже к моменту показа, а на
+           часах это заметно сразу. До первой отрисовки показывается
+           серверное время — чтобы не мигало пустотой. *@
+        <div class="clock" id="clock">
+            <div class="clock-time" id="clockTime">@DateTime.Now.ToString("HH:mm")</div>
+            <div class="clock-date" id="clockDate">
+                @DateTime.Now.ToString("dddd, d MMMM", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))
+            </div>
         </div>
 
+        <p class="home-hello">
+            @Model.Greeting, @Model.DisplayName@if (!string.IsNullOrEmpty(Model.OfficeName))
+            {<text> · @Model.OfficeName</text>}
+        </p>
+
+        @* Крупный поиск. Обычная форма методом GET, как и в шапке:
+           работает без JavaScript, а адрес результата можно послать
+           коллеге ссылкой. *@
+        <form class="home-search" method="get" asp-page="/Files/Index" role="search">
+            <svg class="ic" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-search" /></svg>
+            <input type="text" name="q" id="homeSearch" autocomplete="off" autofocus
+                   placeholder="Поиск файлов и папок" aria-label="Поиск файлов и папок" />
+            <button class="btn primary" type="submit">Найти</button>
+        </form>
+
+        <p class="home-hint">
+            Поиск идёт по имени файла и только там, куда у вас есть доступ.
+        </p>
     </div>
 
-    @* ---------- Лента объявлений ---------- *@
-    <div class="view-head feed-head">
-        <h2>Объявления</h2>
-        <a class="feed-all" asp-page="/Announcements/Index">Все объявления</a>
-    </div>
+    @* ---------- Непрочитанные объявления ---------- *@
 
     @if (Model.DatabaseUnavailable)
     {
@@ -41,14 +61,44 @@
     }
     else if (Model.Items.Count == 0)
     {
-        <div class="empty">
-            <svg class="ic" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
-            <b>Объявлений пока нет</b>
-            <p>Здесь появятся сообщения, которые должны увидеть все сотрудники</p>
+        <div class="home-clear">
+            <svg class="ic" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
+            <div>
+                <b>Новых объявлений нет</b>
+                <span>
+                    @if (Model.TotalCount > 0)
+                    {
+                        <a asp-page="/Announcements/Index">Посмотреть всю ленту (@Model.TotalCount)</a>
+                    }
+                    else
+                    {
+                        @:Здесь появятся сообщения, которые должны увидеть все сотрудники
+                    }
+                </span>
+            </div>
         </div>
     }
     else
     {
+        <div class="view-head feed-head home-unread-head">
+            <h2>
+                Новые объявления
+                <span class="unread-count">@Model.UnreadCount</span>
+            </h2>
+
+            @* Отметка «прочитано» ставится ЯВНО, кнопкой. Раньше главная
+               отмечала всё сама при открытии — с лентой «всё подряд» это
+               было безобидно, а со списком «только новое» означало бы,
+               что список исчезает от случайного захода на страницу. *@
+            <form method="post" asp-page-handler="MarkRead" class="home-mark">
+                <button class="btn sm" type="submit">
+                    <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>Прочитано
+                </button>
+            </form>
+
+            <a class="feed-all" asp-page="/Announcements/Index">Вся лента</a>
+        </div>
+
         <div class="ann-list">
             @foreach (var item in Model.Items)
             {
@@ -58,7 +108,11 @@
 
         @if (Model.HasMore)
         {
-            <p class="feed-more"><a asp-page="/Announcements/Index">Показать все объявления →</a></p>
+            <p class="feed-more">
+                <a asp-page="/Announcements/Index">
+                    Ещё @(Model.UnreadCount - Model.Items.Count) непрочитанных →
+                </a>
+            </p>
         }
     }
 </section>

@@ -391,8 +391,44 @@ public class IndexModel : PageModel
         // начало скачивания.
         Response.Headers.ContentEncoding = "identity";
 
-        using (var archive = new System.IO.Compression.ZipArchive(
-                   Response.Body, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        // ПОЧЕМУ ЗДЕСЬ РАЗРЕШЕНА СИНХРОННАЯ ЗАПИСЬ
+        //
+        // Из-за этого архивы приходили битыми, и разобраться стоит один раз.
+        //
+        // Kestrel и IIS по умолчанию запрещают синхронную запись в ответ
+        // (AllowSynchronousIO = false): она занимает поток на всё время
+        // отправки по сети. Обычно это правильно.
+        //
+        // Но ZipArchive устроен синхронно в двух местах, и обойти их нельзя:
+        // закрывая каждый файл, он дописывает хвост сжатого потока
+        // (DeflateStream.PurgeBuffers), а закрывая весь архив — оглавление
+        // в самом конце. Обе записи идут через Stream.Write, и даже
+        // асинхронное закрытие (DisposeAsync) сводится к ним же.
+        //
+        // Что при этом видел человек: содержимое файлов успевало уйти,
+        // запись хвоста падала исключением, а оборвать уже начатый ответ
+        // нельзя — и в браузер приезжал архив без оглавления. Распаковщик
+        // на таком говорит «архив повреждён» и не показывает ни одного файла.
+        //
+        // Разрешение действует ТОЛЬКО на этот запрос, а не на весь портал.
+        // Записи здесь редкие и крупными кусками (буфер сжатия), поэтому
+        // поток занимается ненадолго.
+        var bodyControl = HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpBodyControlFeature>();
+
+        if (bodyControl is not null)
+        {
+            bodyControl.AllowSynchronousIO = true;
+        }
+
+        // Кодировка имён задаётся ЯВНО. По умолчанию ZipArchive ставит UTF-8
+        // только для неанглийских имён и помечает это отдельным признаком,
+        // который понимают не все распаковщики: русские имена превращались бы
+        // в набор символов. С явной UTF-8 имя одинаково читается везде.
+        await using (var archive = new System.IO.Compression.ZipArchive(
+                   Response.Body,
+                   System.IO.Compression.ZipArchiveMode.Create,
+                   leaveOpen: true,
+                   entryNameEncoding: System.Text.Encoding.UTF8))
         {
             foreach (var entry in entries)
             {

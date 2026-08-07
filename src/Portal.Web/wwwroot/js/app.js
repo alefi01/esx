@@ -396,11 +396,15 @@
         // а убирается совсем — рабочая область становится шире, и это
         // единственное, ради чего его там прячут. Раньше кнопка на широком
         // экране просто не показывалась, и убрать меню было нельзя.
+        // На широком экране состояние меню ЗАПОМИНАЕТСЯ и применяется
+        // до отрисовки следующей страницы — см. portalNav в theme.js.
+        // Иначе убранное меню разворачивалось бы при каждом переходе
+        // между папками и при каждой смене сортировки.
         burger.onclick = () => {
             if (narrow()) {
                 sidebar.classList.toggle('open');
-            } else {
-                document.body.classList.toggle('nav-hidden');
+            } else if (window.portalNav) {
+                window.portalNav.toggle();
             }
         };
 
@@ -512,6 +516,37 @@
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape') { close(); }
         });
+    })();
+
+    // Часы на главной.
+    //
+    // Время берётся у БРАУЗЕРА, а не у сервера: часы показывают время
+    // того, кто на них смотрит. Сервер отрисовывает первое значение,
+    // чтобы страница не мигала пустотой, дальше считает браузер.
+    (function () {
+        const time = $('#clockTime');
+        const date = $('#clockDate');
+
+        if (!time) { return; }
+
+        const two = n => String(n).padStart(2, '0');
+
+        const tick = () => {
+            const now = new Date();
+
+            time.textContent = two(now.getHours()) + ':' + two(now.getMinutes());
+
+            if (date) {
+                date.textContent = now.toLocaleDateString('ru-RU',
+                    { weekday: 'long', day: 'numeric', month: 'long' });
+            }
+        };
+
+        tick();
+
+        // Раз в секунду, а не раз в минуту: иначе после открытия страницы
+        // минута меняется с задержкой до минуты, и часы выглядят стоящими.
+        setInterval(tick, 1000);
     })();
 
     // Сообщение, оставленное сервером после перезагрузки страницы.
@@ -1287,6 +1322,11 @@
     if (chat) {
         const settings = chat.dataset;
         const conversationId = settings.conversation || '';
+        const me = settings.me || '';
+
+        // Администратор портала, открывший ЧУЖУЮ переписку. Ему доступно
+        // удаление сообщений, но не правка: чужие слова менять нельзя.
+        const isAdminObserver = settings.observer === 'true';
 
         // ---------- Лента сообщений ----------
         const msgs = $('#msgs');
@@ -1363,18 +1403,125 @@
             };
         }
 
-        // ---------- Удаление сообщения ----------
-        chat.addEventListener('click', e => {
-            const button = e.target.closest('[data-delete-message]');
+        // ---------- Удаление и правка сообщения ----------
 
-            if (!button) { return; }
-
+        function deleteMessage(id) {
             confirmDlg('Удалить сообщение?',
                 'Сообщение исчезнет у всех участников переписки. Отменить это нельзя.',
                 'Удалить',
                 () => submit('/Messages?handler=DeleteMessage&id=' + conversationId,
-                    { messageId: button.dataset.deleteMessage }),
+                    { messageId: id }),
                 true);
+        }
+
+        function editMessage(node) {
+            promptDlg('Изменить сообщение', 'Текст', node.dataset.body || '', 'Сохранить', value => {
+                submit('/Messages?handler=EditMessage&id=' + conversationId,
+                    { messageId: node.dataset.message, newBody: value });
+            });
+        }
+
+        chat.addEventListener('click', e => {
+            const button = e.target.closest('[data-delete-message]');
+
+            if (button) { deleteMessage(button.dataset.deleteMessage); }
+        });
+
+        // Контекстное меню на сообщении: правка и удаление.
+        //
+        // Кнопка-корзинка рядом со временем осталась — она привычна и видна
+        // сразу. Но правка третьей кнопкой в пузырьке уже не помещается,
+        // а меню по правой кнопке в портале работает везде, где есть список,
+        // и в переписке его отсутствие было заметным исключением.
+        chat.addEventListener('contextmenu', e => {
+            const node = e.target.closest('[data-message]');
+
+            if (!node) { return; }
+
+            // Выделенный текст оставляем браузеру: его меню там и нужно —
+            // «копировать», «искать в интернете».
+            const selection = window.getSelection();
+
+            if (selection && !selection.isCollapsed) { return; }
+
+            e.preventDefault();
+
+            const mine = node.dataset.mine === 'true';
+            const deleted = node.dataset.deleted === 'true';
+            const body = node.dataset.body || '';
+            const entries = [];
+
+            if (body) {
+                entries.push({ icon: 'copy', label: 'Копировать текст', fn: () => copyText(body, 'Текст скопирован') });
+            }
+
+            // Править может только автор — и только пока сообщение не удалено.
+            // Чужие слова не должен менять никто, включая администратора:
+            // удаление оставляет честную пометку, а правка подменяет сказанное.
+            if (mine && !deleted) {
+                entries.push({ icon: 'edit', label: 'Изменить', fn: () => editMessage(node) });
+            }
+
+            if (!deleted && (mine || isAdminObserver)) {
+                entries.push({ sep: 1 });
+                entries.push({
+                    icon: 'trash', label: 'Удалить', danger: 1,
+                    fn: () => deleteMessage(node.dataset.message)
+                });
+            }
+
+            if (entries.length === 0) { return; }
+
+            showMenu(e.clientX, e.clientY, entries);
+        });
+
+        // ---------- Контекстное меню на переписке в списке ----------
+        chat.addEventListener('contextmenu', e => {
+            const node = e.target.closest('[data-convo]');
+
+            if (!node) { return; }
+
+            e.preventDefault();
+
+            const id = node.dataset.convo;
+            const title = node.dataset.convoTitle || 'переписка';
+            const group = node.dataset.convoGroup === 'true';
+
+            const entries = [
+                { icon: 'chat', label: 'Открыть', fn: () => { window.location.href = '/Messages?id=' + id; } },
+                { icon: 'share', label: 'Скопировать ссылку', fn: () => copyText(location.origin + '/Messages?id=' + id, 'Ссылка на переписку скопирована') }
+            ];
+
+            entries.push({ sep: 1 });
+
+            // Группу удаляет только тот, кто её создал; остальные из неё
+            // выходят. Переписка десяти человек не должна исчезать оттого,
+            // что одному из них она надоела. Права проверяет сервер заново —
+            // здесь только вид меню.
+            if (group) {
+                entries.push({
+                    icon: 'logout', label: 'Выйти из группы',
+                    fn: () => confirmDlg('Выйти из группы?',
+                        `Группа «${title}» пропадёт из вашего списка. Остальные участники останутся.`,
+                        'Выйти',
+                        () => submit('/Messages?handler=RemoveMember&id=' + id, { memberUserName: me }),
+                        true)
+                });
+            }
+
+            entries.push({
+                icon: 'trash', label: group ? 'Удалить группу' : 'Удалить переписку', danger: 1,
+                fn: () => confirmDlg(
+                    group ? 'Удалить группу?' : 'Удалить переписку?',
+                    group
+                        ? `Группа «${title}» будет удалена вместе со всеми сообщениями и вложениями — у всех участников. Отменить это нельзя.`
+                        : `Переписка «${title}» будет удалена вместе со всеми сообщениями и вложениями. Она исчезнет и у собеседника — отменить это нельзя.`,
+                    'Удалить',
+                    () => submit('/Messages?handler=DeleteConversation&id=' + id),
+                    true)
+            });
+
+            showMenu(e.clientX, e.clientY, entries);
         });
 
         // ---------- Выбор людей ----------

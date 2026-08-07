@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -10,20 +11,29 @@ using Portal.Web.Services.Notifications;
 namespace Portal.Web.Pages;
 
 /// <summary>
-/// Главная страница: приветствие и лента объявлений.
+/// Главная страница: часы, поиск и непрочитанные объявления.
 ///
 /// Раньше здесь была проверочная страница со списком групп Active Directory —
 /// она была нужна на первом этапе, чтобы убедиться, что вход работает.
 /// Сотруднику эти сведения не нужны и только пугают, поэтому они переехали
 /// на страницу «Диагностика», где им и место.
 ///
-/// Объявления показываются прямо здесь: это то, ради чего человек открывает
-/// портал утром. Отдельный раздел «Объявления» остался — там вся история
-/// с постраничным листанием.
+/// ЧЕМ ОНА ОТЛИЧАЕТСЯ ОТ РАЗДЕЛА «ОБЪЯВЛЕНИЯ»
+///
+/// Раньше главная была той же лентой объявлений, только короче, и потому
+/// не отвечала ни на один вопрос, на который не отвечал бы раздел.
+/// Теперь она отвечает на один: «что появилось, пока меня не было».
+/// Поэтому здесь ТОЛЬКО НЕПРОЧИТАННОЕ, а вся история с листанием
+/// осталась в разделе «Объявления».
+///
+/// Отметка «прочитано» здесь НЕ ставится сама. Раньше ставилась — и это
+/// было безобидно, пока главная показывала всё подряд. Теперь молчаливая
+/// отметка означала бы, что список исчезает от одного захода на страницу,
+/// в том числе случайного. Отмечает человек, кнопкой.
 /// </summary>
 public class IndexModel : PageModel
 {
-    /// <summary>Сколько последних объявлений показывать на главной.</summary>
+    /// <summary>Сколько непрочитанных объявлений показывать на главной.</summary>
     private const int FeedSize = 10;
 
     private readonly ActiveDirectoryOptions _adOptions;
@@ -56,7 +66,14 @@ public class IndexModel : PageModel
     public bool CanPublish =>
         User.IsInRole(_adOptions.PublisherGroup) || IsAdmin;
 
+    /// <summary>Непрочитанные объявления, свежие сверху.</summary>
     public IReadOnlyList<Announcement> Items { get; private set; } = [];
+
+    /// <summary>Сколько всего непрочитанных — их может быть больше, чем показано.</summary>
+    public int UnreadCount { get; private set; }
+
+    /// <summary>Сколько всего объявлений в портале — для ссылки «вся лента».</summary>
+    public int TotalCount { get; private set; }
 
     public bool DatabaseUnavailable { get; private set; }
 
@@ -79,11 +96,24 @@ public class IndexModel : PageModel
     {
         try
         {
-            var total = await _db.Announcements.CountAsync(cancellationToken);
+            TotalCount = await _db.Announcements.CountAsync(cancellationToken);
+
+            var userName = User.Identity?.Name;
+
+            // Граница «прочитанного» — номер последнего объявления, которое
+            // человек отметил. Он же используется колокольчиком, поэтому
+            // число на главной и число на колокольчике не разъезжаются.
+            var lastSeen = string.IsNullOrEmpty(userName)
+                ? 0
+                : await _notifications.LastSeenAnnouncementIdAsync(userName, cancellationToken);
+
+            var unread = _db.Announcements.Where(a => a.Id > lastSeen);
+
+            UnreadCount = await unread.CountAsync(cancellationToken);
 
             // Закреплённые первыми — так же, как в ленте объявлений.
             // Иначе главная и раздел «Объявления» показывали бы разное.
-            Items = await _db.Announcements
+            Items = await unread
                 .Include(a => a.Files)
                 .OrderByDescending(a => a.IsPinned)
                 .ThenByDescending(a => a.CreatedAt)
@@ -91,25 +121,32 @@ public class IndexModel : PageModel
                 .Take(FeedSize)
                 .ToListAsync(cancellationToken);
 
-            HasMore = total > Items.Count;
-
-            // Главная — это и есть лента объявлений, поэтому открыв её,
-            // человек всё новое увидел. Счётчик на колокольчике обнуляем.
-            var userName = User.Identity?.Name;
-
-            if (!string.IsNullOrEmpty(userName))
-            {
-                await _notifications.MarkAllSeenAsync(userName, cancellationToken);
-            }
+            HasMore = UnreadCount > Items.Count;
         }
         catch (Exception ex)
         {
             // База может быть недоступна. Портал при этом продолжает работать:
             // файлы и переписки живут своей жизнью. Молчать нельзя —
             // пустая лента выглядит как «объявлений нет».
-            _logger.LogError(ex, "Не удалось прочитать ленту объявлений для главной страницы.");
+            _logger.LogError(ex, "Не удалось прочитать объявления для главной страницы.");
 
             DatabaseUnavailable = true;
         }
+    }
+
+    /// <summary>
+    /// «Я всё прочитал». Отмечает текущее состояние ленты и возвращает
+    /// человека на главную — она становится пустой и спокойной.
+    /// </summary>
+    public async Task<IActionResult> OnPostMarkReadAsync(CancellationToken cancellationToken)
+    {
+        var userName = User.Identity?.Name;
+
+        if (!string.IsNullOrEmpty(userName))
+        {
+            await _notifications.MarkAllSeenAsync(userName, cancellationToken);
+        }
+
+        return RedirectToPage();
     }
 }

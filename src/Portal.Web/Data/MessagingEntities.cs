@@ -148,7 +148,22 @@ public class Message : ISyncable
     [MaxLength(256)]
     public string? DeletedByUserName { get; set; }
 
+    /// <summary>
+    /// Когда текст правили в последний раз. null — не правили.
+    ///
+    /// Отметка ВИДНА собеседнику, и это главное в ней. Незаметная правка
+    /// уже отправленного сообщения означает, что переписке нельзя верить:
+    /// человек прочитал одно, а в беседе осталось другое. Поэтому портал
+    /// правку разрешает, но всегда о ней говорит.
+    ///
+    /// Прежний текст не сохраняется: это переписка, а не документооборот,
+    /// и хранить все черновики каждой реплики незачем.
+    /// </summary>
+    public DateTime? EditedAt { get; set; }
+
     public bool IsDeleted => DeletedAt is not null;
+
+    public bool IsEdited => EditedAt is not null;
 
     public List<MessageFile> Files { get; set; } = [];
 }

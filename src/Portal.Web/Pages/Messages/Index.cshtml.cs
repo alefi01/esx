@@ -551,6 +551,166 @@ public class IndexModel : PageModel
     }
 
     // ==================================================================
+    // Правка сообщения
+    // ==================================================================
+
+    /// <summary>
+    /// Правит текст уже отправленного сообщения.
+    ///
+    /// Править может ТОЛЬКО автор — здесь администратор не исключение,
+    /// в отличие от удаления. Удаление скрывает текст и оставляет честную
+    /// пометку «сообщение удалено»; правка же подменяет слова, и чужие
+    /// слова не должен менять никто.
+    ///
+    /// Факт правки виден собеседнику пометкой «изменено»: незаметная правка
+    /// означала бы, что переписке нельзя верить.
+    ///
+    /// Вложения правка не трогает: менять их — это уже другое сообщение,
+    /// и проще его переслать заново.
+    /// </summary>
+    public async Task<IActionResult> OnPostEditMessageAsync(
+        int id, int messageId, string newBody, CancellationToken cancellationToken)
+    {
+        var conversation = await _conversations.GetAsync(id, cancellationToken);
+
+        if (conversation is null)
+        {
+            return NotFound();
+        }
+
+        var message = await _db.Messages.AsTracking()
+            .Include(m => m.Files)
+            .FirstOrDefaultAsync(m => m.Id == messageId && m.ConversationId == id, cancellationToken);
+
+        if (message is null || message.DeletedAt is not null)
+        {
+            return RedirectToPage(new { id });
+        }
+
+        if (!string.Equals(message.AuthorUserName, UserName, StringComparison.OrdinalIgnoreCase))
+        {
+            return Forbid();
+        }
+
+        var text = (newBody ?? "").Trim();
+
+        if (text.Length > 8000)
+        {
+            ErrorMessage = "Сообщение не длиннее 8000 символов.";
+
+            return RedirectToPage(new { id });
+        }
+
+        // Пустой текст допустим только у сообщения с вложениями: иначе
+        // правка превратилась бы в способ удалить сообщение, не оставив
+        // пометки «удалено».
+        if (text.Length == 0 && message.Files.All(f => f.PurgedAt is not null))
+        {
+            ErrorMessage = "Пустое сообщение. Чтобы убрать его, воспользуйтесь удалением.";
+
+            return RedirectToPage(new { id });
+        }
+
+        if (text == message.Body)
+        {
+            return RedirectToPage(new { id });
+        }
+
+        message.Body = text;
+        message.EditedAt = _time.GetUtcNow().UtcDateTime;
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return RedirectToPage(new { id });
+    }
+
+    // ==================================================================
+    // Удаление переписки
+    // ==================================================================
+
+    /// <summary>
+    /// Удаляет переписку целиком — вместе с сообщениями и вложениями.
+    ///
+    /// КТО МОЖЕТ
+    ///
+    /// Группу — только её хозяин. Остальным участникам вместо удаления
+    /// доступен выход из группы (RemoveMember): переписка десяти человек
+    /// не должна исчезать оттого, что одному из них она надоела.
+    ///
+    /// Личную переписку — любой из двоих. Другого разумного правила тут нет:
+    /// участников всего два, и «удалить только у себя» означало бы, что
+    /// у одного текст есть, а у другого его нет, — а потом спор
+    /// «я такого не писал».
+    ///
+    /// Администратор портала удалять чужие переписки НЕ может, хотя и видит
+    /// их: чтение и уничтожение — разные права, и второе ему для работы
+    /// не нужно.
+    ///
+    /// Удаление НАСТОЯЩЕЕ, без корзины: переписка — это не документ,
+    /// восстанавливать её никто не просил, а держать «удалённые» беседы
+    /// вечно значит хранить то, что люди сознательно убрали.
+    /// </summary>
+    public async Task<IActionResult> OnPostDeleteConversationAsync(
+        int id, CancellationToken cancellationToken)
+    {
+        var conversation = await _conversations.GetAsync(id, cancellationToken);
+
+        if (conversation is null)
+        {
+            return NotFound();
+        }
+
+        if (!ConversationService.IsParticipant(User, conversation))
+        {
+            // Не «запрещено», а «не найдено»: постороннему незачем узнавать,
+            // что такая переписка вообще есть.
+            return NotFound();
+        }
+
+        if (conversation.IsGroup && !ConversationService.IsOwner(User, conversation))
+        {
+            ErrorMessage = "Удалить группу может только тот, кто её создал. Вы можете выйти из неё.";
+
+            return RedirectToPage(new { id });
+        }
+
+        var messages = await _db.Messages.AsTracking()
+            .Include(m => m.Files)
+            .Where(m => m.ConversationId == id)
+            .ToListAsync(cancellationToken);
+
+        // Сначала файлы с диска, потом записи из базы. В обратном порядке
+        // упавшее посреди дела удаление оставило бы на диске файлы,
+        // на которые больше ничто не ссылается, — их потом не найти.
+        foreach (var file in messages.SelectMany(m => m.Files).Where(f => f.PurgedAt is null))
+        {
+            _storage.Delete(id, file.StorageName);
+        }
+
+        _db.Messages.RemoveRange(messages);
+
+        var participants = await _db.Participants.AsTracking()
+            .Where(p => p.ConversationId == id)
+            .ToListAsync(cancellationToken);
+
+        _db.Participants.RemoveRange(participants);
+
+        var tracked = await _db.Conversations.AsTracking().FirstAsync(c => c.Id == id, cancellationToken);
+
+        _db.Conversations.Remove(tracked);
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        // Пустой каталог беседы на диске убираем следом — иначе от каждой
+        // удалённой переписки оставалась бы пустая папка.
+        _storage.DeleteFolderIfEmpty(id);
+
+        StatusMessage = conversation.IsGroup ? "Группа удалена." : "Переписка удалена.";
+
+        return RedirectToPage();
+    }
+
+    // ==================================================================
     // Вложения
     // ==================================================================
 
