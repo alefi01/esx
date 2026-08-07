@@ -135,18 +135,6 @@ public sealed class PortalFactory : WebApplicationFactory<Program>
     /// </summary>
     public string? StorageRootPath { get; set; }
 
-    /// <summary>
-    /// Код филиала для проверок синхронизации. Пусто (по умолчанию) —
-    /// обмен выключен, и портал работает как одиночный сервер.
-    ///
-    /// Задавать нужно ДО первого обращения к приложению, как и путь
-    /// к хранилищу: настройки читаются один раз при подъёме хоста.
-    /// </summary>
-    public string? SyncBranchCode { get; set; }
-
-    /// <summary>Общий пароль обмена для проверок доступа к адресам синхронизации.</summary>
-    public string? SyncKey { get; set; }
-
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // Миграции написаны под PostgreSQL и на SQLite не применятся.
@@ -166,17 +154,6 @@ public sealed class PortalFactory : WebApplicationFactory<Program>
         if (StorageRootPath is not null)
         {
             builder.UseSetting("Storage:RootPath", StorageRootPath);
-        }
-
-        if (SyncBranchCode is not null)
-        {
-            builder.UseSetting("Sync:Enabled", "true");
-            builder.UseSetting("Sync:BranchCode", SyncBranchCode);
-        }
-
-        if (SyncKey is not null)
-        {
-            builder.UseSetting("Sync:Key", SyncKey);
         }
 
         builder.ConfigureServices(services =>

@@ -15,7 +15,6 @@ using Portal.Web.Services.Messaging;
 using Portal.Web.Services.Notifications;
 using Portal.Web.Services.Offices;
 using Portal.Web.Services.Storage;
-using Portal.Web.Services.Sync;
 using Portal.Web.Services.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -324,32 +323,6 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddHostedService<StorageCleanupService>();
 
 // ---------------------------------------------------------------------------
-// 5в. Синхронизация между филиалами
-//
-// Портал стоит в каждом филиале, и филиалы обмениваются объявлениями,
-// перепиской и файлами. Подробное описание устройства — в SyncOptions.
-//
-// Службы здесь Scoped: они работают с базой, а контекст базы живёт один
-// запрос (для фоновой задачи — один проход синхронизации, она сама
-// создаёт для этого область).
-// ---------------------------------------------------------------------------
-
-builder.Services.Configure<SyncOptions>(
-    builder.Configuration.GetSection(SyncOptions.SectionName));
-
-builder.Services.AddScoped<SyncFeed>();
-builder.Services.AddScoped<SyncApplier>();
-builder.Services.AddScoped<SyncRunner>();
-builder.Services.AddScoped<SyncSettings>();
-
-// HttpClient для разговора с соседями заводится фабрикой, а не вручную:
-// созданный через new HttpClient держит соединения открытыми и при частом
-// пересоздании исчерпывает сокеты сервера. Фабрика этим управляет сама.
-builder.Services.AddHttpClient<SyncClient>();
-
-builder.Services.AddHostedService<SyncBackgroundService>();
-
-// ---------------------------------------------------------------------------
 // 5а. База данных (PostgreSQL)
 //
 // Строка подключения содержит пароль, поэтому её НЕТ в appsettings.json,
@@ -620,13 +593,6 @@ app.MapPost("/api/notifications/seen", async (
 
     return Results.NoContent();
 });
-
-// ---------------------------------------------------------------------------
-// Синхронизация между филиалами. Сюда обращается не человек, а портал
-// соседнего филиала, и проверяется не вход, а общий пароль обмена.
-// Подробности — в SyncEndpoints.
-// ---------------------------------------------------------------------------
-app.MapSyncEndpoints();
 
 // Простая точка проверки живости — открывается без входа.
 // Удобна для мониторинга и для проверки, что сайт вообще поднялся.
