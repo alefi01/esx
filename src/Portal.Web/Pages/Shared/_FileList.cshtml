@@ -21,7 +21,7 @@
 
     @foreach (var item in Model)
     {
-        <div class="frow"
+        <div class="frow@(item.Pinned ? " pinned" : "")" draggable="true"
              data-id="@item.Id"
              data-name="@item.Name"
              data-href="@item.Href"
@@ -30,6 +30,7 @@
              data-can-delete="@item.CanDelete.ToString().ToLowerInvariant()"
              data-can-manage="@item.CanManage.ToString().ToLowerInvariant()"
              data-file="@(item.FileId?.ToString() ?? "")"
+             data-pinned="@item.Pinned.ToString().ToLowerInvariant()"
              data-folder="@(item.FolderId?.ToString() ?? "")">
 
             <div class="ficon">
@@ -45,6 +46,10 @@
 
             <div class="fname">
                 <span title="@item.Name">@item.Name</span>
+                @if (item.Pinned)
+                {
+                    <span class="pin-mark" title="Закреплено"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pin" /></svg></span>
+                }
                 @if (item.Favorite)
                 {
                     <span class="fav-mark"><svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><use href="#i-star" /></svg></span>
@@ -54,7 +59,17 @@
             <div class="muted hide-s">@item.At.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</div>
             <div class="muted hide-s">@item.TypeName</div>
             <div class="muted">@item.SizeText</div>
-            <div></div>
+
+            <div class="frow-tools">
+                @if (item.CanManage)
+                {
+                    <button class="pin-btn@(item.Pinned ? " on" : "")" type="button"
+                            title="@(item.Pinned ? "Открепить" : "Закрепить наверху")"
+                            aria-label="Закрепить наверху">
+                        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pin" /></svg>
+                    </button>
+                }
+            </div>
         </div>
     }
 </div>

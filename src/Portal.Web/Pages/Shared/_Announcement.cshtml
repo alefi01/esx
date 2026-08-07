@@ -56,14 +56,23 @@
         <button class="ann-more" type="button" data-expand>Показать полностью</button>
     }
 
+    @* Вложения открываются ТЕМ ЖЕ окном предпросмотра, что и файлы
+       хранилища: человек не должен угадывать, почему договор из папки
+       открывается в портале, а тот же договор из объявления — только
+       скачиванием. Что показать нельзя (data-kind пуст), по-прежнему
+       скачивается: ссылка остаётся обычной ссылкой, и без JavaScript
+       вложения работают как работали. *@
     @if (Model.Item.Files.Count > 0)
     {
-        <div class="ann-files">
+        <div class="ann-files" data-ann-files>
             @foreach (var file in Model.Item.Files.Where(f => f.IsImage))
             {
                 <a class="ann-image"
                    asp-page="/Announcements/Index" asp-page-handler="Attachment" asp-route-fileId="@file.Id"
-                   target="_blank" rel="noopener" title="@file.OriginalName">
+                   target="_blank" rel="noopener" title="@file.OriginalName"
+                   data-att="@file.Id"
+                   data-kind="@Portal.Web.Services.Storage.PreviewSupport.KindName(file.OriginalName)"
+                   data-name="@file.OriginalName">
                     <img src="/Announcements?handler=Attachment&amp;fileId=@file.Id" alt="@file.OriginalName" loading="lazy" />
                 </a>
             }
@@ -71,7 +80,10 @@
             @foreach (var file in Model.Item.Files.Where(f => !f.IsImage))
             {
                 <a class="zip-row"
-                   asp-page="/Announcements/Index" asp-page-handler="Attachment" asp-route-fileId="@file.Id">
+                   asp-page="/Announcements/Index" asp-page-handler="Attachment" asp-route-fileId="@file.Id"
+                   data-att="@file.Id"
+                   data-kind="@Portal.Web.Services.Storage.PreviewSupport.KindName(file.OriginalName)"
+                   data-name="@file.OriginalName">
                     @FileIcons.File(file.OriginalName, 22)
                     @file.OriginalName
                     <span>@Model.FormatSize(file.SizeBytes)</span>

@@ -21,6 +21,7 @@ namespace Portal.Web.Pages.Shared;
 /// <param name="PreviewKind">Чем показывать файл. Пусто — показать нельзя, только скачать.</param>
 /// <param name="TypeName">Название типа для столбца «Тип».</param>
 /// <param name="Meta">Подпись под именем в плитке: «2,4 МБ · 5 авг 2026» либо «7 элем.».</param>
+/// <param name="Pinned">Закреплено наверху каталога — общей отметкой, а не личной звёздочкой.</param>
 public sealed record FileEntry(
     string Id,
     int? FileId,
@@ -36,7 +37,8 @@ public sealed record FileEntry(
     bool Favorite,
     bool CanDelete,
     bool CanManage,
-    string? Path = null)
+    string? Path = null,
+    bool Pinned = false)
 {
     /// <summary>
     /// Папка в списке.
@@ -68,11 +70,13 @@ public sealed record FileEntry(
             Favorite: favorite,
             CanDelete: false,
             CanManage: canManage,
-            Path: path);
+            Path: path,
+            Pinned: folder.IsPinned);
 
     /// <summary>Файл в списке.</summary>
     public static FileEntry ForFile(
-        StoredFile file, string href, string previewKind, bool favorite, bool canDelete, string? path = null) =>
+        StoredFile file, string href, string previewKind, bool favorite, bool canDelete,
+        string? path = null, bool canManage = false) =>
         new(
             Id: "f" + file.Id,
             FileId: file.Id,
@@ -87,6 +91,7 @@ public sealed record FileEntry(
             IsFolder: false,
             Favorite: favorite,
             CanDelete: canDelete,
-            CanManage: false,
-            Path: path);
+            CanManage: canManage,
+            Path: path,
+            Pinned: file.IsPinned);
 }

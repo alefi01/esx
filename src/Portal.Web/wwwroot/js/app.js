@@ -594,6 +594,34 @@
         button.textContent = open ? 'Свернуть' : 'Показать полностью';
     });
 
+    // Вложения объявлений — тем же окном предпросмотра, что и файлы
+    // хранилища.
+    //
+    // Ссылка при этом остаётся обычной ссылкой на скачивание: без
+    // JavaScript вложение просто скачается, как и раньше. Перехватываем
+    // только то, что портал умеет показать (data-kind не пуст).
+    document.addEventListener('click', e => {
+        const link = e.target.closest('[data-ann-files] [data-att]');
+
+        if (!link || !link.dataset.kind) { return; }
+
+        // Открыть в новой вкладке средним нажатием или с Ctrl —
+        // обычное право человека, отбирать его нельзя.
+        if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) { return; }
+
+        e.preventDefault();
+
+        const id = link.dataset.att;
+
+        openPreview({
+            name: link.dataset.name || 'Вложение',
+            kind: link.dataset.kind,
+            href: '/Announcements?handler=Attachment&fileId=' + id,
+            src: '/Announcements?handler=AttachmentPreview&fileId=' + id,
+            doc: '/Announcements?handler=AttachmentDocument&fileId=' + id
+        }, link);
+    });
+
     // Часы на главной.
     //
     // Время берётся у БРАУЗЕРА, а не у сервера: часы показывают время
@@ -898,6 +926,7 @@
             href: node.dataset.href || '',
             kind: node.dataset.kind || '',
             fav: node.dataset.fav === 'true',
+            pinned: node.dataset.pinned === 'true',
             canDelete: node.dataset.canDelete === 'true',
             canManage: node.dataset.canManage === 'true'
         });
@@ -989,8 +1018,12 @@
                 if (e.button !== 0 || e.target.closest('[data-id]')) { return; }
 
                 additive = e.ctrlKey || e.metaKey;
-                startX = e.pageX;
-                startY = e.pageY;
+
+                // Координаты ОКНА, а не документа: прокручивается рабочая
+                // область, а не страница, и в координатах документа рамка
+                // разъезжалась бы с плитками (см. .marquee в стилях).
+                startX = e.clientX;
+                startY = e.clientY;
 
                 box = el('<div class="marquee"></div>');
                 document.body.appendChild(box);
@@ -1004,10 +1037,10 @@
             document.addEventListener('mousemove', e => {
                 if (!box) { return; }
 
-                const left = Math.min(startX, e.pageX);
-                const top = Math.min(startY, e.pageY);
-                const width = Math.abs(e.pageX - startX);
-                const height = Math.abs(e.pageY - startY);
+                const left = Math.min(startX, e.clientX);
+                const top = Math.min(startY, e.clientY);
+                const width = Math.abs(e.clientX - startX);
+                const height = Math.abs(e.clientY - startY);
 
                 // Размеры задаёт код, а не разметка: встроенные стили
                 // запрещены политикой безопасности страницы.
@@ -1016,10 +1049,9 @@
                 box.style.width = width + 'px';
                 box.style.height = height + 'px';
 
-                const rect = {
-                    left: left - window.scrollX, top: top - window.scrollY,
-                    right: left + width - window.scrollX, bottom: top + height - window.scrollY
-                };
+                // getBoundingClientRect тоже отдаёт координаты окна,
+                // поэтому пересчитывать ничего не нужно.
+                const rect = { left, top, right: left + width, bottom: top + height };
 
                 visibleNodes().forEach(node => {
                     const b = node.getBoundingClientRect();
@@ -1047,6 +1079,130 @@
                 const list = picked();
 
                 selected = list.length ? list[list.length - 1] : null;
+            });
+        })();
+
+        // ---------- Перетаскивание в другую папку ----------
+        //
+        // Тащить можно и файл, и папку; бросать — на плитку папки в списке,
+        // на любой шаг пути наверху (в том числе на «Файлы» — это верхний
+        // уровень) и на кнопку «Назад», то есть в родительскую папку.
+        //
+        // Перетаскивается ВСЁ ВЫДЕЛЕННОЕ, а не только та плитка, за которую
+        // взялись: человек выделил десяток файлов рамкой и тянет их вместе.
+        // Если взялись за невыделенное — тащим только его, и выделение
+        // переезжает на него же, иначе на экране выделено одно, а едет другое.
+        //
+        // Права здесь не проверяются намеренно: их проверяет сервер, по обеим
+        // папкам сразу. Запрещать перетаскивание в браузере значило бы
+        // повторять те же правила во втором месте — и однажды разойтись с ними.
+        (function () {
+            let dragging = [];
+
+            const clear = () => $$('.drop-hot').forEach(n => n.classList.remove('drop-hot'));
+
+            /** Куда можно бросить: папка в списке, шаг пути, кнопка «Назад». */
+            const targetOf = node => {
+                if (!node || !node.closest) { return null; }
+
+                const tile = node.closest('[data-folder]');
+
+                if (tile && tile.dataset.folder && !tile.classList.contains('dragged')) {
+                    return { node: tile, id: tile.dataset.folder };
+                }
+
+                const crumb = node.closest('.crumb');
+
+                if (crumb) {
+                    // У корневого шага пути номера нет — это верхний уровень,
+                    // и сервер понимает его как 0.
+                    const match = /[?&]id=(\d+)/.exec(crumb.getAttribute('href') || '');
+
+                    return { node: crumb, id: match ? match[1] : '0' };
+                }
+
+                const back = node.closest('.back-btn');
+
+                if (back && back.getAttribute('href')) {
+                    const match = /[?&]id=(\d+)/.exec(back.getAttribute('href'));
+
+                    return { node: back, id: match ? match[1] : '0' };
+                }
+
+                return null;
+            };
+
+            container.addEventListener('dragstart', e => {
+                const node = e.target.closest('[data-id]');
+
+                if (!node) { return; }
+
+                if (!node.classList.contains('selected')) { select(node); }
+
+                dragging = picked().length ? picked() : [node];
+                dragging.forEach(n => n.classList.add('dragged'));
+
+                // Данные в обмене нужны, иначе Firefox не начинает
+                // перетаскивание вовсе. Само значение мы не читаем:
+                // список лежит в dragging.
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', dragging.map(n => n.dataset.name).join('\n'));
+            });
+
+            document.addEventListener('dragend', () => {
+                $$('.dragged').forEach(n => n.classList.remove('dragged'));
+                clear();
+                dragging = [];
+            });
+
+            document.addEventListener('dragover', e => {
+                if (!dragging.length) { return; }
+
+                const target = targetOf(e.target);
+
+                if (!target) { clear(); return; }
+
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+
+                if (!target.node.classList.contains('drop-hot')) {
+                    clear();
+                    target.node.classList.add('drop-hot');
+                }
+            });
+
+            document.addEventListener('drop', e => {
+                if (!dragging.length) { return; }
+
+                const target = targetOf(e.target);
+
+                if (!target) { return; }
+
+                e.preventDefault();
+
+                const items = dragging.map(info);
+                const fileList = items.filter(i => i.file).map(i => i.file);
+                const folderList = items.filter(i => i.folder).map(i => i.folder);
+
+                clear();
+                $$('.dragged').forEach(n => n.classList.remove('dragged'));
+                dragging = [];
+
+                // Бросили туда же, где и лежало, — делать нечего.
+                if (target.id === (folderId || '0')) { return; }
+
+                const what = items.length === 1
+                    ? `«${items[0].name}»`
+                    : `выбранное (${items.length})`;
+
+                confirmDlg('Переместить?',
+                    `Переместить ${what} в другую папку? Ссылки на перемещённое останутся рабочими.`,
+                    'Переместить',
+                    () => submit('/Files?handler=Move', {
+                        targetFolderId: target.id,
+                        fileIds: fileList,
+                        folderIds: folderList
+                    }));
             });
         })();
 
@@ -1125,7 +1281,7 @@
             // В корзину — только файлы и только те, которые человеку
             // разрешено удалять. Папки удаляются по одной и только пустые:
             // пакетное удаление папок слишком легко сделать не глядя.
-            const deletable = items.filter(i => i.file && i.canDelete).map(i => i.file);
+            const deletable = items.filter(i => i.file && i.canDelete);
 
             if (deletable.length) {
                 entries.push({ sep: 1 });
@@ -1133,16 +1289,49 @@
                     icon: 'trash',
                     label: `В корзину (${deletable.length})`,
                     danger: 1,
-                    fn: () => confirmDlg('Переместить в корзину?',
-                        `Файлов: ${deletable.length}. Восстановить их можно будет из раздела «Корзина».`,
-                        'В корзину',
-                        () => submit('/Files?handler=DeleteFiles' + (folderId ? '&folderId=' + folderId : ''),
-                            { fileIds: deletable }),
-                        true)
+                    fn: () => removeMany(items)
                 });
             }
 
             showMenu(x, y, entries);
+        }
+
+        /**
+         * Убрать в корзину всё выделенное.
+         *
+         * Отдельно от меню, потому что вызывается ещё и клавишей Delete:
+         * выделив десяток файлов рамкой, человек жмёт Delete и ждёт, что
+         * уйдут все десять, а не последний нажатый.
+         *
+         * Папки в пачку не входят: удалять их можно только пустыми и по
+         * одной — слишком легко снести не глядя целый раздел. О пропущенных
+         * говорим прямо, чтобы «удалил, а папка осталась» не выглядело сбоем.
+         */
+        function removeMany(items) {
+            const deletable = items.filter(i => i.file && i.canDelete).map(i => i.file);
+            const folders = items.filter(i => i.folder).length;
+            const refused = items.filter(i => i.file && !i.canDelete).length;
+
+            if (!deletable.length) {
+                toast(folders
+                    ? 'Папки удаляются по одной — правым нажатием на папке'
+                    : 'Удалять эти файлы вам нельзя', 'warn');
+
+                return;
+            }
+
+            const notes = [];
+
+            if (folders) { notes.push(`папок пропущено: ${folders} — их удаляют по одной`); }
+            if (refused) { notes.push(`без прав на удаление: ${refused}`); }
+
+            confirmDlg('Переместить в корзину?',
+                `Файлов: ${deletable.length}. Восстановить их можно будет из раздела «Корзина».`
+                    + (notes.length ? '\n\n' + notes.join('; ') : ''),
+                'В корзину',
+                () => submit('/Files?handler=DeleteFiles' + (folderId ? '&folderId=' + folderId : ''),
+                    { fileIds: deletable }),
+                true);
         }
 
         function open(item, node) {
@@ -1195,6 +1384,14 @@
                 label: item.fav ? 'Убрать из избранного' : 'В избранное',
                 fn: () => toggleFav(item)
             });
+
+            if (item.canManage) {
+                entries.push({
+                    icon: 'pin',
+                    label: item.pinned ? 'Открепить' : 'Закрепить наверху',
+                    fn: () => togglePin(item)
+                });
+            }
 
             entries.push({ icon: 'share', label: 'Скопировать ссылку', fn: () => copyLink(item) });
 
@@ -1263,6 +1460,31 @@
                     toast(data.favorite ? 'Добавлено в избранное' : 'Убрано из избранного', 'info');
                 })
                 .catch(() => toast('Не удалось изменить избранное', 'danger'));
+        }
+
+        /**
+         * Закрепить или открепить.
+         *
+         * После ответа страница перечитывается целиком, в отличие
+         * от звёздочки: закрепление МЕНЯЕТ ПОРЯДОК списка, и оставить
+         * плитку на прежнем месте значило бы соврать — при следующем
+         * заходе она окажется в другом.
+         */
+        function togglePin(item) {
+            const query = item.file ? 'fileId=' + item.file : 'folderId=' + item.folder;
+
+            post('/Files?handler=Pin&' + query, {})
+                .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                .then(data => {
+                    toast(data.pinned ? 'Закреплено наверху' : 'Откреплено', 'info');
+
+                    window.location.reload();
+                })
+                .catch(reason => toast(
+                    reason === 403
+                        ? 'Закреплять может тот, кто управляет папкой'
+                        : 'Не удалось изменить закрепление',
+                    'warn'));
         }
 
         function copyLink(item) {
@@ -1518,7 +1740,8 @@
                     '</button>').join('');
 
                 tree.innerHTML = '<div class="dir-head">' + crumbs + '</div>'
-                    + (list || '<div class="dir-load">Здесь ничего нет.</div>');
+                    + (list || '<div class="dir-load">'
+                        + esc(result.problem || 'Здесь ничего нет.') + '</div>');
 
                 const up = $('[data-up]', tree);
 
@@ -1611,9 +1834,23 @@
 
             const item = info(selected);
 
-            if (e.key === 'Delete' && ((item.file && item.canDelete) || (item.folder && item.canManage))) {
-                e.preventDefault();
-                remove(item);
+            if (e.key === 'Delete') {
+                const many = picked();
+
+                // Выделено несколько — удаляем ВСЁ выделенное. Раньше здесь
+                // удалялся только последний нажатый, и это выглядело так,
+                // будто клавиша срабатывает через раз.
+                if (many.length > 1) {
+                    e.preventDefault();
+                    removeMany(many.map(info));
+
+                    return;
+                }
+
+                if ((item.file && item.canDelete) || (item.folder && item.canManage)) {
+                    e.preventDefault();
+                    remove(item);
+                }
             }
 
             if (e.key === 'F2' && ((item.file && item.canDelete) || (item.folder && item.canManage))) {
@@ -1637,6 +1874,22 @@
             e.stopPropagation();
 
             toggleFav(info(star.closest('[data-id]')));
+        });
+
+        // ---------- Кнопка закрепления ----------
+        //
+        // Рядом со звёздочкой, но это разные вещи: звёздочка личная,
+        // закрепление общее — оно поднимает наверх у ВСЕХ, кто заходит
+        // в папку. Поэтому кнопка есть только у того, кто папкой управляет.
+        container.addEventListener('click', e => {
+            const button = e.target.closest('.pin-btn');
+
+            if (!button) { return; }
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            togglePin(info(button.closest('[data-id]')));
         });
 
         // ---------- Кнопки верхней панели ----------
@@ -1833,21 +2086,44 @@
         if (canWrite) {
             let depth = 0;
 
+            /**
+             * Тащат ли файлы ИЗ СИСТЕМЫ, а не плитку по самой странице.
+             *
+             * Различать обязательно: поле «отпустите файлы для загрузки»
+             * растянуто на всю область папки и лежит поверх плиток. Появляясь
+             * при перетаскивании плитки, оно перехватывало отпускание на себя,
+             * и перемещение внутри портала не срабатывало вовсе — файл будто
+             * возвращался на место.
+             *
+             * Признак — типы в обмене: у файлов из проводника там Files,
+             * у нашей плитки только текст.
+             */
+            const fromOutside = e =>
+                !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+
             files.addEventListener('dragenter', e => {
+                if (!fromOutside(e)) { return; }
+
                 e.preventDefault();
                 depth++;
                 files.classList.add('dragging');
             });
 
-            files.addEventListener('dragover', e => e.preventDefault());
+            files.addEventListener('dragover', e => {
+                if (fromOutside(e)) { e.preventDefault(); }
+            });
 
-            files.addEventListener('dragleave', () => {
+            files.addEventListener('dragleave', e => {
+                if (!fromOutside(e)) { return; }
+
                 depth = Math.max(0, depth - 1);
 
                 if (depth === 0) { files.classList.remove('dragging'); }
             });
 
             files.addEventListener('drop', e => {
+                if (!fromOutside(e)) { return; }
+
                 e.preventDefault();
                 depth = 0;
                 files.classList.remove('dragging');
@@ -1937,7 +2213,26 @@
         const attachBtn = $('#attachBtn');
 
         if (attachBtn && files) {
-            attachBtn.onclick = () => files.click();
+            // Скрепка предлагает выбор: файл с компьютера или файл, который
+            // уже лежит в портале.
+            //
+            // Второе — не «ещё одна копия того же документа», а ССЫЛКА
+            // на него. Разница существенная: договор на сотню мегабайт
+            // не нужно ни отправлять, ни хранить второй раз, а получатель
+            // увидит ту версию, которая лежит в папке сейчас, — не ту,
+            // которая лежала в день отправки. Права при переходе по ссылке
+            // проверяются как обычно: у кого доступа к папке нет,
+            // тот файл не откроет.
+            attachBtn.onclick = e => {
+                const rect = attachBtn.getBoundingClientRect();
+
+                showMenu(rect.left, rect.bottom + 4, [
+                    { icon: 'upload', label: 'Файл с компьютера', fn: () => files.click() },
+                    { icon: 'folder', label: 'Ссылка на файл портала', fn: pickPortalFile }
+                ]);
+
+                e.stopPropagation();
+            };
 
             files.onchange = () => {
                 // Слишком крупное вложение отсеиваем сразу. Сервер узнаёт
@@ -1970,6 +2265,98 @@
                     .map(f => `<span class="chip">${esc(f.name)} · ${fmtSize(f.size)}</span>`)
                     .join('');
             };
+        }
+
+        /**
+         * Выбор файла из хранилища портала.
+         *
+         * Ходим по дереву тем же обработчиком, что и страница «Файлы»
+         * (handler=Browse), поэтому окно показывает ровно то, что человеку
+         * и так видно, — ни папкой больше.
+         *
+         * В сообщение попадает полный адрес файла. Он же превращается
+         * в кликабельную ссылку разбором текста (linkify) — тем самым,
+         * который делает ссылками любые адреса в переписке. Отдельного
+         * вида вложения ради этого заводить не пришлось.
+         */
+        function pickPortalFile() {
+            const m = openModal({
+                wide: true,
+                title: 'Файл из портала',
+                body: '<p class="hint" id="fpPath">Файлы</p>' +
+                    '<div class="fp-list" id="fpList"><p class="hint">Читаем…</p></div>' +
+                    '<p class="hint">В сообщение уйдёт ссылка, а не копия файла: ' +
+                    'получатель откроет его, если у него есть доступ к папке.</p>'
+            });
+
+            const list = $('#fpList', m);
+            const path = $('#fpPath', m);
+
+            function load(id) {
+                list.innerHTML = '<p class="hint">Читаем…</p>';
+
+                fetch('/Files?handler=Browse' + (id ? '&folderId=' + id : ''), {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                    .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                    .then(data => {
+                        path.textContent = data.path;
+
+                        const rows = [];
+
+                        if (!data.atRoot) {
+                            rows.push('<button class="fp-row fp-up" type="button" data-up="' +
+                                (data.parentId === null || data.parentId === undefined ? '' : data.parentId) +
+                                `">${ic('back', 16)}<span>Наверх</span></button>`);
+                        }
+
+                        (data.folders || []).forEach(f => {
+                            rows.push(`<button class="fp-row" type="button" data-open="${f.id}">` +
+                                `${ic('folder', 16)}<span>${esc(f.name)}</span></button>`);
+                        });
+
+                        (data.files || []).forEach(f => {
+                            rows.push('<button class="fp-row fp-file" type="button"' +
+                                ` data-pick="${esc(f.href)}" data-title="${esc(f.name)}">` +
+                                `${ic('file', 16)}<span>${esc(f.name)}</span>` +
+                                `<em>${esc(f.size)}</em></button>`);
+                        });
+
+                        list.innerHTML = rows.length
+                            ? rows.join('')
+                            : '<p class="hint">Здесь пусто.</p>';
+
+                        $$('[data-open]', list).forEach(b => {
+                            b.onclick = () => load(b.dataset.open);
+                        });
+
+                        $$('[data-up]', list).forEach(b => {
+                            b.onclick = () => load(b.dataset.up);
+                        });
+
+                        $$('[data-pick]', list).forEach(b => {
+                            b.onclick = () => {
+                                const url = location.origin + b.dataset.pick;
+
+                                // Дописываем к тому, что уже набрано, а не
+                                // заменяем: ссылку обычно шлют с пояснением.
+                                text.value = (text.value ? text.value.replace(/\s*$/, '\n') : '') + url + '\n';
+                                text.dispatchEvent(new Event('input'));
+
+                                closeModal();
+                                text.focus();
+
+                                toast('Ссылка на «' + b.dataset.title + '» добавлена', 'info');
+                            };
+                        });
+                    })
+                    .catch(() => {
+                        list.innerHTML = '<p class="hint">Не удалось прочитать список файлов.</p>';
+                    });
+            }
+
+            load('');
         }
 
         // ---------- Удаление и правка сообщения ----------
@@ -2464,8 +2851,22 @@
     /** Сколько ждём ответа, прежде чем признать, что связи нет. */
     const WAIT_MS = 45000;
 
+    /**
+     * Окно предпросмотра.
+     *
+     * Открывает не только файлы хранилища: тем же окном показываются
+     * вложения объявлений. Поэтому адреса берутся из самого item
+     * (src — сам файл, doc — разобранная разметка для Office и архивов),
+     * а не собираются здесь из номера файла. Без них подставляются
+     * обработчики «Файлов» — обычный случай.
+     *
+     * Правая колонка со сведениями и правами есть только у файлов
+     * хранилища: у вложения объявления нет ни папки, ни прав на неё,
+     * и показывать там нечего.
+     */
     function openPreview(item, node) {
-        const source = '/Files?handler=Preview&fileId=' + item.file;
+        const source = item.src || ('/Files?handler=Preview&fileId=' + item.file);
+        const stored = !!item.file;
 
         // Значок берём прямо из плитки: он уже нарисован сервером,
         // и рисовать его второй раз здесь — лишнее удвоение кода,
@@ -2475,25 +2876,34 @@
         const m = openModal({
             wide: true,
             title: `<span class="pv-title">${icon ? icon.outerHTML : ''}<span>${esc(item.name)}</span></span>`,
-            body: '<div class="pv-body">' +
+            body: '<div class="pv-body' + (stored ? '' : ' pv-body--bare') + '">' +
                 '<div class="pv-viewer" id="pvViewer">' +
                 '<div class="pv-load"><div class="pv-spin"></div><p>Загружается…</p></div>' +
                 '</div>' +
-                '<div class="pv-aside">' +
-                '<div class="pv-actions">' +
-                `<button class="btn sm" type="button" id="pvFav">${ic('star', 14)}Избранное</button>` +
-                `<button class="btn sm" type="button" id="pvShare">${ic('share', 14)}Ссылка</button>` +
-                `<a class="btn sm" id="pvDl" href="${esc(item.href)}" download>${ic('download', 14)}</a>` +
-                '</div>' +
-                '<div class="pv-meta" id="pvFacts"><h4>Сведения</h4></div>' +
-                '<div class="pv-meta" id="pvAccess"><h4>Доступ</h4></div>' +
-                '</div></div>'
+                (stored
+                    ? '<div class="pv-aside">' +
+                      '<div class="pv-actions">' +
+                      `<button class="btn sm" type="button" id="pvFav">${ic('star', 14)}Избранное</button>` +
+                      `<button class="btn sm" type="button" id="pvShare">${ic('share', 14)}Ссылка</button>` +
+                      `<a class="btn sm" id="pvDl" href="${esc(item.href)}" download>${ic('download', 14)}</a>` +
+                      '</div>' +
+                      '<div class="pv-meta" id="pvFacts"><h4>Сведения</h4></div>' +
+                      '<div class="pv-meta" id="pvAccess"><h4>Доступ</h4></div>' +
+                      '</div>'
+                    : '<div class="pv-aside pv-aside--slim">' +
+                      '<div class="pv-actions">' +
+                      `<a class="btn sm" href="${esc(item.href)}" download>${ic('download', 14)}Скачать</a>` +
+                      '</div></div>') +
+                '</div>'
         });
 
         const viewer = $('#pvViewer', m);
 
-        loadFacts(item, m);
         loadViewer(item, source, viewer);
+
+        if (!stored) { return; }
+
+        loadFacts(item, m);
 
         $('#pvFav', m).onclick = () => {
             post('/Files?handler=Favorite&fileId=' + item.file, {})
@@ -2554,7 +2964,7 @@
                 `<a class="btn" href="${esc(item.href)}" download>${ic('download', 14)}Скачать файл</a></div>`;
         };
 
-        const html = (url, wrap) => {
+        const html = (url, wrap, done) => {
             const controller = typeof AbortController === 'function' ? new AbortController() : null;
             let timedOut = false;
 
@@ -2569,7 +2979,7 @@
 
             fetch(url, options)
                 .then(r => { clearTimeout(timer); return r.ok ? r.text() : Promise.reject(r.status); })
-                .then(markup => show(wrap ? wrap(markup) : markup))
+                .then(markup => { show(wrap ? wrap(markup) : markup); if (done) { done(); } })
                 .catch(reason => {
                     clearTimeout(timer);
 
@@ -2649,7 +3059,7 @@
         }
 
         if (item.kind === 'office') {
-            html('/Files?handler=OfficePreview&fileId=' + item.file, markup => {
+            html(item.doc || ('/Files?handler=OfficePreview&fileId=' + item.file), markup => {
                 // Книга Excel шире окна, и прокручивает её само окно
                 // предпросмотра — одной полосой внизу, вместо своей полосы
                 // у каждого листа. Но окно выравнивает содержимое по центру,
@@ -2661,14 +3071,55 @@
                     viewer.classList.add('pv-viewer--book');
                 }
 
-                return markup;
+                // Масштаб. Нужен прежде всего книгам Excel: лист на двадцать
+                // столбцов не помещается в окно ни при какой ширине экрана,
+                // и единственный способ увидеть его целиком — отдалить.
+                // Документам Word он тоже не мешает: увеличить мелкий скан
+                // договора хотят не реже.
+                return markup +
+                    '<div class="zoom-bar zoom-bar--doc">' +
+                    `<button class="icon-btn" type="button" data-dz="-1" title="Отдалить">${ic('zoomout', 16)}</button>` +
+                    '<button class="icon-btn zoom-val" type="button" data-dz="0" id="dzLbl" title="Вернуть 100%">100%</button>' +
+                    `<button class="icon-btn" type="button" data-dz="1" title="Приблизить">${ic('zoomin', 16)}</button></div>`;
+            }, () => {
+                const doc = $('.doc', viewer);
+
+                if (!doc) { return; }
+
+                let z = 1;
+
+                const apply = () => {
+                    // Масштабируем преобразованием, а не размером шрифта:
+                    // размер шрифта переверстал бы таблицу заново, и столбцы
+                    // разъехались бы относительно исходного документа.
+                    // Точка отсчёта — левый верхний угол, иначе при отдалении
+                    // содержимое уезжает от начала прокрутки.
+                    doc.style.transform = z === 1 ? '' : `scale(${z})`;
+                    doc.style.transformOrigin = 'top left';
+
+                    // Место под уменьшенным документом иначе осталось бы
+                    // занятым: преобразование не меняет размеров в разметке.
+                    doc.style.width = z === 1 ? '' : (100 / z) + '%';
+
+                    $('#dzLbl', viewer).textContent = Math.round(z * 100) + '%';
+                };
+
+                $$('[data-dz]', viewer).forEach(b => {
+                    b.onclick = () => {
+                        const d = +b.dataset.dz;
+
+                        z = d === 0 ? 1 : Math.min(2, Math.max(0.4, z + d * 0.1));
+
+                        apply();
+                    };
+                });
             });
 
             return;
         }
 
         if (item.kind === 'archive') {
-            html('/Files?handler=ArchivePreview&fileId=' + item.file);
+            html(item.doc || ('/Files?handler=ArchivePreview&fileId=' + item.file));
             return;
         }
 
@@ -2697,10 +3148,39 @@
 
             if (item.kind === 'video') {
                 viewer.classList.add('pv-viewer--frame');
+
+                viewer.innerHTML = '';
+                viewer.appendChild(player);
+
+                return;
             }
 
-            viewer.innerHTML = '';
-            viewer.appendChild(player);
+            // У звука показывать нечего: браузер рисует голую полосу
+            // проигрывания посреди пустого окна, и по ней не понять даже,
+            // идёт ли воспроизведение вообще — на записи с тишиной в начале
+            // это выглядит как «не работает». Поэтому вокруг полосы —
+            // карточка с именем файла и полосками, которые пляшут, пока
+            // запись играет, и замирают на паузе.
+            //
+            // Полоски рисуются стилями, а не по звуку: разбор звука
+            // (Web Audio) требует читать содержимое файла в странице,
+            // и ради украшения этого делать не стоит.
+            viewer.innerHTML =
+                '<div class="au-card" id="auCard">' +
+                '<div class="au-eq" aria-hidden="true">' +
+                '<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>' +
+                '</div>' +
+                `<div class="au-name">${esc(item.name)}</div>` +
+                '<div class="au-player"></div>' +
+                '</div>';
+
+            $('.au-player', viewer).appendChild(player);
+
+            const card = $('#auCard', viewer);
+
+            player.addEventListener('play', () => card.classList.add('playing'));
+            player.addEventListener('pause', () => card.classList.remove('playing'));
+            player.addEventListener('ended', () => card.classList.remove('playing'));
 
             return;
         }

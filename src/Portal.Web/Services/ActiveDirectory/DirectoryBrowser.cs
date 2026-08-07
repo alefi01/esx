@@ -13,6 +13,18 @@ namespace Portal.Web.Services.ActiveDirectory;
 public sealed record DirectoryNode(string Kind, string Name, string Dn, string Account);
 
 /// <summary>
+/// Ответ обзора: что нашлось и — если ничего — почему.
+///
+/// Причина нужна ровно потому, что пустое дерево ничего не объясняет.
+/// «Не задан BaseDn», «ни один контроллер не ответил» и «в этой ветке
+/// действительно пусто» выглядели одинаково: пустое окно. Разбираться
+/// приходилось по журналу приложения на сервере.
+/// </summary>
+/// <param name="Nodes">Найденные узлы.</param>
+/// <param name="Problem">Почему список пуст. null — всё в порядке.</param>
+public sealed record DirectoryLevel(IReadOnlyList<DirectoryNode> Nodes, string? Problem = null);
+
+/// <summary>
 /// Обзор каталога домена: подразделения, вложенные подразделения, группы
 /// и люди — по одному уровню за раз.
 ///
@@ -45,16 +57,37 @@ public sealed class DirectoryBrowser
 
     private static readonly TimeSpan CacheFor = TimeSpan.FromMinutes(1);
 
+    /// <summary>
+    /// Сколько ждём отклика ОДНОГО контроллера на уровне сети.
+    ///
+    /// Проверка отдельная и короткая, потому что таймаут самой LdapConnection
+    /// считает время ЗАПРОСА, а не подключения: если контроллер выключен или
+    /// имя не разрешается, соединение висит минутами, и окно выбора группы
+    /// просто не открывается — без ошибки, без объяснения, без конца.
+    /// Именно так это и выглядело: «дерево не подгружается».
+    /// </summary>
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Общий предел на весь обзор. Даже если контроллеров в списке десяток,
+    /// человек у окна ждёт секунды, а не минуты: не ответили — покажем
+    /// причину и оставим ввод имени руками.
+    /// </summary>
+    private static readonly TimeSpan TotalBudget = TimeSpan.FromSeconds(12);
+
     private readonly ActiveDirectoryOptions _ad;
+    private readonly Portal.Web.Services.Offices.IOfficeResolver _offices;
     private readonly IMemoryCache _cache;
     private readonly ILogger<DirectoryBrowser> _logger;
 
     public DirectoryBrowser(
         IOptions<ActiveDirectoryOptions> ad,
+        Portal.Web.Services.Offices.IOfficeResolver offices,
         IMemoryCache cache,
         ILogger<DirectoryBrowser> logger)
     {
         _ad = ad.Value;
+        _offices = offices;
         _cache = cache;
         _logger = logger;
     }
@@ -69,59 +102,139 @@ public sealed class DirectoryBrowser
     /// потом группы, потом люди — сверху то, что раскрывают, снизу то,
     /// что выбирают.
     /// </summary>
-    public IReadOnlyList<DirectoryNode> Children(string? dn, string? query = null)
+    /// <summary>
+    /// То же, что <see cref="Children"/>, но с ОБЩИМ пределом ожидания.
+    ///
+    /// Библиотека каталога синхронная и отменять начатое подключение
+    /// не умеет, поэтому работа уходит в отдельный поток, а страница ждёт
+    /// его не дольше отведённого. Зависший поток при этом досчитает сам
+    /// и никого не задержит — а окно уже покажет, что каталог не ответил.
+    /// </summary>
+    public async Task<DirectoryLevel> ChildrenAsync(
+        string? dn, string? query, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await Task.Run(() => Children(dn, query), cancellationToken)
+                .WaitAsync(TotalBudget, cancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            _logger.LogWarning("Обзор каталога не уложился в {Seconds} с.", TotalBudget.TotalSeconds);
+
+            return new DirectoryLevel([],
+                $"Каталог домена не ответил за {TotalBudget.TotalSeconds:0} с. "
+                + "Имя группы можно вписать руками.");
+        }
+    }
+
+    public DirectoryLevel Children(string? dn, string? query = null)
     {
         var baseDn = string.IsNullOrWhiteSpace(dn) ? RootDn : dn.Trim();
 
         if (string.IsNullOrWhiteSpace(baseDn))
         {
-            return [];
+            return new DirectoryLevel([],
+                "В настройках не задан корень каталога (ActiveDirectory:BaseDn). "
+                + "Имя группы можно вписать руками.");
         }
 
         // Поиск идёт по ВСЕМУ поддереву, обзор — только по одному уровню:
         // человек, который начал печатать, ищет конкретное имя и не хочет
         // сам обходить ветки.
         var needle = (query ?? "").Trim();
-        var key = "dirbrowse:" + baseDn + "" + needle.ToLowerInvariant();
+        var key = "dirbrowse:" + baseDn + "\u0001" + needle.ToLowerInvariant();
 
-        if (_cache.TryGetValue(key, out IReadOnlyList<DirectoryNode>? cached) && cached is not null)
+        if (_cache.TryGetValue(key, out DirectoryLevel? cached) && cached is not null)
         {
             return cached;
         }
 
-        IReadOnlyList<DirectoryNode> result;
+        var result = ReadAnyController(baseDn, needle);
 
-        try
+        // В памяти держим только удачные ответы. Иначе минутная неудача
+        // («контроллер перезагружался») запоминалась бы на минуту и после
+        // восстановления связи окно всё равно оставалось бы пустым.
+        if (result.Problem is null)
         {
-            result = Read(baseDn, needle);
+            _cache.Set(key, result, CacheFor);
         }
-        catch (Exception ex)
-        {
-            // Каталог недоступен — окно прав должно продолжать работать:
-            // имя группы всегда можно вписать руками, как и раньше.
-            _logger.LogWarning(ex, "Не удалось прочитать каталог по пути {Dn}.", baseDn);
-
-            return [];
-        }
-
-        _cache.Set(key, result, CacheFor);
 
         return result;
     }
 
-    private IReadOnlyList<DirectoryNode> Read(string baseDn, string needle)
+    /// <summary>
+    /// Обходит контроллеры домена по очереди, как это делает вход в портал.
+    ///
+    /// Список берётся ИЗ ТОГО ЖЕ места, что и при входе (офисы плюс общий
+    /// запасной список). Раньше здесь читался только запасной список — и в
+    /// сети, где контроллеры расписаны по офисам, обзор каталога не работал
+    /// вовсе, хотя вход по тем же самым контроллерам работал прекрасно.
+    /// </summary>
+    private DirectoryLevel ReadAnyController(string baseDn, string needle)
     {
-        var controller = _ad.FallbackDomainControllers.FirstOrDefault();
+        var controllers = _offices.GetDomainControllerOrder(null);
 
-        if (string.IsNullOrWhiteSpace(controller))
+        if (controllers.Count == 0)
         {
-            _logger.LogWarning(
-                "Обзор каталога невозможен: не задан ни один контроллер домена "
-                + "(ActiveDirectory:FallbackDomainControllers).");
-
-            return [];
+            return new DirectoryLevel([],
+                "В настройках не указан ни один контроллер домена "
+                + "(Offices:Items:DomainControllers и ActiveDirectory:FallbackDomainControllers пусты).");
         }
 
+        string? lastError = null;
+
+        foreach (var controller in controllers)
+        {
+            // Сначала короткая проверка «отзывается ли вообще», и только
+            // потом настоящий запрос. Без неё один недоступный контроллер
+            // в списке съедал всё ожидание.
+            if (!Answers(controller))
+            {
+                lastError = $"{controller} не отвечает на порту {_ad.Port}";
+                continue;
+            }
+
+            try
+            {
+                return new DirectoryLevel(Read(controller, baseDn, needle));
+            }
+            catch (Exception ex)
+            {
+                // Каталог недоступен — окно прав должно продолжать работать:
+                // имя группы всегда можно вписать руками, как и раньше.
+                _logger.LogWarning(ex,
+                    "Не удалось прочитать каталог по пути {Dn} через контроллер {Controller}.",
+                    baseDn, controller);
+
+                lastError = ex.Message;
+            }
+        }
+
+        return new DirectoryLevel([],
+            "Каталог домена не ответил ни на одном контроллере"
+            + (lastError is null ? "." : ": " + lastError));
+    }
+
+    /// <summary>Отзывается ли контроллер на своём порту за отведённые секунды.</summary>
+    private bool Answers(string controller)
+    {
+        try
+        {
+            using var client = new System.Net.Sockets.TcpClient();
+
+            return client.ConnectAsync(controller, _ad.Port).Wait(ProbeTimeout);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Контроллер {Controller} не отозвался.", controller);
+
+            return false;
+        }
+    }
+
+    private IReadOnlyList<DirectoryNode> Read(string controller, string baseDn, string needle)
+    {
         var identifier = new LdapDirectoryIdentifier(
             controller, _ad.Port, fullyQualifiedDnsHostName: false, connectionless: false);
 

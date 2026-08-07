@@ -45,6 +45,42 @@ public class IndexModel : PageModel
 
     public int TotalPages { get; private set; } = 1;
 
+    /// <summary>
+    /// Отбор ленты: all (по умолчанию), pinned, important.
+    ///
+    /// Отбор В АДРЕСЕ, а не переключателем в браузере: лента режется
+    /// на страницы сервером, и «спрятать лишние карточки на этой странице»
+    /// давало бы то три объявления, то ни одного — при том, что подходящих
+    /// в базе десятки. Заодно ссылку на «только важные» можно послать.
+    /// </summary>
+    [BindProperty(SupportsGet = true, Name = "filter")]
+    public string? Filter { get; set; }
+
+    /// <summary>Проверенное значение отбора — чужая строка в адресе ничего не меняет.</summary>
+    public string FilterMode => Filter is "pinned" or "important" ? Filter : "all";
+
+    /// <summary>Сколько всего объявлений подходит под текущий отбор.</summary>
+    public int TotalCount { get; private set; }
+
+    /// <summary>
+    /// Закреплённая часть ленты — она показывается под отдельным заголовком.
+    ///
+    /// Разделение считается ЗДЕСЬ, а не в разметке: в теле @@if шаблона
+    /// объявить переменную нельзя, а плодить ради этого лишний частичный
+    /// шаблон — хуже, чем два коротких свойства.
+    ///
+    /// Отделяем только в общей ленте и только на первой странице: дальше
+    /// закреплённое уже кончилось, а в отборе «только закреплённые»
+    /// заголовок «Закреплённое» над всем списком ничего не сообщает.
+    /// </summary>
+    public IReadOnlyList<Announcement> PinnedItems =>
+        FilterMode == "all" && PageNumber == 1
+            ? Items.Where(a => a.IsPinned).ToList()
+            : [];
+
+    /// <summary>Остальная лента — всё, что не попало в <see cref="PinnedItems"/>.</summary>
+    public IReadOnlyList<Announcement> RestItems => Items.Skip(PinnedItems.Count).ToList();
+
     /// <summary>true — ленту прочитать не удалось. Сообщение видят ВСЕ пользователи.</summary>
     public bool DatabaseUnavailable { get; private set; }
 
@@ -77,8 +113,16 @@ public class IndexModel : PageModel
 
         try
         {
-            var total = await _db.Announcements.CountAsync(cancellationToken);
+            var query = FilterMode switch
+            {
+                "pinned" => _db.Announcements.Where(a => a.IsPinned),
+                "important" => _db.Announcements.Where(a => a.IsImportant),
+                _ => _db.Announcements
+            };
 
+            var total = await query.CountAsync(cancellationToken);
+
+            TotalCount = total;
             TotalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
 
             if (PageNumber > TotalPages)
@@ -90,7 +134,7 @@ public class IndexModel : PageModel
             // смысл закрепления. Сортировка именно в запросе, а не в памяти:
             // страницы нарезаются базой, и переставлять записи после Take
             // означало бы менять порядок только внутри одной страницы.
-            Items = await _db.Announcements
+            Items = await query
                 .Include(a => a.Files)
                 .OrderByDescending(a => a.IsPinned)
                 .ThenByDescending(a => a.CreatedAt)
@@ -170,7 +214,7 @@ public class IndexModel : PageModel
         // и подпись «изменено» после него сбивала бы с толку.
         await _db.SaveChangesAsync(cancellationToken);
 
-        return RedirectToPage(new { PageNumber });
+        return RedirectToPage(new { PageNumber, filter = Filter });
     }
 
     /// <summary>
@@ -206,5 +250,81 @@ public class IndexModel : PageModel
             FileDownloadName = file.OriginalName,
             EnableRangeProcessing = true
         };
+    }
+
+    /// <summary>
+    /// Вложение «на просмотр»: с типом содержимого из белого списка
+    /// и без предложения сохранить.
+    ///
+    /// Отдельный обработчик, а не признак у Attachment: тот отдаёт файл
+    /// на скачивание и берёт тип из базы — из того, что прислал браузер
+    /// при загрузке. Для показа В СТРАНИЦЕ этого мало: файл, назвавшийся
+    /// картинкой, выполнился бы как разметка в адресе портала. Поэтому
+    /// здесь тип строго из PreviewSupport, и что не в списке — не показываем.
+    /// </summary>
+    public async Task<IActionResult> OnGetAttachmentPreviewAsync(int fileId, CancellationToken cancellationToken)
+    {
+        var file = await _db.AnnouncementFiles
+            .FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken);
+
+        if (file is null || !_storage.Exists(file.AnnouncementId, file.StorageName))
+        {
+            return NotFound();
+        }
+
+        var contentType = Portal.Web.Services.Storage.PreviewSupport.ContentTypeFor(file.OriginalName);
+
+        if (contentType is null)
+        {
+            return NotFound();
+        }
+
+        var stream = _storage.OpenRead(file.AnnouncementId, file.StorageName);
+
+        return new FileStreamResult(stream, contentType) { EnableRangeProcessing = true };
+    }
+
+    /// <summary>
+    /// Документ Office и архив, приложенные к объявлению, — тем же разбором,
+    /// что и в файловом хранилище: наружу уходит разметка, а не сам файл.
+    /// </summary>
+    public async Task<IActionResult> OnGetAttachmentDocumentAsync(int fileId, CancellationToken cancellationToken)
+    {
+        var file = await _db.AnnouncementFiles
+            .FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken);
+
+        if (file is null || !_storage.Exists(file.AnnouncementId, file.StorageName))
+        {
+            return NotFound();
+        }
+
+        var kind = Portal.Web.Services.Storage.PreviewSupport.KindOf(file.OriginalName);
+
+        if (kind is not (Portal.Web.Services.Storage.PreviewKind.Office
+            or Portal.Web.Services.Storage.PreviewKind.Archive))
+        {
+            return NotFound();
+        }
+
+        try
+        {
+            await using var stream = _storage.OpenRead(file.AnnouncementId, file.StorageName);
+
+            var html = kind == Portal.Web.Services.Storage.PreviewKind.Archive
+                ? Portal.Web.Services.Storage.OfficeDocuments.ArchiveToHtml(stream)
+                : Portal.Web.Services.Storage.OfficeDocuments.ToHtml(stream, file.OriginalName);
+
+            return Content(html, "text/html; charset=utf-8");
+        }
+        catch (Exception ex)
+        {
+            // Испорченный файл не должен ронять страницу — как и в «Файлах».
+            _logger.LogWarning(ex, "Не удалось разобрать вложение {File} объявления.", file.OriginalName);
+
+            return Content(
+                "<div class=\"doc\"><p class=\"doc__note\">Не удалось разобрать вложение. " +
+                "Скачайте файл и откройте его в своей программе.</p></div>",
+                "text/html; charset=utf-8");
+        }
     }
 }

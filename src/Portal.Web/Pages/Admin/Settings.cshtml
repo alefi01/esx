@@ -4,179 +4,215 @@
     ViewData["Title"] = "Настройки портала";
 }
 
-<section class="view active">
+@*
+    Страница разбита на три части в порядке «сколько места есть — что
+    и когда убирать — что здесь вообще не настраивается». Раньше всё шло
+    сплошным столбцом карточек, и найти нужное поле можно было только
+    прокруткой: подписи, пояснения и таблицы имели одинаковый вес.
 
-<h1>Настройки портала</h1>
+    Пояснения ушли под сами поля и стали мельче. Они нужны один раз —
+    когда портал настраивают впервые; всё остальное время это шум,
+    сквозь который приходится искать поле ввода.
+*@
+<section class="view active set-page">
 
-@if (!string.IsNullOrEmpty(Model.StatusMessage))
-{
-    <div class="alert ok" role="status">@Model.StatusMessage</div>
-}
+    <div class="view-head">
+        <h2>Настройки портала</h2>
 
-@* Обе карточки — одна форма и одна кнопка сохранения. Две отдельные формы
-   означали бы, что сохранение размера обнуляет сроки уборки, и наоборот:
-   на сервер уходят только поля своей формы. *@
-<form method="post">
-    @if (!ViewData.ModelState.IsValid)
+        <nav class="seg" aria-label="Разделы настроек">
+            <a class="seg-btn" href="#set-size">Размер</a>
+            <a class="seg-btn" href="#set-clean">Уборка</a>
+            <a class="seg-btn" href="#set-file">В файле</a>
+        </nav>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.StatusMessage))
     {
-        <div asp-validation-summary="All" class="alert err"></div>
+        <div class="alert ok" role="status">@Model.StatusMessage</div>
     }
 
-    <div class="card">
-        <h2>Размер портала</h2>
+    @* Обе карточки — одна форма и одна кнопка сохранения. Две отдельные формы
+       означали бы, что сохранение размера обнуляет сроки уборки, и наоборот:
+       на сервер уходят только поля своей формы. *@
+    <form method="post">
+        @if (!ViewData.ModelState.IsValid)
+        {
+            <div asp-validation-summary="All" class="alert err"></div>
+        }
 
-        <div class="field">
-            <label asp-for="Input.TotalCapacityGb">Максимальный размер портала, ГБ</label>
-            <input asp-for="Input.TotalCapacityGb" type="number" min="0" max="1000000" />
-            <span asp-validation-for="Input.TotalCapacityGb" class="err"></span>
-            <p class="hint">
-                Это число показывается в карточке «Хранилище» внизу бокового меню:
-                по нему видно, сколько места уже занято и сколько осталось.
-                <strong>0 — предел не задан</strong>, портал показывает только занятое.
-                <br />
-                Портал <strong>ничего не запрещает</strong> по этому числу: загрузка
-                не остановится, когда место кончится. Предел на отдельную папку
-                задаётся в настройках самой папки — там он и действует.
-                <br />
-                Сейчас занято: <strong>@Model.Usage.Caption</strong>.
+        <div class="card set-card" id="set-size">
+            <div class="set-head">
+                <h2>Размер портала</h2>
+                <span class="set-now">Занято: <b>@Model.Usage.Caption</b></span>
+            </div>
+
+            <div class="set-row">
+                <div class="field set-field">
+                    <label asp-for="Input.TotalCapacityGb">Предел, ГБ</label>
+                    <input asp-for="Input.TotalCapacityGb" type="number" min="0" max="1000000" />
+                    <span asp-validation-for="Input.TotalCapacityGb" class="err"></span>
+                </div>
+
+                <p class="hint set-note">
+                    Число показывается в карточке «Хранилище» внизу бокового меню:
+                    по нему видно, сколько места занято и сколько осталось.
+                    <strong>0 — предел не задан</strong>, портал показывает только занятое.
+                    <br />
+                    Портал <strong>ничего не запрещает</strong> по этому числу: загрузка
+                    не остановится, когда место кончится. Предел на отдельную папку
+                    задаётся в настройках самой папки — там он и действует.
+                </p>
+            </div>
+        </div>
+
+        <div class="card set-card" id="set-clean">
+            <div class="set-head">
+                <h2>Уборка портала</h2>
+                <span class="set-now">0 — не убирать</span>
+            </div>
+
+            <div class="row-form set-days">
+                <div class="field">
+                    <label asp-for="Input.MessageDays">Сообщения, дней</label>
+                    <input asp-for="Input.MessageDays" type="number" min="0" max="3650" />
+                </div>
+
+                <div class="field">
+                    <label asp-for="Input.AnnouncementDays">Объявления, дней</label>
+                    <input asp-for="Input.AnnouncementDays" type="number" min="0" max="3650" />
+                </div>
+
+                <div class="field">
+                    <label asp-for="Input.TrashDays">Корзина, дней</label>
+                    <input asp-for="Input.TrashDays" type="number" min="0" max="3650" />
+                </div>
+
+                <div class="field">
+                    <label asp-for="Input.AuditDays">Журнал, дней</label>
+                    <input asp-for="Input.AuditDays" type="number" min="0" max="3650" />
+                </div>
+            </div>
+
+            @* Таблица идёт ПОСЛЕ полей, а не до них: она отвечает на вопрос
+               «что будет, если сохранить», а этот вопрос возникает уже после
+               того, как сроки набрали. *@
+            @if (Model.Cleanup.Count > 0)
+            {
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead>
+                        <tr>
+                            <th>Что копится</th>
+                            <th>Сейчас</th>
+                            <th>Срок</th>
+                            <th>Уйдёт при уборке</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var line in Model.Cleanup)
+                        {
+                            <tr>
+                                <td>@line.Name</td>
+                                <td>@line.Total</td>
+                                <td>@(line.Days > 0 ? line.Days + " дн." : "хранится вечно")</td>
+                                <td>
+                                    @if (line.Days <= 0)
+                                    {
+                                        <span class="dim">—</span>
+                                    }
+                                    else if (line.Expired == 0)
+                                    {
+                                        <span class="dim">ничего</span>
+                                    }
+                                    else
+                                    {
+                                        <strong>@line.Expired</strong>
+                                        @if (line.Bytes > 0)
+                                        {
+                                            <span class="dim">освободится @Portal.Web.Pages.Admin.SettingsModel.Size(line.Bytes)</span>
+                                        }
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <details class="set-more">
+                <summary>Что НЕ убирается и почему</summary>
+
+                <p class="hint">
+                    <strong>Файлы в папках.</strong> Они и есть содержимое портала,
+                    и срок для них задаётся по каждой папке отдельно, в её настройках:
+                    общий срок на всё хранилище означал бы, что договоры пятилетней
+                    давности исчезают заодно с черновиками.
+                </p>
+
+                <p class="hint">
+                    <strong>Закреплённые объявления.</strong> Их закрепили именно потому,
+                    что они должны висеть постоянно.
+                </p>
+
+                <p class="hint">
+                    Сообщения убираются вместе с вложениями; беседа, из которой убрали всё,
+                    исчезает из списка целиком. У корзины и журнала <strong>0</strong> означает
+                    «брать срок из файла настроек» — там для них уже заданы значения по умолчанию.
+                </p>
+            </details>
+        </div>
+
+        <div class="set-save">
+            <button class="btn primary" type="submit">Сохранить</button>
+            <span class="hint">
+                Значения хранятся в базе и действуют сразу, перезапускать пул приложений
+                не нужно. Цифра в боковом меню обновляется в течение минуты — она кэшируется.
+            </span>
+        </div>
+    </form>
+
+    @* Уборка вручную — отдельной формой и намеренно НИЖЕ кнопки сохранения:
+       она удаляет данные, и стоять рядом с обычным «Сохранить» ей нельзя. *@
+    <div class="card set-card set-danger">
+        <div class="set-head">
+            <h2>Убрать сейчас</h2>
+        </div>
+
+        <div class="set-row">
+            <form method="post" asp-page-handler="Cleanup" class="inline-form">
+                <button class="btn danger" type="submit" data-confirm-action
+                        data-confirm-text="Убрать всё, чему вышел срок хранения? Восстановить удалённое будет нельзя."
+                        data-confirm-ok="Убрать сейчас">
+                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash" /></svg>Убрать сейчас
+                </button>
+            </form>
+
+            <p class="hint set-note">
+                Уборка идёт в фоне раз в несколько часов. Эта кнопка делает то же самое
+                сразу и <strong>по тем же срокам</strong> — она не убирает больше
+                и не убирает раньше. Сначала сохраните сроки, если меняли их.
             </p>
         </div>
     </div>
 
-    <div class="card">
-        <h2>Уборка портала</h2>
-
-        <p class="hint">
-            Портал копит несколько разных вещей, и каждая растёт сама по себе.
-            По отдельности это незаметно, а вместе через год-другой съедает диск.
-            Здесь задаётся, через сколько дней убирать каждую.
-            <strong>0 — не убирать вовсе</strong>, и так стоит по умолчанию:
-            портал не начнёт удалять данные оттого, что его обновили.
-        </p>
-
-        @if (Model.Cleanup.Count > 0)
-        {
-            <div class="table-wrap">
-                <table class="table">
-                    <thead>
-                    <tr>
-                        <th>Что копится</th>
-                        <th>Сейчас</th>
-                        <th>Срок</th>
-                        <th>Уйдёт при уборке</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    @foreach (var line in Model.Cleanup)
-                    {
-                        <tr>
-                            <td>@line.Name</td>
-                            <td>@line.Total</td>
-                            <td>@(line.Days > 0 ? line.Days + " дн." : "хранится вечно")</td>
-                            <td>
-                                @if (line.Days <= 0)
-                                {
-                                    <span class="dim">—</span>
-                                }
-                                else if (line.Expired == 0)
-                                {
-                                    <span class="dim">ничего</span>
-                                }
-                                else
-                                {
-                                    <strong>@line.Expired</strong>
-                                    @if (line.Bytes > 0)
-                                    {
-                                        <span class="dim">освободится @Portal.Web.Pages.Admin.SettingsModel.Size(line.Bytes)</span>
-                                    }
-                                }
-                            </td>
-                        </tr>
-                    }
-                    </tbody>
-                </table>
-            </div>
-        }
-
-        <div class="row-form">
-            <div class="field">
-                <label asp-for="Input.MessageDays">Сообщения, дней</label>
-                <input asp-for="Input.MessageDays" type="number" min="0" max="3650" />
-            </div>
-
-            <div class="field">
-                <label asp-for="Input.AnnouncementDays">Объявления, дней</label>
-                <input asp-for="Input.AnnouncementDays" type="number" min="0" max="3650" />
-            </div>
-
-            <div class="field">
-                <label asp-for="Input.TrashDays">Корзина, дней</label>
-                <input asp-for="Input.TrashDays" type="number" min="0" max="3650" />
-            </div>
-
-            <div class="field">
-                <label asp-for="Input.AuditDays">Журнал, дней</label>
-                <input asp-for="Input.AuditDays" type="number" min="0" max="3650" />
-            </div>
+    <div class="card set-card" id="set-file">
+        <div class="set-head">
+            <h2>Что настраивается в файле</h2>
         </div>
 
         <p class="hint">
-            <strong>Что НЕ убирается.</strong> Файлы в папках — они и есть содержимое
-            портала, и срок для них задаётся по каждой папке отдельно, в её настройках:
-            общий срок на всё хранилище означал бы, что договоры пятилетней давности
-            исчезают заодно с черновиками. Закреплённые объявления — их закрепили
-            именно потому, что они должны висеть постоянно.
+            Название портала, подпись под ним и логотип задаются в секции
+            <code>Branding</code> файла <code>appsettings.json</code>, названия офисов —
+            в секции <code>Offices</code>. Эти строки меняют раз в несколько лет,
+            и держать ради них поле ввода в портале незачем.
         </p>
 
         <p class="hint">
-            Сообщения убираются вместе с вложениями; беседа, из которой убрали всё,
-            исчезает из списка целиком. У корзины и журнала <strong>0</strong> означает
-            «брать срок из файла настроек» — там для них уже заданы значения по умолчанию.
+            Фоны рабочего пространства — картинки в папке <code>wwwroot\img\themes</code>
+            рядом с приложением. Имя файла становится названием темы в списке,
+            показываются первые пять по алфавиту.
         </p>
     </div>
-
-    <div class="inline-form">
-        <button class="btn primary" type="submit">Сохранить</button>
-        <p class="hint">
-            Значения хранятся в базе и действуют сразу, перезапускать пул приложений
-            не нужно. Цифра в боковом меню обновляется в течение минуты — она кэшируется.
-        </p>
-    </div>
-</form>
-
-<div class="card">
-    <h2>Убрать сейчас</h2>
-
-    <p class="hint">
-        Уборка идёт в фоне раз в несколько часов. Эта кнопка делает то же самое
-        сразу и <strong>по тем же срокам</strong> — она не убирает больше
-        и не убирает раньше. Сначала сохраните сроки, если меняли их.
-    </p>
-
-    <form method="post" asp-page-handler="Cleanup" class="inline-form">
-        <button class="btn danger" type="submit" data-confirm-action
-                data-confirm-text="Убрать всё, чему вышел срок хранения? Восстановить удалённое будет нельзя."
-                data-confirm-ok="Убрать сейчас">
-            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash" /></svg>Убрать сейчас
-        </button>
-    </form>
-</div>
-
-<div class="card">
-    <h2>Что настраивается в файле</h2>
-
-    <p class="hint">
-        Название портала, подпись под ним и логотип задаются в секции
-        <code>Branding</code> файла <code>appsettings.json</code>, названия офисов —
-        в секции <code>Offices</code>. Эти строки меняют раз в несколько лет,
-        и держать ради них поле ввода в портале незачем.
-    </p>
-
-    <p class="hint">
-        Фоны рабочего пространства — картинки в папке <code>wwwroot\img\themes</code>
-        рядом с приложением. Имя файла становится названием темы в списке,
-        показываются первые пять по алфавиту.
-    </p>
-</div>
 
 </section>

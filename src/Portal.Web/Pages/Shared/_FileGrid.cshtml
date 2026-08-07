@@ -11,7 +11,10 @@
 <div class="fgrid">
     @foreach (var item in Model)
     {
-        <div class="tile"
+        @* draggable — перетаскивание в другую папку. Ставится всем: право
+           на перемещение проверяет сервер, а плитка, которую нельзя взять,
+           выглядит как сломанная. *@
+        <div class="tile@(item.Pinned ? " pinned" : "")" draggable="true"
              data-id="@item.Id"
              data-name="@item.Name"
              data-href="@item.Href"
@@ -20,6 +23,7 @@
              data-can-delete="@item.CanDelete.ToString().ToLowerInvariant()"
              data-can-manage="@item.CanManage.ToString().ToLowerInvariant()"
              data-file="@(item.FileId?.ToString() ?? "")"
+             data-pinned="@item.Pinned.ToString().ToLowerInvariant()"
              data-folder="@(item.FolderId?.ToString() ?? "")">
 
             <button class="fav-star@(item.Favorite ? " on" : "")" type="button"
@@ -27,6 +31,25 @@
                     aria-label="В избранное">
                 <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-star" /></svg>
             </button>
+
+            @* Закрепление — рядом со звёздочкой, но это разные вещи:
+               звёздочка личная, закрепление общее. Поэтому кнопка есть
+               только у того, кто управляет каталогом, а у остальных
+               закреплённое просто стоит первым и помечено значком. *@
+            @if (item.CanManage)
+            {
+                <button class="pin-btn@(item.Pinned ? " on" : "")" type="button"
+                        title="@(item.Pinned ? "Открепить" : "Закрепить наверху")"
+                        aria-label="Закрепить наверху">
+                    <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pin" /></svg>
+                </button>
+            }
+            else if (item.Pinned)
+            {
+                <span class="pin-mark" title="Закреплено">
+                    <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pin" /></svg>
+                </span>
+            }
 
             <div class="tile-icon">
                 @if (item.IsFolder)

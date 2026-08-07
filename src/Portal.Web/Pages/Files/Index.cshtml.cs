@@ -121,7 +121,8 @@ public class IndexModel : PageModel
                     PreviewKindOf(hit.File),
                     FavoriteFileIds.Contains(hit.File.Id),
                     CanDelete(hit.File),
-                    hit.FolderPath));
+                    hit.FolderPath,
+                    CanPinIn(hit.FolderId)));
             }
 
             Entries = list;
@@ -147,7 +148,8 @@ public class IndexModel : PageModel
                 Url.Page("Index", "Download", new { fileId = file.Id }) ?? "#",
                 PreviewKindOf(file),
                 FavoriteFileIds.Contains(file.Id),
-                CanDelete(file)));
+                CanDelete(file),
+                canManage: Access >= FolderAccess.Manage));
         }
 
         Entries = list;
@@ -183,6 +185,20 @@ public class IndexModel : PageModel
     /// управления не появлялось у папок верхнего уровня даже у администратора.
     /// </summary>
     public bool CanManageFolder(StorageFolder folder) => _tree.CanManage(User, folder);
+
+    /// <summary>
+    /// Вправе ли человек закреплять файлы в этой папке.
+    ///
+    /// Закрепление меняет порядок ДЛЯ ВСЕХ, кто заходит в папку, поэтому
+    /// оно привязано к управлению папкой, а не к авторству файла: иначе
+    /// любой, кто вправе загружать, поднял бы своё наверх у всех остальных.
+    /// </summary>
+    private bool CanPinIn(int folderId)
+    {
+        var folder = _tree.Get(folderId);
+
+        return folder is not null && _tree.CanManage(User, folder);
+    }
 
     /// <summary>Поисковый запрос по текущей папке и всему, что в ней вложено.</summary>
     [BindProperty(SupportsGet = true, Name = "q")]
@@ -810,26 +826,47 @@ public class IndexModel : PageModel
     }
 
     /// <summary>
-    /// Перемещение файлов в другую папку — перетаскивание плитки на папку.
+    /// Перемещение файлов и папок — перетаскивание плитки на папку.
     ///
-    /// Права проверяются с ОБЕИХ сторон: убрать файл из исходной папки
-    /// и положить его в целевую. Копирования между папками портала нет:
+    /// Права проверяются с ОБЕИХ сторон: убрать из исходной папки
+    /// и положить в целевую. Копирования между папками портала нет:
     /// оно было завязано на собственный буфер обмена, который путали
     /// с буфером обмена Windows, и убрано вместе с ним.
+    ///
+    /// targetFolderId = 0 — верхний уровень хранилища. Туда можно перенести
+    /// только папку и только администратору портала: файл вне папки портал
+    /// хранить не умеет, а создание разделов верхнего уровня и так
+    /// администраторское дело.
     /// </summary>
     public async Task<IActionResult> OnPostMoveAsync(
-        int targetFolderId, int[] fileIds, CancellationToken cancellationToken)
+        int targetFolderId, int[] fileIds, int[] folderIds, CancellationToken cancellationToken)
     {
-        var redirect = await LoadAsync(targetFolderId, cancellationToken);
+        var toRoot = targetFolderId == 0;
+
+        var redirect = await LoadAsync(toRoot ? null : targetFolderId, cancellationToken);
 
         if (redirect is not null)
         {
             return redirect;
         }
 
-        if (Current is null || Access < FolderAccess.Write)
+        if (toRoot)
+        {
+            if (!IsAdmin)
+            {
+                return Forbid();
+            }
+        }
+        else if (Current is null || Access < FolderAccess.Write)
         {
             return Forbid();
+        }
+
+        if (toRoot)
+        {
+            // Файл вне папки хранить негде: путь к нему на диске начинается
+            // с номера папки.
+            fileIds = [];
         }
 
         var files = await _db.Files.AsTracking()
@@ -883,7 +920,7 @@ public class IndexModel : PageModel
                 _storage.Move(file.FolderId, targetFolderId, file.StorageName);
 
                 _audit.Add(AuditAction.Move, file.OriginalName,
-                    $"из «{_tree.DisplayPath(source)}» в «{_tree.DisplayPath(Current)}»");
+                    $"из «{_tree.DisplayPath(source)}» в «{_tree.DisplayPath(Current!)}»");
 
                 file.FolderId = targetFolderId;
             }
@@ -899,11 +936,87 @@ public class IndexModel : PageModel
             done++;
         }
 
-        if (done > 0)
+        // ---------- Папки ----------
+        //
+        // Папка переезжает вместе со всем содержимым, и на диске при этом
+        // не двигается ни один файл: хранилище раскладывает файлы по номеру
+        // папки, а номер не меняется. Меняется только родитель в дереве.
+        var movedFolders = 0;
+
+        if (folderIds.Length > 0)
+        {
+            var folders = await _db.Folders.AsTracking()
+                .Where(f => folderIds.Contains(f.Id))
+                .ToListAsync(cancellationToken);
+
+            foreach (var moving in folders)
+            {
+                var known = _tree.Get(moving.Id);
+
+                if (known is null || !_tree.IsVisible(User, known))
+                {
+                    continue;
+                }
+
+                if (moving.ParentId == targetFolderId)
+                {
+                    // Уже здесь и лежит.
+                    continue;
+                }
+
+                if (!_tree.CanManage(User, known))
+                {
+                    problems.Add($"«{moving.Name}» — нет прав на перемещение папки");
+                    continue;
+                }
+
+                if (!toRoot && Access < FolderAccess.Manage)
+                {
+                    problems.Add($"«{moving.Name}» — нет прав управления целевой папкой");
+                    continue;
+                }
+
+                // Папку нельзя положить внутрь себя самой или своей вложенной:
+                // получилось бы кольцо, и всё, что попало в него, исчезло бы
+                // из дерева навсегда — вместе с содержимым.
+                if (moving.Id == targetFolderId || IsInside(Current, known))
+                {
+                    problems.Add($"«{moving.Name}» — нельзя переместить папку внутрь себя");
+                    continue;
+                }
+
+                // Одноимённые соседи путают: две «Отчёты» рядом различаются
+                // только по тому, в какую случайно зашли.
+                var neighbours = toRoot ? _tree.RootFolders() : Current!.Children;
+
+                if (neighbours.Any(c =>
+                        c.Id != moving.Id
+                        && string.Equals(c.Name, moving.Name, StringComparison.CurrentCultureIgnoreCase)))
+                {
+                    problems.Add($"«{moving.Name}» — здесь уже есть папка с таким названием");
+                    continue;
+                }
+
+                var from = known.ParentId is null ? "Файлы" : _tree.DisplayPath(known.Parent!);
+
+                moving.ParentId = toRoot ? null : targetFolderId;
+
+                _audit.Add(AuditAction.Move, moving.Name,
+                    $"папка: из «{from}» в «{(toRoot ? "Файлы" : _tree.DisplayPath(Current!))}»");
+
+                movedFolders++;
+            }
+        }
+
+        if (done > 0 || movedFolders > 0)
         {
             await _db.SaveChangesAsync(cancellationToken);
 
-            StatusMessage = $"Перемещено файлов: {done}.";
+            StatusMessage = done > 0 && movedFolders > 0
+                ? $"Перемещено: файлов {done}, папок {movedFolders}."
+                : done > 0
+                    ? $"Перемещено файлов: {done}."
+                    : $"Перемещено папок: {movedFolders}.";
         }
 
         if (problems.Count > 0)
@@ -911,7 +1024,33 @@ public class IndexModel : PageModel
             ErrorMessage = string.Join("; ", problems);
         }
 
-        return RedirectToPage(new { id = targetFolderId });
+        return RedirectToPage(new { id = toRoot ? (int?)null : targetFolderId });
+    }
+
+    /// <summary>
+    /// Лежит ли <paramref name="candidate"/> внутри <paramref name="branch"/>
+    /// (на любой глубине) — или это она сама.
+    ///
+    /// Нужно ровно для одного: не дать положить папку внутрь собственной
+    /// вложенной. Глубина ограничена по той же причине, что и везде в дереве:
+    /// испорченные данные не должны вешать страницу.
+    /// </summary>
+    private static bool IsInside(StorageFolder? candidate, StorageFolder branch)
+    {
+        var current = candidate;
+        var guard = 0;
+
+        while (current is not null && guard++ < 64)
+        {
+            if (current.Id == branch.Id)
+            {
+                return true;
+            }
+
+            current = current.Parent;
+        }
+
+        return false;
     }
 
     /// <summary>Удаление нескольких выделенных файлов сразу — клавишей Delete.</summary>
@@ -1230,35 +1369,50 @@ public class IndexModel : PageModel
     /// для неё работает по объёму вложенного, а «по типу» — как по имени.
     /// Папки при любой сортировке идут первыми: так же ведёт себя проводник.
     /// </summary>
-    private IReadOnlyList<StorageFolder> SortFolders(IEnumerable<StorageFolder> folders) => SortMode switch
+    /// <remarks>
+    /// Закреплённое идёт первым при ЛЮБОЙ сортировке — в этом весь смысл
+    /// закрепления: иначе достаточно было бы переименовать папку так,
+    /// чтобы она встала первой по алфавиту.
+    /// </remarks>
+    private IReadOnlyList<StorageFolder> SortFolders(IEnumerable<StorageFolder> folders)
     {
-        "date" => folders.OrderByDescending(f => f.CreatedAt).ToList(),
+        var pinnedFirst = folders.OrderByDescending(f => f.IsPinned);
 
-        "size" => folders
-            .OrderByDescending(f => FolderSizes.GetValueOrDefault(f.Id))
-            .ThenBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase)
-            .ToList(),
+        return SortMode switch
+        {
+            "date" => pinnedFirst.ThenByDescending(f => f.CreatedAt).ToList(),
 
-        _ => folders.OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase).ToList()
-    };
+            "size" => pinnedFirst
+                .ThenByDescending(f => FolderSizes.GetValueOrDefault(f.Id))
+                .ThenBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToList(),
+
+            _ => pinnedFirst.ThenBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase).ToList()
+        };
+    }
 
     /// <summary>Сортировка файлов по выбранному в верхней панели порядку.</summary>
-    private IReadOnlyList<StoredFile> SortFiles(IEnumerable<StoredFile> files) => SortMode switch
+    private IReadOnlyList<StoredFile> SortFiles(IEnumerable<StoredFile> files)
     {
-        // «Сначала новые»: при сортировке по дате людей интересует свежее.
-        "date" => files.OrderByDescending(f => f.UploadedAt).ToList(),
+        var pinnedFirst = files.OrderByDescending(f => f.IsPinned);
 
-        // «Сначала крупные»: по размеру сортируют, когда ищут, что занимает место.
-        "size" => files.OrderByDescending(f => f.SizeBytes).ToList(),
+        return SortMode switch
+        {
+            // «Сначала новые»: при сортировке по дате людей интересует свежее.
+            "date" => pinnedFirst.ThenByDescending(f => f.UploadedAt).ToList(),
 
-        // По типу — то есть по расширению, а внутри одного типа по имени.
-        "type" => files
-            .OrderBy(f => Path.GetExtension(f.OriginalName), StringComparer.OrdinalIgnoreCase)
-            .ThenBy(f => f.OriginalName, StringComparer.CurrentCultureIgnoreCase)
-            .ToList(),
+            // «Сначала крупные»: по размеру сортируют, когда ищут, что занимает место.
+            "size" => pinnedFirst.ThenByDescending(f => f.SizeBytes).ToList(),
 
-        _ => files.OrderBy(f => f.OriginalName, StringComparer.CurrentCultureIgnoreCase).ToList()
-    };
+            // По типу — то есть по расширению, а внутри одного типа по имени.
+            "type" => pinnedFirst
+                .ThenBy(f => Path.GetExtension(f.OriginalName), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(f => f.OriginalName, StringComparer.CurrentCultureIgnoreCase)
+                .ToList(),
+
+            _ => pinnedFirst.ThenBy(f => f.OriginalName, StringComparer.CurrentCultureIgnoreCase).ToList()
+        };
+    }
 
     /// <summary>
     /// Считает то, что показывается в подписи под каждой видимой подпапкой:
@@ -1605,6 +1759,137 @@ public class IndexModel : PageModel
         return new JsonResult(new { favorite = added });
     }
 
+    /// <summary>
+    /// Содержимое папки списком — для выбора файла из другого раздела портала
+    /// (сейчас это «приложить к сообщению ссылку на файл»).
+    ///
+    /// Отдаёт ТОЛЬКО то, что человеку и так видно: обычные проверки прав,
+    /// те же, что и на самой странице. Иначе окно выбора стало бы способом
+    /// прочитать оглавление закрытой папки.
+    ///
+    /// Отдельный обработчик, а не разбор HTML страницы «Файлы» в браузере:
+    /// разметка меняется, и такой разбор ломался бы от любой правки вёрстки.
+    /// </summary>
+    public async Task<IActionResult> OnGetBrowseAsync(int? folderId, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        StorageFolder? folder = null;
+
+        if (folderId is { } id)
+        {
+            folder = _tree.Get(id);
+
+            if (folder is null || !_tree.IsVisible(User, folder))
+            {
+                return NotFound();
+            }
+        }
+
+        var children = (folder is null ? _tree.RootFolders() : folder.Children)
+            .Where(f => _tree.IsVisible(User, f))
+            .OrderByDescending(f => f.IsPinned)
+            .ThenBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(f => new { id = f.Id, name = f.Name })
+            .ToList();
+
+        var files = folder is not null && _tree.CanRead(User, folder)
+            ? (await _db.Files
+                .Where(f => f.FolderId == folder.Id && f.DeletedAt == null)
+                .ToListAsync(cancellationToken))
+                .OrderByDescending(f => f.IsPinned)
+                .ThenBy(f => f.OriginalName, StringComparer.CurrentCultureIgnoreCase)
+                .Select(f => new
+                {
+                    id = f.Id,
+                    name = f.OriginalName,
+                    size = UploadValidator.Format(f.SizeBytes),
+                    href = Url.Page("Index", "Download", new { fileId = f.Id }) ?? "#"
+                })
+                .ToList()
+            : [];
+
+        return new JsonResult(new
+        {
+            id = folder?.Id,
+            parentId = folder?.ParentId,
+            atRoot = folder is null,
+            path = folder is null ? "Файлы" : "Файлы / " + _tree.DisplayPath(folder),
+            folders = children,
+            files
+        });
+    }
+
+    /// <summary>
+    /// Закрепить файл или папку наверху каталога — или снять закрепление.
+    ///
+    /// Отличие от звёздочки: та личная, эта общая. Поэтому и право нужно
+    /// другое — управление папкой, в которой лежит закрепляемое. Право
+    /// проверяется здесь, по дереву из базы, а не по тому, показали ли
+    /// мы кнопку: такой POST можно отправить и без кнопки.
+    ///
+    /// Отвечает JSON-ом, как и звёздочка, но порядок в списке от закрепления
+    /// меняется — поэтому код страницы после ответа перечитывает страницу.
+    /// </summary>
+    public async Task<IActionResult> OnPostPinAsync(
+        int? fileId, int? folderId, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        if (fileId is { } id)
+        {
+            var file = await _db.Files.AsTracking()
+                .FirstOrDefaultAsync(f => f.Id == id && f.DeletedAt == null, cancellationToken);
+
+            var parent = file is null ? null : _tree.Get(file.FolderId);
+
+            if (file is null || parent is null || !_tree.IsVisible(User, parent))
+            {
+                return NotFound();
+            }
+
+            if (!_tree.CanManage(User, parent))
+            {
+                return Forbid();
+            }
+
+            file.IsPinned = !file.IsPinned;
+
+            await _db.SaveChangesAsync(cancellationToken);
+
+            return new JsonResult(new { pinned = file.IsPinned });
+        }
+
+        if (folderId is { } fid)
+        {
+            var folder = await _db.Folders.AsTracking()
+                .FirstOrDefaultAsync(f => f.Id == fid, cancellationToken);
+
+            var known = _tree.Get(fid);
+
+            if (folder is null || known is null || !_tree.IsVisible(User, known))
+            {
+                return NotFound();
+            }
+
+            // Закрепляет тот, кто управляет САМОЙ папкой. Для папок верхнего
+            // уровня это администратор портала — родителя, по которому можно
+            // было бы дать право, у них просто нет.
+            if (!_tree.CanManage(User, known))
+            {
+                return Forbid();
+            }
+
+            folder.IsPinned = !folder.IsPinned;
+
+            await _db.SaveChangesAsync(cancellationToken);
+
+            return new JsonResult(new { pinned = folder.IsPinned });
+        }
+
+        return BadRequest();
+    }
+
     /// <summary>Сведения о файле или папке для окна «Свойства».</summary>
     /// <summary>
     /// Всё, что нужно окну управления папкой: пределы, автоочистка и права.
@@ -1687,13 +1972,19 @@ public class IndexModel : PageModel
             return NotFound();
         }
 
-        var nodes = _browser.Children(dn, q);
+        var level = await _browser.ChildrenAsync(dn, q, cancellationToken);
 
         return new JsonResult(new
         {
             root = _browser.RootDn,
             dn = string.IsNullOrWhiteSpace(dn) ? _browser.RootDn : dn,
-            nodes = nodes.Select(n => new { n.Kind, n.Name, n.Dn, n.Account })
+
+            // Причина пустоты уходит В ОКНО, а не только в журнал сервера:
+            // «дерево не подгружается» без объяснения — это разбор по логам
+            // на боевой машине, а с объяснением («не задан BaseDn», «ни один
+            // контроллер не ответил») настройку правят сразу.
+            problem = level.Problem,
+            nodes = level.Nodes.Select(n => new { n.Kind, n.Name, n.Dn, n.Account })
         });
     }
 
@@ -2039,17 +2330,7 @@ public class IndexModel : PageModel
     /// Строкой, а не перечислением: значение уходит в data-атрибут плитки,
     /// и код страницы сравнивает его как есть, без таблицы соответствий.
     /// </summary>
-    public static string PreviewKindOf(StoredFile file) => PreviewSupport.KindOf(file.OriginalName) switch
-    {
-        PreviewKind.Image => "image",
-        PreviewKind.Pdf => "pdf",
-        PreviewKind.Text => "text",
-        PreviewKind.Office => "office",
-        PreviewKind.Video => "video",
-        PreviewKind.Audio => "audio",
-        PreviewKind.Archive => "archive",
-        _ => ""
-    };
+    public static string PreviewKindOf(StoredFile file) => PreviewSupport.KindName(file.OriginalName);
 
     /// <summary>Семейство файла для цвета значка: image, pdf, word, excel и так далее.</summary>
     public static string FileKindOf(StoredFile file) => FileKinds.Of(file.OriginalName);

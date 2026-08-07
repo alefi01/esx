@@ -129,6 +129,26 @@ public static class PreviewSupport
             ? entry.ContentType
             : null;
 
+    /// <summary>
+    /// То же значение строкой — в том виде, в каком его понимает код страницы
+    /// (см. app.js, openPreview). Пустая строка — показать нельзя.
+    ///
+    /// Здесь, а не в модели страницы «Файлы»: тем же окном предпросмотра
+    /// открываются и вложения объявлений, а держать две таблицы соответствий
+    /// значит однажды показать один и тот же файл двумя разными способами.
+    /// </summary>
+    public static string KindName(string fileName) => KindOf(fileName) switch
+    {
+        PreviewKind.Image => "image",
+        PreviewKind.Pdf => "pdf",
+        PreviewKind.Text => "text",
+        PreviewKind.Office => "office",
+        PreviewKind.Video => "video",
+        PreviewKind.Audio => "audio",
+        PreviewKind.Archive => "archive",
+        _ => ""
+    };
+
     /// <summary>Человеческое название типа — для окна свойств.</summary>
     public static string Describe(string fileName) => KindOf(fileName) switch
     {

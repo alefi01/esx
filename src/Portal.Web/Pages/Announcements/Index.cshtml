@@ -5,7 +5,7 @@
     ViewData["Title"] = "Объявления";
 }
 
-<section class="view active">
+<section class="view active ann-page">
 
     @if (!string.IsNullOrEmpty(Model.StatusMessage))
     {
@@ -14,6 +14,21 @@
 
     <div class="view-head">
         <h2>Объявления</h2>
+
+        @* Отбор — тремя ссылками, а не выпадающим списком: вариантов три,
+           и лишнее нажатие «раскрыть список» здесь ничего не экономит.
+           Ссылки, а не кнопки: каждый вид ленты имеет свой адрес. *@
+        <nav class="seg" aria-label="Что показывать">
+            <a class="seg-btn@(Model.FilterMode == "all" ? " on" : "")" asp-page="Index">Все</a>
+            <a class="seg-btn@(Model.FilterMode == "pinned" ? " on" : "")"
+               asp-page="Index" asp-route-filter="pinned">
+                <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pin" /></svg>Закреплённые
+            </a>
+            <a class="seg-btn@(Model.FilterMode == "important" ? " on" : "")"
+               asp-page="Index" asp-route-filter="important">
+                <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>Важные
+            </a>
+        </nav>
 
         @if (Model.CanPublish)
         {
@@ -44,32 +59,69 @@
     {
         <div class="empty">
             <svg class="ic" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
-            <b>Объявлений пока нет</b>
-            <p>Здесь появятся сообщения, которые должны увидеть все сотрудники</p>
+            @if (Model.FilterMode == "pinned")
+            {
+                <b>Закреплённых объявлений нет</b>
+                <p>Закрепить объявление наверху ленты может тот, кто вправе его исправить</p>
+            }
+            else if (Model.FilterMode == "important")
+            {
+                <b>Важных объявлений нет</b>
+                <p>Пометка «важное» ставится тем же, кто вправе исправить объявление</p>
+            }
+            else
+            {
+                <b>Объявлений пока нет</b>
+                <p>Здесь появятся сообщения, которые должны увидеть все сотрудники</p>
+            }
         </div>
     }
     else
     {
-        <div class="ann-list">
-            @foreach (var item in Model.Items)
+        @* Закреплённое отделено заголовком, а не только рамкой: иначе
+           «почему это объявление первое» приходится угадывать по цвету
+           обводки. Разделяем только в общей ленте и только на первой
+           странице — дальше закреплённое уже кончилось. *@
+        @if (Model.PinnedItems.Count > 0)
+        {
+            <h3 class="side-head">Закреплённое</h3>
+
+            <div class="ann-list">
+                @foreach (var item in Model.PinnedItems)
+                {
+                    @await Html.PartialAsync("_Announcement", new AnnouncementCard(item, Model.CanModify(item)))
+                }
+            </div>
+        }
+
+        @if (Model.RestItems.Count > 0)
+        {
+            @if (Model.PinnedItems.Count > 0)
             {
-                @await Html.PartialAsync("_Announcement", new AnnouncementCard(item, Model.CanModify(item)))
+                <h3 class="side-head ann-head-rest">Лента</h3>
             }
-        </div>
+
+            <div class="ann-list">
+                @foreach (var item in Model.RestItems)
+                {
+                    @await Html.PartialAsync("_Announcement", new AnnouncementCard(item, Model.CanModify(item)))
+                }
+            </div>
+        }
 
         @if (Model.TotalPages > 1)
         {
             <nav class="pager" aria-label="Страницы">
                 @if (Model.PageNumber > 1)
                 {
-                    <a asp-page="Index" asp-route-pageNumber="@(Model.PageNumber - 1)">← Новее</a>
+                    <a asp-page="Index" asp-route-pageNumber="@(Model.PageNumber - 1)" asp-route-filter="@Model.Filter">← Новее</a>
                 }
 
-                <span>Страница @Model.PageNumber из @Model.TotalPages</span>
+                <span>Страница @Model.PageNumber из @Model.TotalPages · всего @Model.TotalCount</span>
 
                 @if (Model.PageNumber < Model.TotalPages)
                 {
-                    <a asp-page="Index" asp-route-pageNumber="@(Model.PageNumber + 1)">Старее →</a>
+                    <a asp-page="Index" asp-route-pageNumber="@(Model.PageNumber + 1)" asp-route-filter="@Model.Filter">Старее →</a>
                 }
             </nav>
         }
