@@ -14,20 +14,9 @@ namespace Portal.Web.Data;
 /// </summary>
 public class PortalDbContext : DbContext
 {
-    /// <summary>
-    /// Код филиала берётся из настроек прямо здесь, а не передаётся
-    /// в каждый вызов сохранения: подписывать изменения филиалом должен
-    /// сам контекст, иначе об этом придётся помнить в каждой странице.
-    ///
-    /// Если синхронизация выключена, код пуст — и журнал изменений
-    /// не ведётся вовсе, лишних строк в базе не появляется.
-    /// </summary>
-    public PortalDbContext(
-        DbContextOptions<PortalDbContext> options,
-        Microsoft.Extensions.Options.IOptions<Configuration.SyncOptions> sync)
+    public PortalDbContext(DbContextOptions<PortalDbContext> options)
         : base(options)
     {
-        BranchCode = sync.Value.Enabled ? sync.Value.BranchCode : "";
     }
 
     public DbSet<Announcement> Announcements => Set<Announcement>();
@@ -268,98 +257,51 @@ public class PortalDbContext : DbContext
     }
 
     // ======================================================================
-    // Журнал изменений для синхронизации
+    // Общие номера объектов
     // ======================================================================
-
-    /// <summary>
-    /// Не записывать изменения в журнал при следующем сохранении.
-    ///
-    /// Ставится ровно в одном месте — когда мы применяем изменение,
-    /// ПРИШЕДШЕЕ от соседа. Иначе получилось бы, что мы объявляем чужое
-    /// изменение своим и рассылаем его дальше по кругу.
-    ///
-    /// Пересылать чужие изменения не нужно: каждый филиал спрашивает
-    /// каждого напрямую (см. пояснение в SyncOptions).
-    /// </summary>
-    public bool SuppressSyncOutbox { get; set; }
-
-    /// <summary>
-    /// Код филиала, которым подписываются изменения. Заполняется из настроек
-    /// при создании контекста; пусто — синхронизация выключена, и журнал
-    /// не ведётся вовсе.
-    /// </summary>
-    public string BranchCode { get; set; } = "";
 
     public override int SaveChanges()
     {
-        RecordSyncChanges();
+        StampGlobalIds();
 
         return base.SaveChanges();
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        RecordSyncChanges();
+        StampGlobalIds();
 
         return base.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>
-    /// Добавляет в журнал по записи на каждый изменённый объект, который
-    /// расходится по филиалам.
+    /// Проставляет объявлению, файлу, папке или сообщению общий номер
+    /// и время последнего изменения.
     ///
     /// ПОЧЕМУ ЗДЕСЬ, А НЕ В КАЖДОМ МЕСТЕ, ГДЕ ЧТО-ТО МЕНЯЕТСЯ
     ///
     /// Мест, где портал меняет объявления, переписку и файлы, около двадцати:
     /// публикация, правка, закрепление, отправка сообщения, загрузка файла,
     /// переименование, корзина, восстановление, автоочистка… Расставить
-    /// вызов в каждом — значит однажды забыть про один, и филиал начнёт
-    /// молча расходиться с остальными. Такую ошибку почти невозможно найти:
-    /// всё работает, просто в одном офисе чего-то нет.
+    /// вызов в каждом — значит однажды забыть про один. Здесь же место одно,
+    /// и мимо него изменение пройти не может: сохранение в базу идёт
+    /// только через этот метод.
     ///
-    /// Здесь же место одно, и мимо него изменение пройти не может:
-    /// сохранение в базу идёт только через этот метод.
-    ///
-    /// ЧТО ИМЕННО ЗАПИСЫВАЕТСЯ
-    ///
-    /// Только вид объекта и его общий номер — БЕЗ самого содержимого.
-    /// Содержимое сосед получит, когда придёт спрашивать: тогда портал
-    /// прочитает объект из базы в его нынешнем виде. Так журнал остаётся
-    /// маленьким, а сосед всегда получает свежее состояние, а не стопку
-    /// промежуточных правок, которые всё равно перекрыли бы друг друга.
+    /// Номер (GlobalId) уникален в пределах базы и от неё не зависит:
+    /// на него ссылаются ссылки на объявления и вложения, и он переживает
+    /// перенос данных в другую базу, где счётчики начнутся заново.
     /// </summary>
-    private void RecordSyncChanges()
+    private void StampGlobalIds()
     {
-        if (SuppressSyncOutbox || string.IsNullOrEmpty(BranchCode))
-        {
-            return;
-        }
-
         ChangeTracker.DetectChanges();
 
         var now = DateTime.UtcNow;
-        var entries = new List<SyncOutboxEntry>();
 
         foreach (var tracked in ChangeTracker.Entries<ISyncable>())
         {
-            if (tracked.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
+            if (tracked.State is not (EntityState.Added or EntityState.Modified))
             {
                 continue;
-            }
-
-            var kind = KindOf(tracked.Entity);
-
-            if (kind is null)
-            {
-                continue;
-            }
-
-            // Объект, созданный здесь, подписывается нашим филиалом.
-            // Объект, пришедший от соседа, свою подпись сохраняет:
-            // «откуда» не меняется от того, что его тут поправили.
-            if (tracked.State == EntityState.Added && string.IsNullOrEmpty(tracked.Entity.OriginBranch))
-            {
-                tracked.Entity.OriginBranch = BranchCode;
             }
 
             if (tracked.Entity.GlobalId == Guid.Empty)
@@ -367,36 +309,7 @@ public class PortalDbContext : DbContext
                 tracked.Entity.GlobalId = Guid.NewGuid();
             }
 
-            if (tracked.State != EntityState.Deleted)
-            {
-                tracked.Entity.ChangedAt = now;
-            }
-
-            entries.Add(new SyncOutboxEntry
-            {
-                Kind = kind,
-                GlobalId = tracked.Entity.GlobalId,
-                OriginBranch = string.IsNullOrEmpty(tracked.Entity.OriginBranch)
-                    ? BranchCode
-                    : tracked.Entity.OriginBranch,
-                ChangedAt = now,
-                Deleted = tracked.State == EntityState.Deleted
-            });
-        }
-
-        if (entries.Count > 0)
-        {
-            Set<SyncOutboxEntry>().AddRange(entries);
+            tracked.Entity.ChangedAt = now;
         }
     }
-
-    private static string? KindOf(ISyncable entity) => entity switch
-    {
-        Announcement => SyncKinds.Announcement,
-        StorageFolder => SyncKinds.Folder,
-        StoredFile => SyncKinds.File,
-        Conversation => SyncKinds.Conversation,
-        Message => SyncKinds.Message,
-        _ => null
-    };
 }

@@ -110,7 +110,7 @@ public class IndexModel : PageModel
             list.Add(Portal.Web.Pages.Shared.FileEntry.ForFolder(
                 folder,
                 Url.Page("Index", new { id = folder.Id }) ?? "#",
-                folder.Children.Count(child => _tree.IsVisible(User, child)),
+                ChildCounts.GetValueOrDefault(folder.Id),
                 FavoriteFolderIds.Contains(folder.Id),
                 CanManageFolder(folder),
                 ShowSizes ? FolderSizes.GetValueOrDefault(folder.Id) : null));
@@ -137,6 +137,13 @@ public class IndexModel : PageModel
     /// </summary>
     public IReadOnlyDictionary<int, long> FolderSizes { get; private set; } =
         new Dictionary<int, long>();
+
+    /// <summary>
+    /// Сколько всего лежит в каждой видимой подпапке — подпапок и файлов
+    /// вместе. Отсюда берётся подпись «пусто» либо «7 элем.».
+    /// </summary>
+    public IReadOnlyDictionary<int, int> ChildCounts { get; private set; } =
+        new Dictionary<int, int>();
 
     /// <summary>
     /// Показывать ли объёмы папок. Администратору портала — всегда,
@@ -260,6 +267,272 @@ public class IndexModel : PageModel
             EnableRangeProcessing = true
         };
     }
+
+    /// <summary>Сколько файлов максимум кладём в один архив.</summary>
+    private const int MaxZipEntries = 5000;
+
+    /// <summary>
+    /// Ускоренное скачивание: файл или целая папка отдаются одним архивом ZIP.
+    ///
+    /// ЗАЧЕМ
+    ///
+    /// Обычное скачивание папки — это десятки отдельных нажатий и десятки
+    /// отдельных запросов, каждый со своим установлением соединения. Один
+    /// архив идёт одним потоком и приходит заметно быстрее, а документы
+    /// (Word, Excel, текст, чертежи в DWG) вдобавок ужимаются в разы.
+    ///
+    /// КАК УСТРОЕНО
+    ///
+    /// Архив НЕ собирается на диске и не копится в памяти: он пишется прямо
+    /// в ответ, файл за файлом. Поэтому папка на десять гигабайт не требует
+    /// ни десяти гигабайт места, ни ожидания перед началом скачивания —
+    /// оно начинается сразу.
+    ///
+    /// Плата за это — неизвестный заранее размер: браузер покажет скачивание
+    /// без полосы прогресса. Размен сознательный: считать размер заранее
+    /// значило бы сжать всё дважды.
+    ///
+    /// Права проверяются по КАЖДОЙ папке, а не только по корню архива:
+    /// внутри дерева попадаются папки с собственными правами, и содержимое
+    /// закрытой не должно уехать в архиве вместе с открытой.
+    /// </summary>
+    public async Task<IActionResult> OnGetDownloadZipAsync(
+        int? fileId, int? folderId, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        if (!_storage.IsConfigured)
+        {
+            return NotFound();
+        }
+
+        // Что кладём в архив: имя внутри архива и где файл лежит на диске.
+        var entries = new List<(string Name, int FolderId, string StorageName)>();
+        string archiveName;
+        string auditTarget;
+        string auditDetails;
+
+        if (fileId is { } id)
+        {
+            var file = await _db.Files.FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
+
+            if (file is null || file.DeletedAt is not null)
+            {
+                return NotFound();
+            }
+
+            var folder = _tree.Get(file.FolderId);
+
+            if (folder is null || !_tree.CanRead(User, folder))
+            {
+                _logger.LogWarning(
+                    "Пользователь {User} пытался скачать архивом файл {File}, не имея прав на папку.",
+                    User.Identity?.Name, id);
+
+                return NotFound();
+            }
+
+            if (!_storage.Exists(file.FolderId, file.StorageName))
+            {
+                return NotFound();
+            }
+
+            entries.Add((file.OriginalName, file.FolderId, file.StorageName));
+
+            archiveName = Path.GetFileNameWithoutExtension(file.OriginalName) + ".zip";
+            auditTarget = file.OriginalName;
+            auditDetails = $"архивом, папка «{_tree.DisplayPath(folder)}»";
+        }
+        else if (folderId is { } rootId)
+        {
+            var root = _tree.Get(rootId);
+
+            if (root is null || !_tree.CanRead(User, root))
+            {
+                return NotFound();
+            }
+
+            await CollectForZipAsync(root, "", entries, cancellationToken);
+
+            archiveName = root.Name + ".zip";
+            auditTarget = root.Name;
+            auditDetails = $"папка «{_tree.DisplayPath(root)}» архивом, файлов: {entries.Count}";
+        }
+        else
+        {
+            return NotFound();
+        }
+
+        if (entries.Count == 0)
+        {
+            ErrorMessage = "Скачивать нечего: здесь нет ни одного доступного файла.";
+
+            return RedirectToPage(new { id = folderId });
+        }
+
+        await _audit.WriteAsync(AuditAction.Download, auditTarget, auditDetails, cancellationToken);
+
+        var disposition = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue("attachment");
+        disposition.SetHttpFileName(SafeArchiveName(archiveName));
+
+        Response.ContentType = "application/zip";
+        Response.Headers.ContentDisposition = disposition.ToString();
+
+        // Архив собирается на лету и его длина заранее неизвестна, поэтому
+        // сжатие ответа отключаем явно: посредник, решивший «дожать» и без
+        // того сжатый поток, ничего не выиграет, а буферизацией отложит
+        // начало скачивания.
+        Response.Headers.ContentEncoding = "identity";
+
+        using (var archive = new System.IO.Compression.ZipArchive(
+                   Response.Body, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var entry in entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!_storage.Exists(entry.FolderId, entry.StorageName))
+                {
+                    // Файл есть в базе, но пропал с диска. Роняем не весь
+                    // архив, а только этот файл: остальное человеку нужнее,
+                    // чем сообщение об ошибке вместо всего сразу.
+                    _logger.LogError(
+                        "Файл {File} есть в базе, но отсутствует на диске — пропущен при сборке архива.",
+                        entry.Name);
+
+                    continue;
+                }
+
+                var item = archive.CreateEntry(entry.Name, CompressionFor(entry.Name));
+
+                await using var source = _storage.OpenRead(entry.FolderId, entry.StorageName);
+                await using var target = item.Open();
+
+                await source.CopyToAsync(target, cancellationToken);
+            }
+        }
+
+        await Response.Body.FlushAsync(cancellationToken);
+
+        return new EmptyResult();
+    }
+
+    /// <summary>
+    /// Обходит папку со всем вложенным и собирает список файлов для архива.
+    /// В архив попадает только то, что человеку и так видно: закрытая
+    /// подпапка пропускается целиком.
+    /// </summary>
+    private async Task CollectForZipAsync(
+        StorageFolder folder,
+        string prefix,
+        List<(string Name, int FolderId, string StorageName)> entries,
+        CancellationToken cancellationToken)
+    {
+        if (entries.Count >= MaxZipEntries)
+        {
+            return;
+        }
+
+        var files = await _db.Files
+            .Where(f => f.FolderId == folder.Id && f.DeletedAt == null)
+            .OrderBy(f => f.Id)
+            .ToListAsync(cancellationToken);
+
+        // Два файла с одинаковым именем в одной папке базой не запрещены,
+        // а в архиве такая пара разворачивается в один файл поверх другого.
+        // Поэтому повторам приписывается номер, как это делает проводник.
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var file in files)
+        {
+            if (entries.Count >= MaxZipEntries)
+            {
+                return;
+            }
+
+            var name = UniqueName(file.OriginalName, used);
+
+            entries.Add((prefix + name, folder.Id, file.StorageName));
+        }
+
+        foreach (var child in folder.Children.OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            if (!_tree.CanRead(User, child))
+            {
+                continue;
+            }
+
+            await CollectForZipAsync(
+                child, prefix + SafeEntryName(child.Name) + "/", entries, cancellationToken);
+        }
+    }
+
+    /// <summary>Делает имя неповторяющимся: «отчёт.docx», «отчёт (2).docx».</summary>
+    private static string UniqueName(string original, HashSet<string> used)
+    {
+        var name = SafeEntryName(original);
+
+        if (used.Add(name))
+        {
+            return name;
+        }
+
+        var stem = Path.GetFileNameWithoutExtension(name);
+        var extension = Path.GetExtension(name);
+
+        for (var n = 2; ; n++)
+        {
+            var candidate = $"{stem} ({n}){extension}";
+
+            if (used.Add(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Имя внутри архива. Косые черты и «..» из имени убираются: имя приходит
+    /// из базы, но попадает в путь, по которому распаковщик создаст файл,
+    /// и складывать его туда как есть нельзя.
+    /// </summary>
+    private static string SafeEntryName(string name)
+    {
+        var safe = name.Replace('\\', '_').Replace('/', '_').Trim();
+
+        foreach (var bad in Path.GetInvalidFileNameChars())
+        {
+            safe = safe.Replace(bad, '_');
+        }
+
+        return safe.Length == 0 || safe is "." or ".." ? "файл" : safe;
+    }
+
+    /// <summary>Имя самого архива — по тем же правилам, что и имена внутри него.</summary>
+    private static string SafeArchiveName(string name)
+    {
+        var safe = SafeEntryName(name);
+
+        return safe.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? safe : safe + ".zip";
+    }
+
+    /// <summary>
+    /// Сжимать ли этот файл.
+    ///
+    /// Снимки, видео и уже готовые архивы сжаты внутри себя и от второго
+    /// прохода не уменьшаются ни на процент — только отнимают время
+    /// у остальных файлов. Их кладём в архив как есть.
+    /// </summary>
+    private static System.IO.Compression.CompressionLevel CompressionFor(string name) =>
+        Path.GetExtension(name).ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" or ".png" or ".gif" or ".webp" or ".heic"
+                or ".mp3" or ".mp4" or ".avi" or ".mkv" or ".mov" or ".wmv"
+                or ".zip" or ".7z" or ".rar" or ".gz" or ".xz"
+                => System.IO.Compression.CompressionLevel.NoCompression,
+
+            _ => System.IO.Compression.CompressionLevel.Optimal
+        };
 
     public async Task<IActionResult> OnPostUploadAsync(
         int folderId, List<IFormFile> uploads, CancellationToken cancellationToken)
@@ -719,7 +992,7 @@ public class IndexModel : PageModel
                 .ToList();
 
             // Объёмы считаются ДО сортировки: по ним сортируют «по размеру».
-            await LoadFolderSizesAsync(cancellationToken);
+            await LoadFolderFactsAsync(cancellationToken);
 
             Subfolders = SortFolders(Subfolders);
 
@@ -776,7 +1049,7 @@ public class IndexModel : PageModel
             : [];
 
         // Объёмы считаются ДО сортировки: по ним сортируют «по размеру».
-        await LoadFolderSizesAsync(cancellationToken);
+        await LoadFolderFactsAsync(cancellationToken);
 
         Subfolders = SortFolders(Subfolders);
 
@@ -824,15 +1097,27 @@ public class IndexModel : PageModel
     };
 
     /// <summary>
-    /// Считает объём каждой видимой подпапки вместе со всем вложенным.
+    /// Считает то, что показывается в подписи под каждой видимой подпапкой:
+    /// сколько в ней элементов и (кому это положено видеть) сколько она весит
+    /// вместе со всем вложенным.
     ///
     /// Один запрос группировки на всё хранилище вместо запроса на каждую папку:
     /// папок немного, а по одному запросу на строку списка — это классический
     /// способ незаметно посадить страницу.
     /// </summary>
-    private async Task LoadFolderSizesAsync(CancellationToken cancellationToken)
+    private async Task LoadFolderFactsAsync(CancellationToken cancellationToken)
     {
-        if (!ShowSizes || Subfolders.Count == 0)
+        if (Subfolders.Count == 0)
+        {
+            return;
+        }
+
+        // Сколько в каждой подпапке элементов, видно всем: подпись «пусто»
+        // или «7 элем.» не выдаёт ничего, чего человек не увидел бы, просто
+        // зайдя в папку.
+        ChildCounts = await _tree.ChildCountsAsync(User, Subfolders, cancellationToken);
+
+        if (!ShowSizes)
         {
             return;
         }
