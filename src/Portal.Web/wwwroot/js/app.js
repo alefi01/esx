@@ -264,7 +264,28 @@
     function closeModal() {
         const m = $('#modalRoot .overlay');
 
-        if (m) { m.remove(); }
+        if (!m || m.classList.contains('closing')) { return; }
+
+        // Окно НЕ выдёргивается разом, а уезжает вниз с затуханием —
+        // тем же движением, каким появилось, только наоборот. Мгновенное
+        // исчезновение особенно заметно на предпросмотре: только что был
+        // документ во весь экран — и вдруг пусто, будто страница моргнула.
+        m.classList.add('closing');
+
+        // Ждём конец анимации, но не дольше: если браузер её пропустит
+        // (движение выключено настройками системы), событие не придёт,
+        // и окно осталось бы висеть навсегда.
+        let removed = false;
+
+        const drop = () => {
+            if (removed) { return; }
+
+            removed = true;
+            m.remove();
+        };
+
+        m.addEventListener('animationend', drop);
+        setTimeout(drop, 260);
     }
 
     /**
@@ -517,6 +538,61 @@
             if (e.key === 'Escape') { close(); }
         });
     })();
+
+    // Пасхалка: десять нажатий по своему имени в шапке открывают игру.
+    //
+    // Счётчик сбрасывается, если между нажатиями прошло больше двух секунд:
+    // иначе десять случайных попаданий по имени за неделю однажды открыли бы
+    // человеку игру посреди работы, и он бы не понял, что произошло.
+    (function () {
+        const chip = $('#userChip');
+
+        if (!chip) { return; }
+
+        let count = 0;
+        let last = 0;
+
+        chip.addEventListener('click', () => {
+            const now = Date.now();
+
+            count = now - last > 2000 ? 1 : count + 1;
+            last = now;
+
+            // Подсказка на середине пути: человек, который тыкает наугад,
+            // должен понять, что что-то происходит, а не бросить на седьмом.
+            if (count === 5) {
+                toast('…что-то щёлкает', 'info');
+            }
+
+            if (count >= 10) {
+                count = 0;
+
+                toast('Нашли! Открываем', 'ok');
+
+                window.open('/game.html', '_blank', 'noopener');
+            }
+        });
+    })();
+
+    // «Показать полностью» у длинного объявления.
+    //
+    // Свёрнутость задаётся классом в разметке, поэтому без JavaScript
+    // объявление останется свёрнутым, но читаемым: видно начало,
+    // а полный текст откроется на своей странице.
+    document.addEventListener('click', e => {
+        const button = e.target.closest('[data-expand]');
+
+        if (!button) { return; }
+
+        const body = button.previousElementSibling;
+
+        if (!body) { return; }
+
+        const open = body.classList.toggle('expanded');
+
+        body.classList.toggle('clamped', !open);
+        button.textContent = open ? 'Свернуть' : 'Показать полностью';
+    });
 
     // Часы на главной.
     //
@@ -801,6 +877,12 @@
         const container = $('#filesContainer');
         const settings = files.dataset;
 
+        // ВСЯ рабочая область страницы: и список, и пустота под ним.
+        // По ней работают и контекстное меню, и обводка рамкой — человек
+        // целится в «пустое место страницы», и разницу между «пусто внутри
+        // списка» и «пусто под списком» видит только разметка.
+        const area = files.closest('.view') || files;
+
         const folderId = settings.folderId || '';
         const canWrite = settings.canWrite === 'true';
         const canCreateFolder = settings.canCreateFolder === 'true';
@@ -897,10 +979,11 @@
             let startY = 0;
             let additive = false;
 
-            // Слушаем ВСЮ рабочую область, а не только список: обводить
-            // начинают и правее последней плитки, и ниже неё — там, где
-            // список уже кончился.
-            files.addEventListener('mousedown', e => {
+            // Слушаем ВСЮ рабочую область страницы, а не только список
+            // и даже не только поле файлов: обводить начинают и правее
+            // последней плитки, и далеко под ней — там, где список давно
+            // кончился, а страница ещё нет.
+            area.addEventListener('mousedown', e => {
                 // Только левой кнопкой и только по пустому месту: начав
                 // с плитки, человек её перетаскивает или открывает.
                 if (e.button !== 0 || e.target.closest('[data-id]')) { return; }
@@ -940,6 +1023,11 @@
 
                 visibleNodes().forEach(node => {
                     const b = node.getBoundingClientRect();
+
+                    // Достаточно ЛЮБОГО пересечения, даже на пиксель: человек
+                    // ведёт рамку по краям плиток и ждёт, что задетое
+                    // выделится. Требование «накрыть целиком» заставляло бы
+                    // обводить с запасом и промахиваться.
                     const hit = b.right > rect.left && b.left < rect.right
                         && b.bottom > rect.top && b.top < rect.bottom;
 
@@ -967,14 +1055,6 @@
 
             if (node) { open(info(node), node); }
         });
-
-        // Меню открывается по ВСЕЙ рабочей области страницы, а не только
-        // по плиткам и пустому месту между ними. Раньше слушатель висел
-        // на списке, и правее последней плитки — там, где список кончается, —
-        // выпадало меню самого браузера. Человек при этом целится в «пустое
-        // место рабочей области», и разницу между «пусто внутри списка»
-        // и «пусто под списком» видит только разметка.
-        const area = files.closest('.view') || files;
 
         area.addEventListener('contextmenu', e => {
             // Поля ввода и уже выделенный текст оставляем браузеру: там его
@@ -1273,6 +1353,7 @@
 
             const rows = (data.permissions || []).map(p =>
                 `<div class="perm-row" data-perm="${p.id}">` +
+                `<span class="perm-kind">${p.isUser ? 'сотрудник' : 'группа'}</span>` +
                 `<code>${esc(p.groupName)}</code>` +
                 `<span class="perm-level">${esc(levelName(p.access))}</span>` +
                 `<button class="link danger" type="button" data-drop-perm="${p.id}">Убрать</button>` +
@@ -1292,22 +1373,30 @@
                     (data.inherit ? ' checked' : '') + ' />' +
                     '<span>Наследовать права родительской папки</span></label>' +
                     '<p class="hint">Выключено — действуют только права, назначенные здесь: ' +
-                    `папка становится закрытой даже для тех, у кого есть доступ выше. Администраторы портала (группа <code>${esc(data.adminGroup)}</code>) попадают сюда всегда.</p>` +
+                    'папка становится закрытой даже для тех, у кого есть доступ выше.</p>' +
 
-                    (rows || '<p class="hint">Своих прав у папки нет — действуют права родителя.</p>') +
+                    rows +
 
                     '<div class="fs-add">' +
-                    '<input type="text" id="fsGroup" maxlength="256" placeholder="Имя группы Active Directory" />' +
+                    '<input type="text" id="fsGroup" maxlength="256" autocomplete="off"' +
+                    ' placeholder="Группа или сотрудник — нажмите, чтобы выбрать" />' +
                     '<select id="fsLevel">' +
                     levels.map(l => `<option value="${l[0]}">${esc(l[1])}</option>`).join('') +
                     '</select>' +
                     '<button class="btn" type="button" id="fsAdd">Выдать доступ</button>' +
+                    '<div class="dir-tree" id="fsTree" hidden></div>' +
                     '</div>' +
-                    '<p class="hint">Если группа уже в списке, её уровень заменится на выбранный. ' +
-                    'Права разных групп складываются: действует наибольший.</p>' +
+                    '<p class="hint">Если группа или сотрудник уже в списке, уровень заменится ' +
+                    'на выбранный. Права складываются: действует наибольший.</p>' +
 
                     '</section>' +
 
+                    // Пределы и автоочистка — дело администратора портала:
+                    // они про место на диске и про то, что общего у всех папок.
+                    // Хозяину своей папки нужны ПРАВА — кому её показать;
+                    // остальное только загромождало бы окно вопросами,
+                    // на которые он всё равно не отвечает.
+                    (!data.isAdmin ? '' :
                     '<section class="fs-block"><h4>Ограничения и хранение</h4>' +
 
                     '<div class="field"><label for="fsMax">Предел размера одного файла, МБ</label>' +
@@ -1325,7 +1414,9 @@
                     `<input type="number" id="fsDays" min="0" value="${data.retentionDays ?? ''}" placeholder="автоочистка выключена" />` +
                     '<p class="hint">Через сколько дней стирать с диска то, что лежит в корзине. Пусто — не стирать.</p></div>' +
 
-                    '</section></div>',
+                    '</section>') +
+
+                    '</div>',
 
                 foot: '<button class="btn" type="button" data-mclose>Отмена</button>' +
                     '<button class="btn primary" type="button" id="fsSave">Сохранить</button>'
@@ -1333,28 +1424,152 @@
 
             $$('[data-mclose]', m).forEach(b => { b.onclick = closeModal; });
 
+            const value = (id, fallback) => {
+                const input = $(id, m);
+
+                // Поля пределов есть только у администратора портала.
+                // У остальных отправляем то, что было, — иначе сохранение
+                // прав молча обнулило бы чужие настройки.
+                return input ? input.value : (fallback === null ? '' : String(fallback));
+            };
+
             $('#fsSave', m).onclick = () => {
                 submit(save, {
                     'Input.InheritPermissions': $('#fsInherit', m).checked ? 'true' : 'false',
-                    'Input.MaxFileSizeMb': $('#fsMax', m).value,
-                    'Input.QuotaMb': $('#fsQuota', m).value,
-                    'Input.RetentionDays': $('#fsDays', m).value
+                    'Input.MaxFileSizeMb': value('#fsMax', data.maxFileSizeMb),
+                    'Input.QuotaMb': value('#fsQuota', data.quotaMb),
+                    'Input.RetentionDays': value('#fsDays', data.retentionDays)
                 });
             };
 
+            // Признак «выбран человек, а не группа». Ставится только выбором
+            // из дерева: имя, вписанное руками, — это имя группы, так было
+            // до появления дерева и так осталось.
+            let pickedIsUser = false;
+
+            const field = $('#fsGroup', m);
+            const tree = $('#fsTree', m);
+
+            field.addEventListener('input', () => { pickedIsUser = false; });
+
             $('#fsAdd', m).onclick = () => {
-                const group = $('#fsGroup', m).value.trim();
+                const group = field.value.trim();
 
                 if (!group) {
-                    toast('Укажите имя группы Active Directory', 'warn');
+                    toast('Выберите группу или сотрудника', 'warn');
                     return;
                 }
 
                 submit(add, {
                     'NewPermission.GroupName': group,
-                    'NewPermission.Access': $('#fsLevel', m).value
+                    'NewPermission.Access': $('#fsLevel', m).value,
+                    'NewPermission.IsUser': pickedIsUser ? 'true' : 'false'
                 });
             };
+
+            // ---------- Выбор из дерева домена ----------
+            //
+            // Раньше имя группы вписывали руками. Это работало, пока имена
+            // помнили наизусть; на деле их подсматривают у коллег, ошибаются
+            // в раскладке и получают «группа не найдена» без объяснений.
+            // Теперь то же самое выбирается из дерева — как в оснастке
+            // «Пользователи и компьютеры Active Directory».
+            //
+            // Уровень запрашивается ОТДЕЛЬНО и только когда его раскрыли:
+            // в домене на несколько тысяч учётных записей «дай всё дерево» —
+            // это мегабайты и секунды ожидания.
+
+            const path = [];      // раскрытые ветки: [{dn, name}, …]
+            let searchTimer = null;
+
+            function icon(kind) {
+                return kind === 'ou' ? 'folder' : kind === 'group' ? 'users' : 'home';
+            }
+
+            function showTree(dn, query) {
+                tree.hidden = false;
+                tree.innerHTML = '<div class="dir-load">Читаем каталог…</div>';
+
+                const url = '/Files?handler=Directory&folderId=' + data.id
+                    + (dn ? '&dn=' + encodeURIComponent(dn) : '')
+                    + (query ? '&q=' + encodeURIComponent(query) : '');
+
+                fetch(url, { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                    .then(result => paintTree(result, query))
+                    .catch(() => {
+                        tree.innerHTML = '<div class="dir-load">Каталог домена сейчас недоступен. '
+                            + 'Имя группы можно вписать вручную.</div>';
+                    });
+            }
+
+            function paintTree(result, query) {
+                const crumbs = query
+                    ? `<button type="button" class="dir-up" data-up="0">← к дереву</button>`
+                    : path.length
+                        ? `<button type="button" class="dir-up" data-up="${path.length - 1}">← ${esc(path.length > 1 ? path[path.length - 2].name : 'корень')}</button>`
+                        : '<span class="dir-here">Домен</span>';
+
+                const list = (result.nodes || []).map((n, i) =>
+                    `<button type="button" class="dir-row" data-i="${i}" data-kind="${n.kind}">` +
+                    ic(icon(n.kind), 14) +
+                    `<span>${esc(n.name)}</span>` +
+                    (n.account ? `<code>${esc(n.account)}</code>` : '<span class="dir-more">›</span>') +
+                    '</button>').join('');
+
+                tree.innerHTML = '<div class="dir-head">' + crumbs + '</div>'
+                    + (list || '<div class="dir-load">Здесь ничего нет.</div>');
+
+                const up = $('[data-up]', tree);
+
+                if (up) {
+                    up.onclick = () => {
+                        const to = +up.dataset.up;
+
+                        path.length = query ? 0 : to;
+                        field.value = '';
+                        showTree(path.length ? path[path.length - 1].dn : '', '');
+                    };
+                }
+
+                $$('[data-i]', tree).forEach(row => {
+                    row.onclick = () => {
+                        const node = result.nodes[+row.dataset.i];
+
+                        if (node.kind === 'ou') {
+                            path.push({ dn: node.dn, name: node.name });
+                            showTree(node.dn, '');
+
+                            return;
+                        }
+
+                        // Выбрали группу или человека — подставляем в поле
+                        // и закрываем дерево: дальше остаётся нажать «выдать».
+                        field.value = node.account;
+                        pickedIsUser = node.kind === 'user';
+                        tree.hidden = true;
+                    };
+                });
+            }
+
+            field.addEventListener('focus', () => {
+                if (tree.hidden) { showTree(path.length ? path[path.length - 1].dn : '', ''); }
+            });
+
+            field.addEventListener('input', () => {
+                clearTimeout(searchTimer);
+
+                const query = field.value.trim();
+
+                // Ждём, пока человек допечатает: запрос в каталог на каждую
+                // букву — это десяток запросов на одно слово.
+                searchTimer = setTimeout(() => showTree('', query.length >= 2 ? query : ''), 350);
+            });
+
+            // Нажатие мимо дерева его закрывает — как и любое другое меню.
+            m.addEventListener('click', e => {
+                if (!e.target.closest('.fs-add')) { tree.hidden = true; }
+            });
 
             $$('[data-drop-perm]', m).forEach(b => {
                 b.onclick = () => submit(
@@ -2123,15 +2338,84 @@
             };
         }
 
-        // ---------- Не написал ли кто-нибудь, пока страница открыта ----------
+        // ---------- Живая переписка ----------
+        //
+        // Новые сообщения ДОРИСОВЫВАЮТСЯ прямо в ленту, а не предлагаются
+        // кнопкой «обновить»: раньше человеку приходилось перезагружать
+        // страницу, чтобы увидеть ответ, — то есть переписка работала
+        // как почта.
+        //
+        // Страницу целиком при этом не перезагружаем: в поле ввода может
+        // быть набранный ответ, и обновление стёрло бы его.
+        //
+        // Опрос, а не постоянное соединение: между офисами канал узкий
+        // и рвётся, а висящее соединение там регулярно обрывается —
+        // см. те же соображения в PresenceService.
         if (conversationId) {
-            const CHECK_MS = 8000;
+            const CHECK_MS = 5000;
 
             let lastId = parseInt(settings.lastMessage, 10) || 0;
-            let told = false;
+            let busy = false;
+
+            function bubble(msg) {
+                const box = el('<div class="msg' + (msg.mine ? ' mine' : '') + '"></div>');
+
+                box.dataset.message = msg.id;
+                box.dataset.mine = String(msg.mine);
+                box.dataset.deleted = String(msg.deleted);
+                box.dataset.body = msg.body || '';
+
+                if (!msg.mine) {
+                    box.appendChild(el(`<div class="avatar">${esc(initials(msg.author))}</div>`));
+                }
+
+                const files = (msg.files || []).map(f =>
+                    `<a class="b-file" href="/Messages?handler=Attachment&fileId=${f.id}">` +
+                    `<span class="b-fname">${esc(f.name)}</span>` +
+                    `<span class="b-fsize">${esc(f.size)}</span></a>`).join('');
+
+                const name = (!msg.mine && settings.isGroup === 'true') || isAdminObserver
+                    ? `<div class="b-name">${esc(msg.author)}` +
+                      (msg.ip ? `<span class="b-ip">${esc(msg.ip)}</span>` : '') + '</div>'
+                    : '';
+
+                const text = msg.deleted
+                    ? '<div class="b-text b-deleted">сообщение удалено</div>'
+                    : (msg.body ? `<div class="b-text">${linkify(msg.body)}</div>` : '');
+
+                box.appendChild(el(
+                    '<div class="bubble">' + name + text + files +
+                    '<div class="b-time">' +
+                    (msg.edited ? '<span class="b-edited">изменено</span>' : '') +
+                    esc(msg.at) +
+                    (msg.mine && !msg.deleted && !isAdminObserver
+                        ? `<span class="b-ticks" title="Отправлено">${ic('check', 15)}</span>`
+                        : '') +
+                    '</div></div>'));
+
+                return box;
+            }
+
+            /** Инициалы для кружка — тем же правилом, что и на сервере. */
+            function initials(name) {
+                const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+
+                return parts.length === 0 ? '?'
+                    : (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+            }
+
+            /** Адреса в тексте — ссылками. Всё остальное экранируется. */
+            function linkify(body) {
+                return esc(body)
+                    .replace(/\n/g, '<br />')
+                    .replace(/(https?:\/\/[^\s<]+)/g,
+                        '<a href="$1" rel="noopener noreferrer" target="_blank">$1</a>');
+            }
 
             setInterval(() => {
-                if (document.visibilityState !== 'visible' || told) { return; }
+                if (document.visibilityState !== 'visible' || busy) { return; }
+
+                busy = true;
 
                 fetch(`/Messages?handler=New&id=${conversationId}&afterId=${lastId}`, {
                     credentials: 'same-origin',
@@ -2139,17 +2423,40 @@
                 })
                     .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
                     .then(data => {
+                        // Галочки уже показанных сообщений: собеседник мог
+                        // дочитать до какого-то места, пока мы смотрели.
+                        $$('.msg.mine .b-ticks', chat).forEach(tick => {
+                            const id = parseInt(tick.closest('[data-message]').dataset.message, 10);
+                            const read = id <= (data.readUpTo || 0);
+
+                            tick.classList.toggle('read', read);
+                            tick.title = read ? 'Прочитано' : 'Отправлено';
+                            $('use', tick).setAttribute('href', read ? '#i-check-all' : '#i-check');
+                        });
+
                         if (!data.hasNew) { return; }
 
-                        // Страницу НЕ перезагружаем сами: человек может
-                        // писать ответ, и обновление стёрло бы набранное.
-                        // Предлагаем — решает он.
-                        told = true;
+                        // Дорисовываем в конец и прокручиваем — но только
+                        // если человек и так смотрел на низ ленты. Если он
+                        // ушёл читать вверх, дёргать его прокруткой нельзя.
+                        const atBottom = msgs
+                            && msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 80;
 
-                        toast('В переписке есть новые сообщения', 'info',
-                            'Показать', () => window.location.reload());
+                        (data.messages || []).forEach(msg => {
+                            if ($(`[data-message="${msg.id}"]`, chat)) { return; }
+
+                            msgs.appendChild(bubble(msg));
+                            lastId = Math.max(lastId, msg.id);
+
+                            if (!msg.mine) {
+                                toast('Новое сообщение: ' + msg.author, 'info');
+                            }
+                        });
+
+                        if (atBottom) { msgs.scrollTop = msgs.scrollHeight; }
                     })
-                    .catch(() => { /* связь могла моргнуть — молчим */ });
+                    .catch(() => { /* связь могла моргнуть — молчим */ })
+                    .finally(() => { busy = false; });
             }, CHECK_MS);
         }
     }

@@ -24,6 +24,7 @@ public class IndexModel : PageModel
     private readonly FileStorage _storage;
     private readonly UploadValidator _validator;
     private readonly StorageOptions _storageOptions;
+    private readonly Portal.Web.Services.ActiveDirectory.DirectoryBrowser _browser;
     private readonly AuditLog _audit;
     private readonly FavoriteService _favorites;
     private readonly ActiveDirectoryOptions _ad;
@@ -36,6 +37,7 @@ public class IndexModel : PageModel
         FileStorage storage,
         UploadValidator validator,
         IOptions<StorageOptions> storageOptions,
+        Portal.Web.Services.ActiveDirectory.DirectoryBrowser browser,
         AuditLog audit,
         FavoriteService favorites,
         IOptions<ActiveDirectoryOptions> ad,
@@ -47,6 +49,7 @@ public class IndexModel : PageModel
         _storage = storage;
         _validator = validator;
         _storageOptions = storageOptions.Value;
+        _browser = browser;
         _audit = audit;
         _favorites = favorites;
         _ad = ad.Value;
@@ -1634,7 +1637,7 @@ public class IndexModel : PageModel
         var permissions = await _db.FolderPermissions
             .Where(p => p.FolderId == folderId)
             .OrderBy(p => p.GroupName)
-            .Select(p => new { p.Id, p.GroupName, Access = p.Access.ToString(), Level = (int)p.Access })
+            .Select(p => new { p.Id, p.GroupName, p.IsUser, Access = p.Access.ToString(), Level = (int)p.Access })
             .ToListAsync(cancellationToken);
 
         var effectiveMax = _tree.EffectiveMaxFileSizeBytes(folder);
@@ -1659,8 +1662,38 @@ public class IndexModel : PageModel
                 : "не задана",
             defaultMaxMb = _storageOptions.DefaultMaxFileSizeMb,
             absoluteMaxMb = _storageOptions.FileSizeUnlimited ? 0 : _storageOptions.AbsoluteMaxFileSizeMb,
-            adminGroup = _ad.AdminGroup,
+            isAdmin = IsAdmin,
             permissions
+        });
+    }
+
+    /// <summary>
+    /// Один уровень дерева домена — для выбора группы или человека
+    /// в окне прав на папку.
+    ///
+    /// Отдаётся только тому, кто УПРАВЛЯЕТ хотя бы одной папкой: список
+    /// подразделений и сотрудников — сведения об устройстве организации,
+    /// и раздавать их всем подряд незачем.
+    /// </summary>
+    public async Task<IActionResult> OnGetDirectoryAsync(
+        int folderId, string? dn, string? q, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        var folder = _tree.Get(folderId);
+
+        if (folder is null || !_tree.CanManage(User, folder))
+        {
+            return NotFound();
+        }
+
+        var nodes = _browser.Children(dn, q);
+
+        return new JsonResult(new
+        {
+            root = _browser.RootDn,
+            dn = string.IsNullOrWhiteSpace(dn) ? _browser.RootDn : dn,
+            nodes = nodes.Select(n => new { n.Kind, n.Name, n.Dn, n.Account })
         });
     }
 

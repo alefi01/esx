@@ -137,7 +137,15 @@ public sealed class FolderTree
 
             foreach (var permission in current.Permissions)
             {
-                if (user.IsInRole(permission.GroupName) && permission.Access > result)
+                // Право выдано либо ГРУППЕ (проверяем членство), либо
+                // конкретному ЧЕЛОВЕКУ (сравниваем логин). Одна проверка
+                // вместо двух не годится: логин в списке ролей не лежит.
+                var granted = permission.IsUser
+                    ? !string.IsNullOrEmpty(userName)
+                      && string.Equals(permission.GroupName, userName, StringComparison.OrdinalIgnoreCase)
+                    : user.IsInRole(permission.GroupName);
+
+                if (granted && permission.Access > result)
                 {
                     result = permission.Access;
                 }

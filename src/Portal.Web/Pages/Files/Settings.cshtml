@@ -138,7 +138,10 @@
             @foreach (var permission in Model.Permissions)
             {
                 <tr>
-                    <td><code>@permission.GroupName</code></td>
+                    <td>
+                        <code>@permission.GroupName</code>
+                        <span class="dim">@(permission.IsUser ? "сотрудник" : "группа")</span>
+                    </td>
                     <td>@permission.Access</td>
                     <td>
                         <form method="post" asp-page-handler="RemovePermission"

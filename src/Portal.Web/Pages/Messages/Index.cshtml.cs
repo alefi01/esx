@@ -837,10 +837,53 @@ public class IndexModel : PageModel
             return NotFound();
         }
 
-        var hasNew = await _db.Messages
-            .AnyAsync(m => m.ConversationId == id && m.Id > afterId, cancellationToken);
+        var observer = !ConversationService.IsParticipant(User, conversation);
 
-        return new JsonResult(new { hasNew });
+        var fresh = await _db.Messages
+            .Where(m => m.ConversationId == id && m.Id > afterId)
+            .Include(m => m.Files)
+            .OrderBy(m => m.Id)
+            .Take(50)
+            .ToListAsync(cancellationToken);
+
+        // Пришедшее СРАЗУ считается прочитанным: человек смотрит на беседу,
+        // сообщение появилось у него на глазах. Иначе собеседник видел бы
+        // одну галочку, пока страницу не перезагрузят.
+        if (!observer && fresh.Count > 0)
+        {
+            await _conversations.MarkReadAsync(id, UserName, cancellationToken);
+        }
+
+        // До какого сообщения дочитали ОСТАЛЬНЫЕ — по нему обновляются
+        // галочки уже показанных сообщений.
+        var others = conversation.Participants
+            .Where(p => !string.Equals(p.UserName, UserName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var readUpTo = others.Count == 0 ? 0 : others.Min(p => p.LastReadMessageId);
+
+        return new JsonResult(new
+        {
+            hasNew = fresh.Count > 0,
+            readUpTo,
+            messages = fresh.Select(m => new
+            {
+                id = m.Id,
+                mine = string.Equals(m.AuthorUserName, UserName, StringComparison.OrdinalIgnoreCase),
+                author = m.AuthorDisplayName,
+                body = m.Body,
+                deleted = m.DeletedAt != null,
+                edited = m.EditedAt != null,
+                at = m.CreatedAt.ToLocalTime().ToString("HH:mm"),
+                ip = observer ? m.AuthorIp : null,
+                files = m.Files.Where(f => f.PurgedAt == null).Select(f => new
+                {
+                    id = f.Id,
+                    name = f.OriginalName,
+                    size = UploadValidator.Format(f.SizeBytes)
+                })
+            })
+        });
     }
 
     /// <summary>Подсветка найденного куска. Возвращает части: до, само совпадение, после.</summary>

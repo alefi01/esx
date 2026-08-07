@@ -332,6 +332,10 @@ builder.Services.AddScoped<FavoriteService>();
 builder.Services.AddSingleton<MessageStorage>();
 builder.Services.AddSingleton<Portal.Web.Services.Announcements.AnnouncementStorage>();
 builder.Services.AddScoped<IUserDirectory, UserDirectory>();
+
+// Обзор дерева домена для окна прав на папку. К базе не обращается,
+// ответы держит в памяти минуту — Singleton.
+builder.Services.AddSingleton<DirectoryBrowser>();
 builder.Services.AddScoped<ConversationService>();
 
 // AuditLog нужно знать, кто выполняет действие и с какого адреса.

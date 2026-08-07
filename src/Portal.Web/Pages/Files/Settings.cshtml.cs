@@ -85,6 +85,13 @@ public class SettingsModel : PageModel
 
         [Display(Name = "Уровень доступа")]
         public FolderAccess Access { get; set; } = FolderAccess.Read;
+
+        /// <summary>
+        /// Право выдаётся ЧЕЛОВЕКУ, а не группе. Проставляется, когда
+        /// его выбрали в дереве домена; при вводе имени руками остаётся
+        /// выключенным — руками вписывают группы.
+        /// </summary>
+        public bool IsUser { get; set; }
     }
 
     public async Task<IActionResult> OnGetAsync(int id, CancellationToken cancellationToken)
@@ -220,6 +227,7 @@ public class SettingsModel : PageModel
             // а не ошибка. Так удобнее: не надо сначала удалять запись.
             var old = existing.Access;
             existing.Access = NewPermission.Access;
+            existing.IsUser = NewPermission.IsUser;
 
             _audit.Add(AuditAction.ChangePermissions, _tree.DisplayPath(Folder!),
                 $"группа «{group}»: {old} → {NewPermission.Access}");
@@ -232,13 +240,37 @@ public class SettingsModel : PageModel
             {
                 FolderId = id,
                 GroupName = group,
-                Access = NewPermission.Access
+                Access = NewPermission.Access,
+                IsUser = NewPermission.IsUser
             });
 
-            _audit.Add(AuditAction.ChangePermissions, _tree.DisplayPath(Folder!),
-                $"добавлена группа «{group}» с уровнем {NewPermission.Access}");
+            var what = NewPermission.IsUser ? "сотрудник" : "группа";
 
-            StatusMessage = $"Группе «{group}» выдан доступ: {NewPermission.Access}.";
+            _audit.Add(AuditAction.ChangePermissions, _tree.DisplayPath(Folder!),
+                $"добавлен доступ: {what} «{group}», уровень {NewPermission.Access}");
+
+            StatusMessage = NewPermission.IsUser
+                ? $"Сотруднику «{group}» выдан доступ: {NewPermission.Access}."
+                : $"Группе «{group}» выдан доступ: {NewPermission.Access}.";
+        }
+
+        // Явно назначенные права ВЫКЛЮЧАЮТ наследование.
+        //
+        // Иначе получалось неожиданное: человек выдаёт доступ одной группе
+        // и думает, что закрыл папку от остальных, — а к правам этой группы
+        // молча добавляются права всех папок выше, и папку по-прежнему видит
+        // весь отдел. Раз права назначают руками, папка становится
+        // самостоятельной; вернуть наследование можно тут же, галочкой.
+        if (Folder!.InheritPermissions)
+        {
+            var tracked = await _db.Folders.AsTracking().FirstAsync(f => f.Id == id, cancellationToken);
+
+            tracked.InheritPermissions = false;
+
+            _audit.Add(AuditAction.ChangeFolderSettings, _tree.DisplayPath(Folder),
+                "наследование прав выключено: у папки появились свои права");
+
+            StatusMessage += " Наследование прав родительской папки выключено.";
         }
 
         await _db.SaveChangesAsync(cancellationToken);

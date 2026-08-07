@@ -1103,13 +1103,14 @@ html.nav-hidden .sidebar *{visibility:hidden}
 
 .home-hint{margin-top:10px;font-size:11.5px;color:var(--muted)}
 
-/* Заголовок «Новые объявления» с числом и кнопкой «прочитано». */
-.home-unread-head{align-items:center;gap:10px}
-.home-unread-head h2{display:flex;align-items:center;gap:9px}
-.unread-count{background:var(--accent);color:#fff;font-size:11.5px;font-weight:700;
-  border-radius:999px;padding:2px 9px;line-height:1.6}
+/* Заголовок «Новые объявления» — той же строкой, что и «Закреплённое»:
+   два столбца одинаковой ширины должны и начинаться одинаково. Кнопка
+   «прочитано» и ссылка на ленту прижаты к правому краю столбца. */
+.unread-count{background:var(--accent);color:#fff;font-size:10.5px;font-weight:700;
+  border-radius:999px;padding:1px 8px;line-height:1.7}
 .home-mark{margin-left:auto}
-.home-unread-head .feed-all{margin-left:0}
+.home-mark .btn{padding:4px 10px;font-size:11.5px}
+.home-unread-head .feed-all{margin-left:0;font-size:11px}
 
 /* Спокойное состояние «всё прочитано» — не пустой экран с восклицанием,
    а короткая строка: новостей нет, и это нормально. */
@@ -1134,14 +1135,21 @@ html.nav-hidden .sidebar *{visibility:hidden}
    Главная: два столбца и «пустое» состояние
    ====================================================================== */
 
-/* Слева новое, справа закреплённое. На узком экране столбцы становятся
-   один под другим, и закреплённое уходит вниз — оно менее срочное. */
-.home-cols{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start}
+/* Слева новое, справа закреплённое — РОВНО ПОПОЛАМ. Одинаковая ширина
+   не украшение: она говорит, что оба столбца равно важны, а узкая правая
+   колонка читалась бы как приписка сбоку. На узком экране столбцы
+   становятся один под другим, и закреплённое уходит вниз — там уже
+   не до равенства, а срочное важнее постоянного. */
+.home-cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}
 .home-col-main{min-width:0}
 .home-col-side{min-width:0;display:flex;flex-direction:column;gap:10px}
 
 .side-head{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;
-  text-transform:uppercase;letter-spacing:.6px;color:var(--muted);padding:0 2px 2px}
+  text-transform:uppercase;letter-spacing:.6px;color:var(--muted);padding:0 2px 2px;
+  min-height:30px}
+.side-head .ic{flex:none}
+.side-count{background:var(--surface3);color:var(--muted);border-radius:999px;
+  padding:1px 8px;font-size:10.5px;line-height:1.7}
 
 .pin-card{display:block;background:var(--surface);border:1px solid var(--border);
   border-radius:14px;padding:13px 15px;color:inherit;position:relative;overflow:hidden;
@@ -1230,6 +1238,7 @@ html.nav-hidden .sidebar *{visibility:hidden}
    в 860 пикселей задан для отдельной страницы объявлений, где столбец
    один, а здесь он оставлял пустую полосу до закреплённого. */
 .home-col-main .ann-list{max-width:none}
+.home-clear{max-width:none}
 
 /* ======================================================================
    Переписки: статус собеседника, галочки, адрес отправителя
@@ -1253,3 +1262,83 @@ html.nav-hidden .sidebar *{visibility:hidden}
   font-family:'Cascadia Code',Consolas,monospace}
 .msg.mine .b-ip{color:rgba(255,255,255,.75)}
 .msg.mine .b-name{color:#fff}
+
+/* Дерево домена в окне прав на папку. Выпадает под полем ввода —
+   как список подсказок, а не отдельное окно поверх окна. */
+.fs-add{position:relative}
+.dir-tree{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;max-height:280px;
+  overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  box-shadow:var(--shadow-lg);padding:6px}
+.dir-head{display:flex;align-items:center;padding:5px 8px 7px;border-bottom:1px solid var(--border);
+  margin-bottom:5px}
+.dir-up,.dir-here{background:none;border:none;font-size:11.5px;font-weight:600;color:var(--muted);
+  cursor:pointer;padding:0}
+.dir-up:hover{color:var(--accent)}
+.dir-row{display:flex;align-items:center;gap:9px;width:100%;padding:7px 8px;border-radius:8px;
+  background:none;border:none;cursor:pointer;text-align:left;font-size:12.5px;color:var(--text)}
+.dir-row:hover{background:var(--surface2)}
+.dir-row .ic{flex:none;color:var(--muted)}
+.dir-row span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dir-row code{flex:none;font-size:11px;color:var(--muted)}
+.dir-more{flex:none;color:var(--muted);font-size:15px;line-height:1}
+.dir-load{padding:12px 10px;font-size:12px;color:var(--muted);line-height:1.5}
+
+/* Пометка «группа»/«сотрудник» в списке выданных прав. */
+.perm-kind{flex:none;font-size:10.5px;color:var(--muted);background:var(--surface3);
+  border-radius:999px;padding:1px 8px}
+
+/* Плавное закрытие окна: обратное тому движению, которым оно открылось. */
+@keyframes fadeOut{from{opacity:1}to{opacity:0}}
+@keyframes mdrop{from{opacity:1;transform:none}
+                 to{opacity:0;transform:translateY(14px) scale(.97)}}
+
+.overlay.closing{animation:fadeOut .2s ease forwards}
+.overlay.closing .modal{animation:mdrop .2s cubic-bezier(.4,0,1,1) forwards}
+
+/* Движение выключено настройками системы — окно просто исчезает.
+   Анимация тут украшение, а не смысл. */
+@media (prefers-reduced-motion:reduce){
+  .overlay.closing,.overlay.closing .modal{animation:none}
+}
+
+/* ======================================================================
+   Объявления на главной — полупрозрачными карточками
+   ====================================================================== */
+
+/* Полупрозрачность нужна ради выбранного фона рабочего пространства:
+   сплошные белые прямоугольники закрывали картинку и превращали её
+   в узкую рамку по краям. Размытие под карточкой (backdrop-filter)
+   не даёт тексту лечь прямо на рисунок — иначе мелкий шрифт на пёстром
+   месте перестаёт читаться.
+
+   Цвет задан через color-mix от переменной темы, а не подобран вручную:
+   на тёмной теме карточка должна светлеть от тёмного фона, а не белеть. */
+.home .ann-card,
+.home .pin-card,
+.home .home-clear{
+  background:color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter:blur(10px) saturate(1.1);
+  border-color:color-mix(in srgb, var(--border) 70%, transparent)}
+
+.home .ann-card:hover,
+.home .pin-card:hover{background:color-mix(in srgb, var(--surface) 92%, transparent)}
+
+/* Браузер без color-mix получит обычные непрозрачные карточки —
+   это хуже на фоне, но читаемо. Ничего не ломается. */
+
+/* Свёрнутый текст объявления: шесть строк и мягкое затухание к низу,
+   чтобы было видно, что текст продолжается, а не оборван на полуслове. */
+.ann-body.clamped{position:relative;max-height:9.9em;overflow:hidden}
+.ann-body.clamped::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3.2em;
+  background:linear-gradient(to bottom,transparent,var(--surface))}
+.ann-body.expanded{max-height:none;overflow:visible}
+.ann-body.expanded::after{display:none}
+
+.ann-more{margin-top:8px;background:none;border:none;padding:0;cursor:pointer;
+  color:var(--accent);font-size:12.5px;font-weight:600}
+.ann-more:hover{text-decoration:underline}
+
+/* На главной карточка полупрозрачная, и «сплошной» цвет в затухании
+   выдал бы прямоугольник поверх фона. */
+.home .ann-body.clamped::after{
+  background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--surface) 78%,transparent))}

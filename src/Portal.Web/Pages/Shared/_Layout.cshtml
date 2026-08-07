@@ -119,7 +119,6 @@
         <form class="searchbar" method="get" asp-page="/Files/Index" role="search">
             <svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-search" /></svg>
             <input id="globalSearch" type="text" name="q" placeholder="Поиск файлов и папок…" aria-label="Поиск файлов и папок" />
-            <kbd>Ctrl K</kbd>
         </form>
     }
     else
@@ -215,7 +214,7 @@
                 <div class="avatar" data-av="@Portal.Web.Pages.Shared.Avatars.ColorIndex(displayName)">@initials</div>
                 <div class="u-meta">
                     <b>@displayName</b>
-                    <span>@(isAdmin ? "Администратор" : "Сотрудник")</span>
+                    <span>@(isAdmin ? "Администратор" : "Пользователь")</span>
                 </div>
             </div>
 
@@ -255,16 +254,6 @@
         <a class="nav-item@(Nav("/Announcements"))" asp-page="/Announcements/Index">
             <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><use href="#i-mega" /></svg>Объявления<span class="cnt" id="annBadge" hidden>0</span>
         </a>
-
-        @* Лента активности видна только администратору: по ней понятно,
-           кто чем занимается, и сотрудникам друг о друге это знать незачем.
-           Остальным пункт не показывается вовсе. *@
-        @if (isAdmin)
-        {
-            <a class="nav-item@(Nav("/Admin/Activity"))" asp-page="/Admin/Activity">
-                <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-clock" /></svg>Активность
-            </a>
-        }
 
         <div class="nav-label">Сервис</div>
 

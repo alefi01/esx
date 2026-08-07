@@ -43,10 +43,6 @@
                    placeholder="Поиск файлов и папок" aria-label="Поиск файлов и папок" />
             <button class="btn primary" type="submit">Найти</button>
         </form>
-
-        <p class="home-hint">
-            Поиск идёт по именам файлов и папок и только там, куда у вас есть доступ.
-        </p>
     </div>
 
     @if (Model.DatabaseUnavailable)
@@ -67,6 +63,11 @@
             <div class="home-col-main">
                 @if (Model.Items.Count == 0)
                 {
+                    <div class="side-head">
+                        <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
+                        Новые объявления
+                    </div>
+
                     <div class="home-clear">
                         <svg class="ic" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
                         <div>
@@ -86,11 +87,10 @@
                 }
                 else
                 {
-                    <div class="view-head feed-head home-unread-head">
-                        <h2>
-                            Новые объявления
-                            <span class="unread-count">@Model.UnreadCount</span>
-                        </h2>
+                    <div class="side-head home-unread-head">
+                        <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
+                        Новые объявления
+                        <span class="unread-count">@Model.UnreadCount</span>
 
                         @* Отметка «прочитано» ставится ЯВНО, кнопкой. Раньше главная
                            отмечала всё сама при открытии — с лентой «всё подряд» это
@@ -129,6 +129,7 @@
                     <div class="side-head">
                         <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pin" /></svg>
                         Закреплённое
+                        <span class="side-count">@Model.Pinned.Count</span>
                     </div>
 
                     @foreach (var item in Model.Pinned)
