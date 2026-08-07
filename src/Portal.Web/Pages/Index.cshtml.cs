@@ -36,6 +36,9 @@ public class IndexModel : PageModel
     /// <summary>Сколько непрочитанных объявлений показывать на главной.</summary>
     private const int FeedSize = 10;
 
+    /// <summary>Сколько закреплённых объявлений помещается в правый столбец.</summary>
+    private const int PinnedSize = 6;
+
     private readonly ActiveDirectoryOptions _adOptions;
     private readonly PortalDbContext _db;
     private readonly NotificationService _notifications;
@@ -74,6 +77,22 @@ public class IndexModel : PageModel
 
     /// <summary>Сколько всего объявлений в портале — для ссылки «вся лента».</summary>
     public int TotalCount { get; private set; }
+
+    /// <summary>
+    /// Закреплённые объявления — правым столбцом.
+    ///
+    /// Показываются НЕЗАВИСИМО от того, прочитаны они или нет: закрепляют
+    /// как раз то, что должно висеть перед глазами постоянно — режим работы,
+    /// телефон охраны, порядок в праздники. Такое читают один раз, а нужно
+    /// оно потом месяцами.
+    /// </summary>
+    public IReadOnlyList<Announcement> Pinned { get; private set; } = [];
+
+    /// <summary>
+    /// Совсем пусто: ни закреплённого, ни непрочитанного. Тогда на странице
+    /// остаются только часы и поиск, и поиску отдаётся весь экран.
+    /// </summary>
+    public bool NothingToShow => Pinned.Count == 0 && Items.Count == 0 && !DatabaseUnavailable;
 
     public bool DatabaseUnavailable { get; private set; }
 
@@ -122,6 +141,15 @@ public class IndexModel : PageModel
                 .ToListAsync(cancellationToken);
 
             HasMore = UnreadCount > Items.Count;
+
+            // Закреплённые берутся отдельным запросом, а не выбираются
+            // из непрочитанных: закреплённое показывается и прочитанным.
+            Pinned = await _db.Announcements
+                .Where(a => a.IsPinned)
+                .OrderByDescending(a => a.CreatedAt)
+                .ThenByDescending(a => a.Id)
+                .Take(PinnedSize)
+                .ToListAsync(cancellationToken);
         }
         catch (Exception ex)
         {

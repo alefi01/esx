@@ -1,6 +1,8 @@
 @page
 @using Portal.Web.Pages.Shared
 @using Portal.Web.Services.Messaging
+@using Portal.Web.Services.Text
+@inject PlainTextFormatter TextFormatter
 @model Portal.Web.Pages.Messages.IndexModel
 @{
     ViewData["Title"] = Model.Current is null ? "Чат" : Model.Title;
@@ -247,10 +249,16 @@
                                 {
                                     @if (!string.IsNullOrWhiteSpace(message.Body))
                                     {
-                                        @* Текст выводится как текст: Razor кодирует его сам,
-                                           и разметка из сообщения на страницу не попадёт.
-                                           Переносы строк сохраняет стиль white-space. *@
-                                        <div class="b-text">@message.Body</div>
+                                        @* Текст пропускается через тот же формирователь,
+                                           что и объявления: он ЭКРАНИРУЕТ всё написанное
+                                           человеком и сам собирает разметку. Адреса
+                                           http:// и https:// становятся ссылками, всё
+                                           остальное остаётся текстом — разметка
+                                           из сообщения на страницу не попадёт.
+
+                                           Ссылки открываются в новой вкладке и без
+                                           передачи адреса портала — см. PlainTextFormatter. *@
+                                        <div class="b-text">@TextFormatter.ToHtml(message.Body)</div>
                                     }
 
                                     @foreach (var file in message.Files.Where(f => f.PurgedAt is null))

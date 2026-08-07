@@ -799,12 +799,139 @@
             if (node) { node.classList.add('selected'); }
         }
 
-        // Одиночное нажатие выделяет, двойное открывает — как в проводнике.
+        // ---------- Выделение нескольких объектов ----------
+        //
+        // Как в проводнике: обычное нажатие выделяет один, Ctrl добавляет
+        // и убирает по одному, Shift берёт всё подряд от прошлого нажатия,
+        // а протягивание мышью по пустому месту обводит рамкой.
+        //
+        // Хранится не список узлов, а сама разметка с классом .selected:
+        // страница перерисовывается целиком при любом действии, и список
+        // узлов после этого указывал бы в никуда.
+
+        const picked = () => $$('.selected', container);
+
+        function marked(node, on) {
+            node.classList.toggle('selected', on);
+        }
+
+        /** Все плитки/строки ВИДИМОГО сейчас вида — по ним считается Shift. */
+        function visibleNodes() {
+            return $$('[data-id]', container).filter(n => n.offsetParent !== null);
+        }
+
+        function selectRange(fromNode, toNode) {
+            const all = visibleNodes();
+            const a = all.indexOf(fromNode);
+            const b = all.indexOf(toNode);
+
+            if (a < 0 || b < 0) { return; }
+
+            const [start, end] = a <= b ? [a, b] : [b, a];
+
+            all.forEach((n, i) => marked(n, i >= start && i <= end));
+        }
+
         container.addEventListener('click', e => {
             if (e.target.closest('.fav-star')) { return; }
 
-            select(e.target.closest('[data-id]'));
+            const node = e.target.closest('[data-id]');
+
+            if (!node) {
+                select(null);
+                return;
+            }
+
+            if (e.shiftKey && selected) {
+                // Обычный выбор диапазона сбрасывает выделение текста,
+                // которое браузер делает при Shift-нажатии.
+                window.getSelection()?.removeAllRanges();
+                selectRange(selected, node);
+
+                return;
+            }
+
+            if (e.ctrlKey || e.metaKey) {
+                marked(node, !node.classList.contains('selected'));
+                selected = node;
+
+                return;
+            }
+
+            select(node);
         });
+
+        // ---------- Обводка рамкой ----------
+        (function () {
+            let box = null;
+            let startX = 0;
+            let startY = 0;
+            let additive = false;
+
+            // Слушаем ВСЮ рабочую область, а не только список: обводить
+            // начинают и правее последней плитки, и ниже неё — там, где
+            // список уже кончился.
+            files.addEventListener('mousedown', e => {
+                // Только левой кнопкой и только по пустому месту: начав
+                // с плитки, человек её перетаскивает или открывает.
+                if (e.button !== 0 || e.target.closest('[data-id]')) { return; }
+
+                additive = e.ctrlKey || e.metaKey;
+                startX = e.pageX;
+                startY = e.pageY;
+
+                box = el('<div class="marquee"></div>');
+                document.body.appendChild(box);
+                files.classList.add('marking');
+
+                if (!additive) { select(null); }
+
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', e => {
+                if (!box) { return; }
+
+                const left = Math.min(startX, e.pageX);
+                const top = Math.min(startY, e.pageY);
+                const width = Math.abs(e.pageX - startX);
+                const height = Math.abs(e.pageY - startY);
+
+                // Размеры задаёт код, а не разметка: встроенные стили
+                // запрещены политикой безопасности страницы.
+                box.style.left = left + 'px';
+                box.style.top = top + 'px';
+                box.style.width = width + 'px';
+                box.style.height = height + 'px';
+
+                const rect = {
+                    left: left - window.scrollX, top: top - window.scrollY,
+                    right: left + width - window.scrollX, bottom: top + height - window.scrollY
+                };
+
+                visibleNodes().forEach(node => {
+                    const b = node.getBoundingClientRect();
+                    const hit = b.right > rect.left && b.left < rect.right
+                        && b.bottom > rect.top && b.top < rect.bottom;
+
+                    // С Ctrl рамка ДОБАВЛЯЕТ к уже выделенному, поэтому
+                    // не попавшие в неё не трогаем.
+                    if (hit || !additive) { marked(node, hit || (additive && node.classList.contains('selected'))); }
+                });
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (!box) { return; }
+
+                box.remove();
+                box = null;
+                files.classList.remove('marking');
+
+                const list = picked();
+
+                selected = list.length ? list[list.length - 1] : null;
+            });
+        })();
 
         container.addEventListener('dblclick', e => {
             const node = e.target.closest('[data-id]');
@@ -838,6 +965,16 @@
             e.preventDefault();
 
             if (node) {
+                // Нажали по объекту ВНУТРИ выделенного — выделение сохраняем
+                // и показываем меню для всей группы. Так работает проводник,
+                // и иначе право нажатие сбрасывало бы то, что человек
+                // только что набрал мышью.
+                if (node.classList.contains('selected') && picked().length > 1) {
+                    groupMenu(picked(), e.clientX, e.clientY);
+
+                    return;
+                }
+
                 select(node);
                 itemMenu(info(node), e.clientX, e.clientY);
             } else {
@@ -845,6 +982,59 @@
                 areaMenu(e.clientX, e.clientY);
             }
         });
+
+        /**
+         * Меню для нескольких выделенных объектов.
+         *
+         * Здесь только то, что осмысленно делать пачкой. «Переименовать»
+         * или «свойства» для десяти объектов сразу смысла не имеют,
+         * и их тут нет.
+         */
+        function groupMenu(nodes, x, y) {
+            const items = nodes.map(info);
+            const fileList = items.filter(i => i.file).map(i => i.file);
+            const folderList = items.filter(i => i.folder).map(i => i.folder);
+
+            const entries = [];
+
+            entries.push({
+                icon: 'download',
+                label: `Скачать архивом (${items.length})`,
+                fn: () => {
+                    toast('Готовим архив, скачивание начнётся само', 'info');
+
+                    const query = [];
+
+                    if (fileList.length) { query.push('fileIds=' + fileList.join(',')); }
+                    if (folderList.length) { query.push('folderIds=' + folderList.join(',')); }
+                    if (folderId) { query.push('folderId=' + folderId); }
+
+                    window.location.href = '/Files?handler=DownloadZip&' + query.join('&');
+                }
+            });
+
+            // В корзину — только файлы и только те, которые человеку
+            // разрешено удалять. Папки удаляются по одной и только пустые:
+            // пакетное удаление папок слишком легко сделать не глядя.
+            const deletable = items.filter(i => i.file && i.canDelete).map(i => i.file);
+
+            if (deletable.length) {
+                entries.push({ sep: 1 });
+                entries.push({
+                    icon: 'trash',
+                    label: `В корзину (${deletable.length})`,
+                    danger: 1,
+                    fn: () => confirmDlg('Переместить в корзину?',
+                        `Файлов: ${deletable.length}. Восстановить их можно будет из раздела «Корзина».`,
+                        'В корзину',
+                        () => submit('/Files?handler=DeleteFiles' + (folderId ? '&folderId=' + folderId : ''),
+                            { fileIds: deletable }),
+                        true)
+                });
+            }
+
+            showMenu(x, y, entries);
+        }
 
         function open(item, node) {
             if (item.folder) {
@@ -905,7 +1095,7 @@
 
             if (item.folder && item.canManage) {
                 entries.push({ icon: 'edit', label: 'Переименовать', fn: () => rename(item) });
-                entries.push({ icon: 'info', label: 'Управление папкой', fn: () => { window.location.href = '/Files/Settings?id=' + item.folder; } });
+                entries.push({ icon: 'info', label: 'Управление папкой', fn: () => folderSettings(item.folder) });
             }
 
             entries.push({ icon: 'info', label: 'Свойства', fn: () => properties(item) });
@@ -1013,6 +1203,141 @@
                 () => submit('/Files?handler=DeleteFiles' + (folderId ? '&folderId=' + folderId : ''),
                     { fileIds: item.file }),
                 true);
+        }
+
+        /**
+         * Управление папкой ОКНОМ поверх списка, а не отдельной страницей.
+         *
+         * Настройки правят, стоя в папке и глядя на её содержимое. Уход
+         * на отдельную страницу означал потерю места: вернувшись, человек
+         * оказывался в начале списка и заново искал, где был.
+         *
+         * Сохраняют изменения обработчики САМОЙ страницы настроек —
+         * обычной отправкой формы, как и всё остальное в портале. Правила
+         * проверки при этом живут в одном месте, а страница остаётся
+         * рабочей и без JavaScript. Признак returnTo=files говорит серверу
+         * вернуть человека в папку, а не на страницу настроек.
+         */
+        function folderSettings(id) {
+            fetch('/Files?handler=FolderSettings&folderId=' + id, {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                .then(data => showFolderSettings(data))
+                .catch(reason => toast(
+                    reason === 404
+                        ? 'Управлять этой папкой можно только с правом «Управление»'
+                        : 'Не удалось получить настройки папки',
+                    'warn'));
+        }
+
+        function showFolderSettings(data) {
+            const save = '/Files/Settings/' + data.id + '?handler=Save&returnTo=files';
+            const add = '/Files/Settings/' + data.id + '?handler=AddPermission&returnTo=files';
+
+            const levels = [
+                ['Read', 'Чтение — видеть и скачивать'],
+                ['Write', 'Запись — загружать и создавать подпапки'],
+                ['Manage', 'Управление — удалять и менять права']
+            ];
+
+            const rows = (data.permissions || []).map(p =>
+                `<div class="perm-row" data-perm="${p.id}">` +
+                `<code>${esc(p.groupName)}</code>` +
+                `<span class="perm-level">${esc(levelName(p.access))}</span>` +
+                `<button class="link danger" type="button" data-drop-perm="${p.id}">Убрать</button>` +
+                '</div>').join('');
+
+            const m = openModal({
+                wide: true,
+                title: `Управление папкой «${esc(data.name)}»`,
+                body:
+                    `<p class="hint fs-path">${esc(data.path)}</p>` +
+
+                    '<div class="fs-grid">' +
+
+                    '<section class="fs-block"><h4>Права доступа</h4>' +
+
+                    '<label class="fs-check"><input type="checkbox" id="fsInherit"' +
+                    (data.inherit ? ' checked' : '') + ' />' +
+                    '<span>Наследовать права родительской папки</span></label>' +
+                    '<p class="hint">Выключено — действуют только права, назначенные здесь: ' +
+                    `папка становится закрытой даже для тех, у кого есть доступ выше. Администраторы портала (группа <code>${esc(data.adminGroup)}</code>) попадают сюда всегда.</p>` +
+
+                    (rows || '<p class="hint">Своих прав у папки нет — действуют права родителя.</p>') +
+
+                    '<div class="fs-add">' +
+                    '<input type="text" id="fsGroup" maxlength="256" placeholder="Имя группы Active Directory" />' +
+                    '<select id="fsLevel">' +
+                    levels.map(l => `<option value="${l[0]}">${esc(l[1])}</option>`).join('') +
+                    '</select>' +
+                    '<button class="btn" type="button" id="fsAdd">Выдать доступ</button>' +
+                    '</div>' +
+                    '<p class="hint">Если группа уже в списке, её уровень заменится на выбранный. ' +
+                    'Права разных групп складываются: действует наибольший.</p>' +
+
+                    '</section>' +
+
+                    '<section class="fs-block"><h4>Ограничения и хранение</h4>' +
+
+                    '<div class="field"><label for="fsMax">Предел размера одного файла, МБ</label>' +
+                    `<input type="number" id="fsMax" min="0" value="${data.maxFileSizeMb ?? ''}" placeholder="как у родителя" />` +
+                    `<p class="hint">Сейчас действует: <b>${esc(data.effectiveMax)}</b>. ` +
+                    `Пусто — значение родителя, а если и там пусто — общее (${data.defaultMaxMb} МБ). <b>0 — без ограничения.</b>` +
+                    (data.absoluteMaxMb > 0 ? ` Выше общего предела портала (${data.absoluteMaxMb} МБ) поставить нельзя.` : '') +
+                    '</p></div>' +
+
+                    '<div class="field"><label for="fsQuota">Квота папки, МБ</label>' +
+                    `<input type="number" id="fsQuota" min="0" value="${data.quotaMb ?? ''}" placeholder="как у родителя" />` +
+                    `<p class="hint">Сейчас действует: <b>${esc(data.effectiveQuota)}</b>. Пусто — значение родителя, <b>0 — без квоты</b>.</p></div>` +
+
+                    '<div class="field"><label for="fsDays">Автоочистка корзины, дней</label>' +
+                    `<input type="number" id="fsDays" min="0" value="${data.retentionDays ?? ''}" placeholder="автоочистка выключена" />` +
+                    '<p class="hint">Через сколько дней стирать с диска то, что лежит в корзине. Пусто — не стирать.</p></div>' +
+
+                    '</section></div>',
+
+                foot: '<button class="btn" type="button" data-mclose>Отмена</button>' +
+                    '<button class="btn primary" type="button" id="fsSave">Сохранить</button>'
+            });
+
+            $$('[data-mclose]', m).forEach(b => { b.onclick = closeModal; });
+
+            $('#fsSave', m).onclick = () => {
+                submit(save, {
+                    'Input.InheritPermissions': $('#fsInherit', m).checked ? 'true' : 'false',
+                    'Input.MaxFileSizeMb': $('#fsMax', m).value,
+                    'Input.QuotaMb': $('#fsQuota', m).value,
+                    'Input.RetentionDays': $('#fsDays', m).value
+                });
+            };
+
+            $('#fsAdd', m).onclick = () => {
+                const group = $('#fsGroup', m).value.trim();
+
+                if (!group) {
+                    toast('Укажите имя группы Active Directory', 'warn');
+                    return;
+                }
+
+                submit(add, {
+                    'NewPermission.GroupName': group,
+                    'NewPermission.Access': $('#fsLevel', m).value
+                });
+            };
+
+            $$('[data-drop-perm]', m).forEach(b => {
+                b.onclick = () => submit(
+                    '/Files/Settings/' + data.id + '?handler=RemovePermission&returnTo=files'
+                    + '&permissionId=' + b.dataset.dropPerm, {});
+            });
+        }
+
+        function levelName(access) {
+            return access === 'Manage' ? 'Управление'
+                : access === 'Write' ? 'Запись'
+                    : 'Чтение';
         }
 
         function properties(item) {

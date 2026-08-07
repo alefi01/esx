@@ -23,6 +23,7 @@ public class IndexModel : PageModel
     private readonly FolderTree _tree;
     private readonly FileStorage _storage;
     private readonly UploadValidator _validator;
+    private readonly StorageOptions _storageOptions;
     private readonly AuditLog _audit;
     private readonly FavoriteService _favorites;
     private readonly ActiveDirectoryOptions _ad;
@@ -34,6 +35,7 @@ public class IndexModel : PageModel
         FolderTree tree,
         FileStorage storage,
         UploadValidator validator,
+        IOptions<StorageOptions> storageOptions,
         AuditLog audit,
         FavoriteService favorites,
         IOptions<ActiveDirectoryOptions> ad,
@@ -44,6 +46,7 @@ public class IndexModel : PageModel
         _tree = tree;
         _storage = storage;
         _validator = validator;
+        _storageOptions = storageOptions.Value;
         _audit = audit;
         _favorites = favorites;
         _ad = ad.Value;
@@ -304,7 +307,8 @@ public class IndexModel : PageModel
     /// закрытой не должно уехать в архиве вместе с открытой.
     /// </summary>
     public async Task<IActionResult> OnGetDownloadZipAsync(
-        int? fileId, int? folderId, CancellationToken cancellationToken)
+        int? fileId, int? folderId, string? fileIds, string? folderIds,
+        CancellationToken cancellationToken)
     {
         await _tree.LoadAsync(cancellationToken);
 
@@ -319,7 +323,65 @@ public class IndexModel : PageModel
         string auditTarget;
         string auditDetails;
 
-        if (fileId is { } id)
+        var pickedFiles = ParseIds(fileIds);
+        var pickedFolders = ParseIds(folderIds);
+
+        if (pickedFiles.Count > 0 || pickedFolders.Count > 0)
+        {
+            // Выделено мышью несколько объектов. Складываем их в один архив:
+            // файлы в корень, папки — своими деревьями, как в проводнике.
+            var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (pickedFiles.Count > 0)
+            {
+                var files = await _db.Files
+                    .Where(f => pickedFiles.Contains(f.Id) && f.DeletedAt == null)
+                    .OrderBy(f => f.Id)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var file in files)
+                {
+                    var parent = _tree.Get(file.FolderId);
+
+                    // Права проверяются по КАЖДОМУ файлу заново: список
+                    // номеров пришёл из браузера, и доверять ему нельзя.
+                    if (parent is null || !_tree.CanRead(User, parent))
+                    {
+                        continue;
+                    }
+
+                    if (entries.Count >= MaxZipEntries)
+                    {
+                        break;
+                    }
+
+                    entries.Add((UniqueName(file.OriginalName, used), file.FolderId, file.StorageName));
+                }
+            }
+
+            foreach (var pickedId in pickedFolders)
+            {
+                var picked = _tree.Get(pickedId);
+
+                if (picked is null || !_tree.CanRead(User, picked))
+                {
+                    continue;
+                }
+
+                // Имя папки тоже проводим через список занятых: рядом
+                // могут оказаться файл «Отчёты» и папка «Отчёты».
+                await CollectForZipAsync(
+                    picked, UniqueName(picked.Name, used) + "/", entries, cancellationToken);
+            }
+
+            var current = folderId is { } here ? _tree.Get(here) : null;
+
+            archiveName = (current?.Name ?? "Выбранное") + ".zip";
+            auditTarget = current?.Name ?? "выбранное";
+            auditDetails = $"выделенное архивом, объектов: {pickedFiles.Count + pickedFolders.Count}, "
+                           + $"файлов: {entries.Count}";
+        }
+        else if (fileId is { } id)
         {
             var file = await _db.Files.FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
 
@@ -508,6 +570,33 @@ public class IndexModel : PageModel
             await CollectForZipAsync(
                 child, prefix + SafeEntryName(child.Name) + "/", entries, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Разбирает список номеров из адреса: «12,15,17».
+    ///
+    /// Всё, что не число, молча пропускается: список приходит от браузера,
+    /// и ронять запрос из-за мусора в нём незачем — права всё равно
+    /// проверяются по каждому объекту отдельно.
+    /// </summary>
+    private static List<int> ParseIds(string? value)
+    {
+        var result = new List<int>();
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return result;
+        }
+
+        foreach (var part in value.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (int.TryParse(part.Trim(), out var id) && !result.Contains(id))
+            {
+                result.Add(id);
+            }
+        }
+
+        return result;
     }
 
     /// <summary>Делает имя неповторяющимся: «отчёт.docx», «отчёт (2).docx».</summary>
@@ -1491,6 +1580,67 @@ public class IndexModel : PageModel
     }
 
     /// <summary>Сведения о файле или папке для окна «Свойства».</summary>
+    /// <summary>
+    /// Всё, что нужно окну управления папкой: пределы, автоочистка и права.
+    ///
+    /// ПОЧЕМУ ОКНО, А НЕ ОТДЕЛЬНАЯ СТРАНИЦА
+    ///
+    /// Настройки правят, стоя в папке и глядя на её содержимое. Уход
+    /// на отдельную страницу означает потерю места: вернувшись, человек
+    /// оказывается в начале списка и заново ищет, где был. Поэтому здесь
+    /// отдаются данные, а окно рисует код страницы поверх списка.
+    ///
+    /// Сама страница настроек никуда не делась: она остаётся и работает
+    /// без JavaScript, и именно её обработчики сохраняют изменения —
+    /// правила проверки живут в одном месте, а не в двух.
+    /// </summary>
+    public async Task<IActionResult> OnGetFolderSettingsAsync(
+        int folderId, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        var folder = _tree.Get(folderId);
+
+        if (folder is null || !_tree.CanManage(User, folder))
+        {
+            // Не «запрещено», а «не найдено»: для того, кто не управляет
+            // папкой, её настроек не существует.
+            return NotFound();
+        }
+
+        var permissions = await _db.FolderPermissions
+            .Where(p => p.FolderId == folderId)
+            .OrderBy(p => p.GroupName)
+            .Select(p => new { p.Id, p.GroupName, Access = p.Access.ToString(), Level = (int)p.Access })
+            .ToListAsync(cancellationToken);
+
+        var effectiveMax = _tree.EffectiveMaxFileSizeBytes(folder);
+        var effectiveQuota = _tree.EffectiveQuotaBytes(folder);
+
+        return new JsonResult(new
+        {
+            id = folder.Id,
+            name = folder.Name,
+            path = _tree.DisplayPath(folder),
+            inherit = folder.InheritPermissions,
+            hasParent = folder.ParentId is not null,
+            maxFileSizeMb = folder.MaxFileSizeMb,
+            quotaMb = folder.QuotaMb,
+            retentionDays = folder.RetentionDays,
+
+            // Что действует СЕЙЧАС с учётом родителей — то, ради чего сюда
+            // и заходят: «почему файл не загружается» и «сколько осталось».
+            effectiveMax = effectiveMax > 0 ? UploadValidator.Format(effectiveMax) : "без ограничения",
+            effectiveQuota = effectiveQuota is { } quota
+                ? UploadValidator.Format(quota)
+                : "не задана",
+            defaultMaxMb = _storageOptions.DefaultMaxFileSizeMb,
+            absoluteMaxMb = _storageOptions.FileSizeUnlimited ? 0 : _storageOptions.AbsoluteMaxFileSizeMb,
+            adminGroup = _ad.AdminGroup,
+            permissions
+        });
+    }
+
     public async Task<IActionResult> OnGetPropertiesAsync(
         int? fileId, int? folderId, CancellationToken cancellationToken)
     {

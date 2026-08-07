@@ -107,6 +107,21 @@ public class SettingsModel : PageModel
         return Page();
     }
 
+    /// <summary>
+    /// Куда вернуть человека после сохранения.
+    ///
+    /// «files» — он правит настройки в окне поверх списка файлов и должен
+    /// остаться там же, а не оказаться на отдельной странице настроек,
+    /// которую не открывал. Пусто — обычный путь, страница настроек.
+    /// </summary>
+    [BindProperty(SupportsGet = true)]
+    public string? ReturnTo { get; set; }
+
+    private IActionResult Back(int id) =>
+        string.Equals(ReturnTo, "files", StringComparison.OrdinalIgnoreCase)
+            ? RedirectToPage("Index", new { id })
+            : RedirectToPage(new { id });
+
     public async Task<IActionResult> OnPostSaveAsync(int id, CancellationToken cancellationToken)
     {
         var result = await LoadAsync(id, cancellationToken);
@@ -176,7 +191,7 @@ public class SettingsModel : PageModel
 
         StatusMessage = changes.Count > 0 ? "Настройки сохранены." : "Изменений не было.";
 
-        return RedirectToPage(new { id });
+        return Back(id);
     }
 
     public async Task<IActionResult> OnPostAddPermissionAsync(int id, CancellationToken cancellationToken)
@@ -193,7 +208,7 @@ public class SettingsModel : PageModel
         if (string.IsNullOrWhiteSpace(group))
         {
             ErrorMessage = "Укажите имя группы Active Directory.";
-            return RedirectToPage(new { id });
+            return Back(id);
         }
 
         var existing = await _db.FolderPermissions.AsTracking()
@@ -228,7 +243,7 @@ public class SettingsModel : PageModel
 
         await _db.SaveChangesAsync(cancellationToken);
 
-        return RedirectToPage(new { id });
+        return Back(id);
     }
 
     public async Task<IActionResult> OnPostRemovePermissionAsync(
@@ -246,7 +261,7 @@ public class SettingsModel : PageModel
 
         if (permission is null)
         {
-            return RedirectToPage(new { id });
+            return Back(id);
         }
 
         _db.FolderPermissions.Remove(permission);
@@ -258,7 +273,7 @@ public class SettingsModel : PageModel
 
         StatusMessage = $"Доступ группы «{permission.GroupName}» убран.";
 
-        return RedirectToPage(new { id });
+        return Back(id);
     }
 
     private async Task<IActionResult?> LoadAsync(int id, CancellationToken cancellationToken)

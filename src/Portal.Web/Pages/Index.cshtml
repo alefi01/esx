@@ -14,7 +14,7 @@
     две строки поиска на одном экране — это один и тот же вопрос, заданный
     дважды.
 *@
-<section class="view active home">
+<section class="view active home@(Model.NothingToShow ? " home--empty" : "")">
 
     <div class="home-top">
 
@@ -30,8 +30,8 @@
         </div>
 
         <p class="home-hello">
-            @Model.Greeting, @Model.DisplayName@if (!string.IsNullOrEmpty(Model.OfficeName))
-            {<text> · @Model.OfficeName</text>}
+            @(Model.Greeting + ", " + Model.DisplayName
+              + (string.IsNullOrEmpty(Model.OfficeName) ? "" : " · " + Model.OfficeName))
         </p>
 
         @* Крупный поиск. Обычная форма методом GET, как и в шапке:
@@ -49,8 +49,6 @@
         </p>
     </div>
 
-    @* ---------- Непрочитанные объявления ---------- *@
-
     @if (Model.DatabaseUnavailable)
     {
         <div class="alert err" role="alert">
@@ -59,60 +57,102 @@
             Остальные разделы портала работают.
         </div>
     }
-    else if (Model.Items.Count == 0)
+    else if (!Model.NothingToShow)
     {
-        <div class="home-clear">
-            <svg class="ic" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
-            <div>
-                <b>Новых объявлений нет</b>
-                <span>
-                    @if (Model.TotalCount > 0)
+        @* Два столбца: слева новое, справа закреплённое. Закреплённое
+           справа и уже — это фон, а не новость: его читают один раз,
+           а висеть оно должно постоянно. *@
+        <div class="home-cols">
+
+            <div class="home-col-main">
+                @if (Model.Items.Count == 0)
+                {
+                    <div class="home-clear">
+                        <svg class="ic" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
+                        <div>
+                            <b>Новых объявлений нет</b>
+                            <span>
+                                @if (Model.TotalCount > 0)
+                                {
+                                    <a asp-page="/Announcements/Index">Посмотреть всю ленту (@Model.TotalCount)</a>
+                                }
+                                else
+                                {
+                                    @:Здесь появятся сообщения, которые должны увидеть все сотрудники
+                                }
+                            </span>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="view-head feed-head home-unread-head">
+                        <h2>
+                            Новые объявления
+                            <span class="unread-count">@Model.UnreadCount</span>
+                        </h2>
+
+                        @* Отметка «прочитано» ставится ЯВНО, кнопкой. Раньше главная
+                           отмечала всё сама при открытии — с лентой «всё подряд» это
+                           было безобидно, а со списком «только новое» означало бы,
+                           что список исчезает от случайного захода на страницу. *@
+                        <form method="post" asp-page-handler="MarkRead" class="home-mark">
+                            <button class="btn sm" type="submit">
+                                <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>Прочитано
+                            </button>
+                        </form>
+
+                        <a class="feed-all" asp-page="/Announcements/Index">Вся лента</a>
+                    </div>
+
+                    <div class="ann-list">
+                        @foreach (var item in Model.Items)
+                        {
+                            @await Html.PartialAsync("_Announcement", new AnnouncementCard(item, Model.CanModify(item)))
+                        }
+                    </div>
+
+                    @if (Model.HasMore)
                     {
-                        <a asp-page="/Announcements/Index">Посмотреть всю ленту (@Model.TotalCount)</a>
+                        <p class="feed-more">
+                            <a asp-page="/Announcements/Index">
+                                Ещё @(Model.UnreadCount - Model.Items.Count) непрочитанных →
+                            </a>
+                        </p>
                     }
-                    else
-                    {
-                        @:Здесь появятся сообщения, которые должны увидеть все сотрудники
-                    }
-                </span>
+                }
             </div>
-        </div>
-    }
-    else
-    {
-        <div class="view-head feed-head home-unread-head">
-            <h2>
-                Новые объявления
-                <span class="unread-count">@Model.UnreadCount</span>
-            </h2>
 
-            @* Отметка «прочитано» ставится ЯВНО, кнопкой. Раньше главная
-               отмечала всё сама при открытии — с лентой «всё подряд» это
-               было безобидно, а со списком «только новое» означало бы,
-               что список исчезает от случайного захода на страницу. *@
-            <form method="post" asp-page-handler="MarkRead" class="home-mark">
-                <button class="btn sm" type="submit">
-                    <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>Прочитано
-                </button>
-            </form>
-
-            <a class="feed-all" asp-page="/Announcements/Index">Вся лента</a>
-        </div>
-
-        <div class="ann-list">
-            @foreach (var item in Model.Items)
+            @if (Model.Pinned.Count > 0)
             {
-                @await Html.PartialAsync("_Announcement", new AnnouncementCard(item, Model.CanModify(item)))
+                <aside class="home-col-side" aria-label="Закреплённые объявления">
+                    <div class="side-head">
+                        <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pin" /></svg>
+                        Закреплённое
+                    </div>
+
+                    @foreach (var item in Model.Pinned)
+                    {
+                        @* Карточка урезанная: заголовок, начало текста и дата.
+                           Полный текст — по ссылке в ленте. Правый столбец
+                           узкий, и целые объявления в нём превратились бы
+                           в стену текста, которую перестают читать.
+
+                           Текст здесь выводится КАК ТЕКСТ, без превращения
+                           адресов в ссылки. Причина не в лени: вся карточка
+                           сама по себе ссылка, а ссылка внутри ссылки —
+                           недопустимая разметка, и браузер молча разрывает
+                           внешнюю. Карточка при этом разваливается. Полный
+                           текст с рабочими ссылками — в ленте объявлений. *@
+                        <a class="pin-card@(item.IsImportant ? " important" : "")"
+                           asp-page="/Announcements/Index" asp-fragment="a@item.Id">
+                            <b>@item.Title</b>
+                            <span class="pin-body">@item.Body</span>
+                            <span class="pin-foot">@item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy") · @item.AuthorDisplayName</span>
+                        </a>
+                    }
+                </aside>
             }
         </div>
-
-        @if (Model.HasMore)
-        {
-            <p class="feed-more">
-                <a asp-page="/Announcements/Index">
-                    Ещё @(Model.UnreadCount - Model.Items.Count) непрочитанных →
-                </a>
-            </p>
-        }
     }
 </section>
