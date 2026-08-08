@@ -73,6 +73,32 @@ public sealed class PlainTextFormatter
     private static readonly Regex MarkRegex = new(
         @"==([^\n=]+?)==", RegexOptions.Compiled);
 
+    /// <summary>
+    /// То же выделение (жирным и жёлтым), но БЕЗ превращения адресов
+    /// в ссылки и без переносов строк.
+    ///
+    /// Нужно для карточек на главной: там вся карточка сама по себе ссылка,
+    /// а ссылка внутри ссылки — недопустимая разметка, браузер молча рвёт
+    /// внешнюю и карточка разваливается. Выделение при этом терялось:
+    /// объявление, набранное с пометками, выглядело на главной как текст
+    /// со звёздочками.
+    /// </summary>
+    public IHtmlContent ToMarkedText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return HtmlString.Empty;
+        }
+
+        var normalized = text.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ');
+
+        var builder = new StringBuilder(normalized.Length + 32);
+
+        AppendLine(builder, normalized);
+
+        return new HtmlString(builder.ToString());
+    }
+
     public IHtmlContent ToHtml(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))

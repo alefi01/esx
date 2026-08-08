@@ -1456,6 +1456,14 @@ button.pin-btn.on{opacity:1;color:var(--accent)}
    по центру она накрывала бы горизонтальную прокрутку книги Excel —
    ту самую, которой лист и листают. */
 .zoom-bar--doc{left:auto;right:16px;transform:none}
+
+/* Обёртка вокруг области просмотра. Сама не прокручивается, поэтому
+   полоса масштаба, лежащая в ней, остаётся на месте, сколько бы
+   страниц документа ни пролистали. Внутри области просмотра она
+   уезжала вместе с содержимым — и при первой же прокрутке пропадала. */
+.pv-stage{position:relative;flex:1;min-width:0;display:flex}
+.pv-stage>.pv-viewer{flex:1;min-width:0}
+.pv-body>.zoom-bar,.pv-stage>.zoom-bar{z-index:3}
 .pv-viewer .doc{transition:transform .12s}
 
 /* ---------- Предпросмотр без правой колонки ---------- */
@@ -1509,16 +1517,16 @@ button.pin-btn.on{opacity:1;color:var(--accent)}
 .set-more .hint{margin-top:10px}
 .set-page .table-wrap{margin-top:16px}
 
-/* Главная без новых объявлений: столбцов больше нет, есть строка «новых
-   нет» и сетка закреплённых во всю ширину. Карточки при этом НЕ
-   растягиваются: колонок в сетке столько, сколько влезает по 320 px.
-   Раньше в этом случае закреплённое занимало всю ширину одной колонкой —
-   строчка текста в полтора метра. */
-.home-cols--pins{display:block}
-.home-cols--pins .home-col-main{margin-bottom:18px}
-.home-cols--pins .home-col-side{display:grid;gap:10px;
-  grid-template-columns:repeat(auto-fill,minmax(320px,1fr));align-items:start}
-.home-cols--pins .home-col-side .side-head{grid-column:1/-1}
+/* Единственный оставшийся столбец занимает всю ширину и раскладывается
+   сеткой. Карточки при этом НЕ растягиваются: колонок столько, сколько
+   влезает по 340 px. Иначе закреплённое (или, наоборот, новое) шло одной
+   колонкой во весь экран — строчка текста в полтора метра. */
+.home-cols--one{display:block}
+.home-cols--one .home-col-main,
+.home-cols--one .home-col-side{display:grid;gap:10px;
+  grid-template-columns:repeat(auto-fill,minmax(340px,1fr));align-items:start}
+.home-cols--one .side-head{grid-column:1/-1}
+.home-cols--one .feed-more{grid-column:1/-1}
 
 /* Лента объявлений держится колонкой в середине страницы, а не жмётся
    к левому краю широкого экрана. Читать строку длиной в полтора метра

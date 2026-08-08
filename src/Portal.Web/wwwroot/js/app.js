@@ -1004,6 +1004,7 @@
             kind: node.dataset.kind || '',
             fav: node.dataset.fav === 'true',
             pinned: node.dataset.pinned === 'true',
+            canPin: node.dataset.canPin === 'true',
             canDelete: node.dataset.canDelete === 'true',
             canManage: node.dataset.canManage === 'true'
         });
@@ -1471,7 +1472,7 @@
                 fn: () => toggleFav(item)
             });
 
-            if (item.canManage) {
+            if (item.canPin) {
                 entries.push({
                     icon: 'pin',
                     label: item.pinned ? 'Открепить' : 'Закрепить наверху',
@@ -1568,7 +1569,7 @@
                 })
                 .catch(reason => toast(
                     reason === 403
-                        ? 'Закреплять может тот, кто управляет папкой'
+                        ? 'Открепить может только тот, кто закрепил, или администратор'
                         : 'Не удалось изменить закрепление',
                     'warn'));
         }
@@ -3025,8 +3026,14 @@
             wide: true,
             title: `<span class="pv-title">${icon ? icon.outerHTML : ''}<span>${esc(item.name)}</span></span>`,
             body: '<div class="pv-body' + (stored ? '' : ' pv-body--bare') + '">' +
+                // Полоса масштаба лежит НЕ внутри прокручиваемой области,
+                // а в неподвижной обёртке вокруг неё: внутри она ездила
+                // вместе с документом и при прокрутке вниз уходила вверх
+                // за край окна.
+                '<div class="pv-stage">' +
                 '<div class="pv-viewer" id="pvViewer">' +
                 '<div class="pv-load"><div class="pv-spin"></div><p>Загружается…</p></div>' +
+                '</div>' +
                 '</div>' +
                 (stored
                     ? '<div class="pv-aside">' +
@@ -3106,6 +3113,22 @@
     function loadViewer(item, source, viewer) {
         const show = html => { viewer.innerHTML = html; };
 
+        /**
+         * Полоса масштаба. Кладётся в обёртку .pv-stage, а не в саму область
+         * просмотра: та прокручивается вместе с содержимым, и полоса
+         * уезжала бы вверх вместе с первой страницей документа.
+         */
+        const zoomBar = html => {
+            const stage = viewer.parentElement;
+            const previous = $('.zoom-bar', stage);
+
+            if (previous) { previous.remove(); }
+
+            stage.insertAdjacentHTML('beforeend', html);
+
+            return stage;
+        };
+
         const failed = (text, detail) => {
             viewer.innerHTML = `<div class="empty">${ic('alert', 60, 1)}<b>${esc(text)}</b>` +
                 `<p>${esc(detail || '')}</p>` +
@@ -3142,24 +3165,25 @@
             const image = new Image();
 
             image.onload = () => {
-                show('<div class="pv-img"><img id="pvImg" alt=""></div>' +
-                    '<div class="zoom-bar">' +
-                    `<button class="icon-btn" type="button" data-z="-1">${ic('zoomout', 16)}</button>` +
-                    '<button class="icon-btn zoom-val" type="button" data-z="0" id="zLbl">100%</button>' +
-                    `<button class="icon-btn" type="button" data-z="1">${ic('zoomin', 16)}</button></div>`);
+                show('<div class="pv-img"><img id="pvImg" alt=""></div>');
+
+                const stage = zoomBar('<div class="zoom-bar">' +
+                    `<button class="icon-btn" type="button" data-z="-1" title="Отдалить">${ic('zoomout', 16)}</button>` +
+                    '<button class="icon-btn zoom-val" type="button" data-z="0" id="zLbl" title="Вернуть 100%">100%</button>' +
+                    `<button class="icon-btn" type="button" data-z="1" title="Приблизить">${ic('zoomin', 16)}</button></div>`);
 
                 $('#pvImg', viewer).src = source;
 
                 let z = 1;
 
-                $$('[data-z]', viewer).forEach(b => {
+                $$('[data-z]', stage).forEach(b => {
                     b.onclick = () => {
                         const d = +b.dataset.z;
 
                         z = d === 0 ? 1 : Math.min(3, Math.max(0.5, z + d * 0.25));
 
                         $('#pvImg', viewer).style.transform = `scale(${z})`;
-                        $('#zLbl', viewer).textContent = Math.round(z * 100) + '%';
+                        $('#zLbl', stage).textContent = Math.round(z * 100) + '%';
                     };
                 });
             };
@@ -3224,15 +3248,17 @@
                 // и единственный способ увидеть его целиком — отдалить.
                 // Документам Word он тоже не мешает: увеличить мелкий скан
                 // договора хотят не реже.
-                return markup +
-                    '<div class="zoom-bar zoom-bar--doc">' +
-                    `<button class="icon-btn" type="button" data-dz="-1" title="Отдалить">${ic('zoomout', 16)}</button>` +
-                    '<button class="icon-btn zoom-val" type="button" data-dz="0" id="dzLbl" title="Вернуть 100%">100%</button>' +
-                    `<button class="icon-btn" type="button" data-dz="1" title="Приблизить">${ic('zoomin', 16)}</button></div>`;
+                return markup;
             }, () => {
                 const doc = $('.doc', viewer);
 
                 if (!doc) { return; }
+
+                const stage = zoomBar('<div class="zoom-bar zoom-bar--doc">' +
+                    `<button class="icon-btn" type="button" data-dz="-1" title="Отдалить">${ic('zoomout', 16)}</button>` +
+                    '<button class="icon-btn zoom-val" type="button" data-dz="0" id="dzLbl" title="Вернуть 100%">100%</button>' +
+                    `<button class="icon-btn" type="button" data-dz="1" title="Приблизить">${ic('zoomin', 16)}</button></div>`);
+
 
                 let z = 1;
 
@@ -3249,10 +3275,10 @@
                     // занятым: преобразование не меняет размеров в разметке.
                     doc.style.width = z === 1 ? '' : (100 / z) + '%';
 
-                    $('#dzLbl', viewer).textContent = Math.round(z * 100) + '%';
+                    $('#dzLbl', stage).textContent = Math.round(z * 100) + '%';
                 };
 
-                $$('[data-dz]', viewer).forEach(b => {
+                $$('[data-dz]', stage).forEach(b => {
                     b.onclick = () => {
                         const d = +b.dataset.dz;
 

@@ -22,6 +22,11 @@ namespace Portal.Web.Pages.Shared;
 /// <param name="TypeName">Название типа для столбца «Тип».</param>
 /// <param name="Meta">Подпись под именем в плитке: «2,4 МБ · 5 авг 2026» либо «7 элем.».</param>
 /// <param name="Pinned">Закреплено наверху каталога — общей отметкой, а не личной звёздочкой.</param>
+/// <param name="CanPin">
+/// Показывать ли кнопку закрепления. Отличается от <paramref name="CanManage"/>
+/// у уже закреплённого: снять чужое закрепление может только тот, кто его
+/// поставил, либо администратор портала.
+/// </param>
 public sealed record FileEntry(
     string Id,
     int? FileId,
@@ -38,7 +43,8 @@ public sealed record FileEntry(
     bool CanDelete,
     bool CanManage,
     string? Path = null,
-    bool Pinned = false)
+    bool Pinned = false,
+    bool CanPin = false)
 {
     /// <summary>
     /// Папка в списке.
@@ -53,7 +59,7 @@ public sealed record FileEntry(
     /// </summary>
     public static FileEntry ForFolder(
         StorageFolder folder, string href, int childCount, bool favorite, bool canManage,
-        long? sizeBytes = null, string? path = null) =>
+        long? sizeBytes = null, string? path = null, bool canPin = false) =>
         new(
             Id: "d" + folder.Id,
             FileId: null,
@@ -71,12 +77,13 @@ public sealed record FileEntry(
             CanDelete: false,
             CanManage: canManage,
             Path: path,
-            Pinned: folder.IsPinned);
+            Pinned: folder.IsPinned,
+            CanPin: canPin);
 
     /// <summary>Файл в списке.</summary>
     public static FileEntry ForFile(
         StoredFile file, string href, string previewKind, bool favorite, bool canDelete,
-        string? path = null, bool canManage = false) =>
+        string? path = null, bool canManage = false, bool canPin = false) =>
         new(
             Id: "f" + file.Id,
             FileId: file.Id,
@@ -93,5 +100,6 @@ public sealed record FileEntry(
             CanDelete: canDelete,
             CanManage: canManage,
             Path: path,
-            Pinned: file.IsPinned);
+            Pinned: file.IsPinned,
+            CanPin: canPin);
 }

@@ -31,6 +31,7 @@
              data-can-manage="@item.CanManage.ToString().ToLowerInvariant()"
              data-file="@(item.FileId?.ToString() ?? "")"
              data-pinned="@item.Pinned.ToString().ToLowerInvariant()"
+             data-can-pin="@item.CanPin.ToString().ToLowerInvariant()"
              data-folder="@(item.FolderId?.ToString() ?? "")">
 
             <div class="ficon">
@@ -61,7 +62,7 @@
             <div class="muted">@item.SizeText</div>
 
             <div class="frow-tools">
-                @if (item.CanManage)
+                @if (item.CanPin)
                 {
                     <button class="pin-btn@(item.Pinned ? " on" : "")" type="button"
                             title="@(item.Pinned ? "Открепить" : "Закрепить наверху")"

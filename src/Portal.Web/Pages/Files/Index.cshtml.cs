@@ -110,7 +110,8 @@ public class IndexModel : PageModel
                     ChildCounts.GetValueOrDefault(found.Id),
                     FavoriteFolderIds.Contains(found.Id),
                     CanManageFolder(found),
-                    path: found.ParentId is null ? "Файлы" : _tree.DisplayPath(_tree.Get(found.ParentId.Value)!)));
+                    path: found.ParentId is null ? "Файлы" : _tree.DisplayPath(_tree.Get(found.ParentId.Value)!),
+                    canPin: CanManageFolder(found) && CanUnpin(found.PinnedByUserName)));
             }
 
             foreach (var hit in SearchResults)
@@ -122,7 +123,8 @@ public class IndexModel : PageModel
                     FavoriteFileIds.Contains(hit.File.Id),
                     CanDelete(hit.File),
                     hit.FolderPath,
-                    CanPinIn(hit.FolderId)));
+                    CanPinIn(hit.FolderId),
+                    CanPinIn(hit.FolderId) && CanUnpin(hit.File.PinnedByUserName)));
             }
 
             Entries = list;
@@ -145,7 +147,8 @@ public class IndexModel : PageModel
                 ChildCounts.GetValueOrDefault(folder.Id),
                 FavoriteFolderIds.Contains(folder.Id),
                 CanManageFolder(folder),
-                ShowSizes ? FolderSizes.GetValueOrDefault(folder.Id) : null);
+                ShowSizes ? FolderSizes.GetValueOrDefault(folder.Id) : null,
+                canPin: CanManageFolder(folder) && CanUnpin(folder.PinnedByUserName));
 
         Portal.Web.Pages.Shared.FileEntry File(StoredFile file) =>
             Portal.Web.Pages.Shared.FileEntry.ForFile(
@@ -154,7 +157,8 @@ public class IndexModel : PageModel
                 PreviewKindOf(file),
                 FavoriteFileIds.Contains(file.Id),
                 CanDelete(file),
-                canManage: Access >= FolderAccess.Manage);
+                canManage: Access >= FolderAccess.Manage,
+                canPin: Access >= FolderAccess.Manage && CanUnpin(file.PinnedByUserName));
 
         list.AddRange(Subfolders.Where(f => f.IsPinned).Select(Folder));
         list.AddRange(FilesInFolder.Where(f => f.IsPinned).Select(File));
@@ -202,6 +206,24 @@ public class IndexModel : PageModel
     /// оно привязано к управлению папкой, а не к авторству файла: иначе
     /// любой, кто вправе загружать, поднял бы своё наверх у всех остальных.
     /// </summary>
+    /// <summary>
+    /// Вправе ли человек СНЯТЬ чужое закрепление.
+    ///
+    /// Ставить закрепление может каждый, кто управляет папкой, а снимать —
+    /// только тот, кто поставил, либо администратор портала. Разница
+    /// намеренная: закрепление видят все, и это чьё-то решение о том, что
+    /// в папке главное. Снять его мимоходом, потому что мешает в списке, —
+    /// не то же самое, что управлять папкой.
+    ///
+    /// Закрепления, сделанные до появления этой отметки, автора не имеют:
+    /// их может снять любой, кто управляет папкой, — иначе они остались бы
+    /// в списке навсегда.
+    /// </summary>
+    private bool CanUnpin(string? pinnedBy) =>
+        IsAdmin
+        || string.IsNullOrEmpty(pinnedBy)
+        || string.Equals(pinnedBy, User.Identity?.Name, StringComparison.OrdinalIgnoreCase);
+
     private bool CanPinIn(int folderId)
     {
         var folder = _tree.Get(folderId);
@@ -1862,7 +1884,13 @@ public class IndexModel : PageModel
                 return Forbid();
             }
 
+            if (file.IsPinned && !CanUnpin(file.PinnedByUserName))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, "чужое закрепление");
+            }
+
             file.IsPinned = !file.IsPinned;
+            file.PinnedByUserName = file.IsPinned ? User.Identity?.Name : null;
 
             await _db.SaveChangesAsync(cancellationToken);
 
@@ -1889,7 +1917,13 @@ public class IndexModel : PageModel
                 return Forbid();
             }
 
+            if (folder.IsPinned && !CanUnpin(folder.PinnedByUserName))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, "чужое закрепление");
+            }
+
             folder.IsPinned = !folder.IsPinned;
+            folder.PinnedByUserName = folder.IsPinned ? User.Identity?.Name : null;
 
             await _db.SaveChangesAsync(cancellationToken);
 

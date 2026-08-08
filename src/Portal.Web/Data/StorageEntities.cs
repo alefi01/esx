@@ -84,6 +84,15 @@ public class StorageFolder : ISyncable
     public bool IsPinned { get; set; }
 
     /// <summary>
+    /// Кто закрепил. Открепить может только он сам либо администратор
+    /// портала: закрепление видят все, и снимать чужое решение «наверх»
+    /// мимоходом, потому что мешает в списке, — не то же самое,
+    /// что управлять папкой.
+    /// </summary>
+    [MaxLength(256)]
+    public string? PinnedByUserName { get; set; }
+
+    /// <summary>
     /// Предел размера ОДНОГО файла, мегабайты.
     /// null — брать значение родительской папки, а если и там не задано,
     /// то общее по умолчанию (Storage:DefaultMaxFileSizeMb, обычно 50).
@@ -223,6 +232,10 @@ public class StoredFile : ISyncable
     /// см. то же поле у папки.
     /// </summary>
     public bool IsPinned { get; set; }
+
+    /// <summary>Кто закрепил — см. то же поле у папки.</summary>
+    [MaxLength(256)]
+    public string? PinnedByUserName { get; set; }
 }
 
 /// <summary>Что именно произошло — для журнала действий.</summary>

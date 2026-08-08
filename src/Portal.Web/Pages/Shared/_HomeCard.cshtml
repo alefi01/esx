@@ -1,4 +1,6 @@
 @using Portal.Web.Data
+@using Portal.Web.Services.Text
+@inject PlainTextFormatter TextFormatter
 @model Portal.Web.Data.Announcement
 
 @*
@@ -9,15 +11,17 @@
     строки и разного отступа, и рядом друг с другом это читалось как
     съехавшая вёрстка. Теперь вид один, и строки в столбцах совпадают.
 
-    Текст выводится КАК ТЕКСТ, без превращения адресов в ссылки:
-    вся карточка сама по себе ссылка, а ссылка внутри ссылки —
-    недопустимая разметка, браузер молча разрывает внешнюю
-    и карточка разваливается. Полный текст с рабочими ссылками
-    и вложениями — в ленте объявлений, куда карточка и ведёт.
+    Адреса в ссылки здесь НЕ превращаются: вся карточка сама по себе
+    ссылка, а ссылка внутри ссылки — недопустимая разметка, браузер молча
+    разрывает внешнюю и карточка разваливается. А вот выделение (жирным
+    и жёлтым) работает: оно ничего не ломает, и без него объявление
+    с пометками выглядело на главной как текст со звёздочками.
+    Полный текст с рабочими ссылками и вложениями — в ленте объявлений,
+    куда карточка и ведёт.
 *@
 <a class="pin-card@(Model.IsImportant ? " important" : "")"
    asp-page="/Announcements/Index" asp-fragment="a@Model.Id">
     <b>@Model.Title</b>
-    <span class="pin-body">@Model.Body</span>
+    <span class="pin-body">@TextFormatter.ToMarkedText(Model.Body)</span>
     <span class="pin-foot">@Model.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy") · @Model.AuthorDisplayName</span>
 </a>
