@@ -32,10 +32,28 @@ public sealed record DirectoryLevel(IReadOnlyList<DirectoryNode> Nodes, string? 
 /// <param name="Controller">Контроллер домена.</param>
 /// <param name="Reachable">Отозвался ли на своём порту.</param>
 /// <param name="BoundAs">Под какой учётной записью работает приложение.</param>
-/// <param name="Found">Сколько записей вернул запрос корня.</param>
+/// <param name="Found">Сколько записей вернул обычный запрос обзора.</param>
 /// <param name="Error">Текст ошибки, если запрос не удался.</param>
+/// <param name="NamingContext">
+/// Настоящий корень домена — тот, который называет сам контроллер
+/// (defaultNamingContext из RootDSE). Сравнение с настроенным BaseDn
+/// сразу показывает опечатку в настройках.
+/// </param>
+/// <param name="BaseFound">Существует ли объект, указанный в BaseDn.</param>
+/// <param name="AnyChildren">
+/// Сколько вообще объектов лежит на первом уровне BaseDn — запросом
+/// без всякого отбора. Отличается от <paramref name="Found"/> только
+/// в одном случае: каталог читается, но наш отбор ничего не выбирает.
+/// </param>
 public sealed record BrowseProbe(
-    string Controller, bool Reachable, string BoundAs, int Found, string? Error);
+    string Controller,
+    bool Reachable,
+    string BoundAs,
+    int Found,
+    string? Error,
+    string NamingContext = "",
+    bool BaseFound = false,
+    int AnyChildren = 0);
 
 /// <summary>
 /// Обзор каталога домена: подразделения, вложенные подразделения, группы
@@ -143,14 +161,10 @@ public sealed class DirectoryBrowser
 
     public DirectoryLevel Children(string? dn, string? query = null)
     {
+        // Пустой путь означает «корень домена». Каким именно он окажется,
+        // решается уже на контроллере: если BaseDn не задан или задан
+        // неверно, корень спрашивается у самого каталога — см. RootFor.
         var baseDn = string.IsNullOrWhiteSpace(dn) ? RootDn : dn.Trim();
-
-        if (string.IsNullOrWhiteSpace(baseDn))
-        {
-            return new DirectoryLevel([],
-                "В настройках не задан корень каталога (ActiveDirectory:BaseDn). "
-                + "Имя группы можно вписать руками.");
-        }
 
         // Поиск идёт по ВСЕМУ поддереву, обзор — только по одному уровню:
         // человек, который начал печатать, ищет конкретное имя и не хочет
@@ -229,6 +243,69 @@ public sealed class DirectoryBrowser
             + (lastError is null ? "." : ": " + lastError));
     }
 
+    /// <summary>
+    /// Настоящий корень поиска.
+    ///
+    /// Если заданный путь существует — берём его. Если нет (или он вовсе
+    /// не задан) — спрашиваем контроллер, что он считает корнем домена,
+    /// и работаем оттуда. Портал при этом продолжает работать даже
+    /// с опечаткой в настройках, а несоответствие видно на странице
+    /// «Диагностика» и в журнале приложения.
+    /// </summary>
+    private string RootFor(LdapConnection connection, string baseDn)
+    {
+        if (!string.IsNullOrWhiteSpace(baseDn) && Exists(connection, baseDn))
+        {
+            return baseDn;
+        }
+
+        var discovered = DefaultNamingContext(connection);
+
+        if (string.IsNullOrWhiteSpace(discovered))
+        {
+            return baseDn;
+        }
+
+        _logger.LogWarning(
+            "Корень поиска «{Configured}» в каталоге не найден, используем «{Discovered}». "
+            + "Проверьте настройку ActiveDirectory:BaseDn.",
+            baseDn, discovered);
+
+        return discovered;
+    }
+
+    private static bool Exists(LdapConnection connection, string dn)
+    {
+        try
+        {
+            var response = (SearchResponse)connection.SendRequest(new SearchRequest(
+                dn, "(objectClass=*)", SearchScope.Base, "distinguishedName"));
+
+            return response.Entries.Count > 0;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static string DefaultNamingContext(LdapConnection connection)
+    {
+        try
+        {
+            var response = (SearchResponse)connection.SendRequest(new SearchRequest(
+                "", "(objectClass=*)", SearchScope.Base, "defaultNamingContext"));
+
+            return response.Entries.Count > 0
+                ? First(response.Entries[0], "defaultNamingContext")
+                : "";
+        }
+        catch (Exception)
+        {
+            return "";
+        }
+    }
+
     /// <summary>Отзывается ли контроллер на своём порту за отведённые секунды.</summary>
     private bool Answers(string controller)
     {
@@ -271,19 +348,94 @@ public sealed class DirectoryBrowser
                 continue;
             }
 
-            try
-            {
-                var nodes = Read(controller, RootDn, "");
-
-                result.Add(new BrowseProbe(controller, true, identity, nodes.Count, null));
-            }
-            catch (Exception ex)
-            {
-                result.Add(new BrowseProbe(controller, true, identity, 0, ex.Message));
-            }
+            result.Add(ProbeOne(controller, identity));
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Разбор по шагам на одном контроллере.
+    ///
+    /// Шагов три, и вместе они отвечают на вопрос «почему дерево пустое»
+    /// без гадания:
+    ///
+    /// 1. Что контроллер САМ считает корнем домена (defaultNamingContext).
+    ///    Если это не то, что записано в BaseDn, — дальше можно не смотреть:
+    ///    ищем не там. Ошибки при этом не будет: поиск в несуществующей
+    ///    ветке иногда просто возвращает пустоту.
+    /// 2. Существует ли объект, указанный в BaseDn.
+    /// 3. Сколько объектов лежит на первом уровне — БЕЗ отбора и с нашим
+    ///    отбором. Разница между этими двумя числами означает, что каталог
+    ///    читается, а не выбирается ничего, — то есть дело в самом отборе,
+    ///    а не в правах и не в связи.
+    /// </summary>
+    private BrowseProbe ProbeOne(string controller, string identity)
+    {
+        var namingContext = "";
+        var baseFound = false;
+        var anyChildren = 0;
+
+        try
+        {
+            using var connection = Connect(controller);
+
+            // Шаг 1. RootDSE — единственная ветка, которую отдают всем
+            // и всегда. Если и она пуста, дело не в правах на дерево.
+            try
+            {
+                var rootDse = (SearchResponse)connection.SendRequest(new SearchRequest(
+                    "", "(objectClass=*)", SearchScope.Base, "defaultNamingContext"));
+
+                if (rootDse.Entries.Count > 0)
+                {
+                    namingContext = First(rootDse.Entries[0], "defaultNamingContext");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "RootDSE на {Controller} прочитать не удалось.", controller);
+            }
+
+            // Шаг 2. Существует ли то, что записано в BaseDn.
+            baseFound = !string.IsNullOrWhiteSpace(RootDn) && Exists(connection, RootDn);
+
+            // Шаг 3. Первый уровень без отбора — по тому корню, которым
+            // портал и пользуется (с поправкой на неверный BaseDn).
+            var effective = RootFor(connection, RootDn);
+
+            try
+            {
+                var all = (SearchResponse)connection.SendRequest(new SearchRequest(
+                    effective, "(objectClass=*)", SearchScope.OneLevel, "distinguishedName")
+                {
+                    SizeLimit = MaxNodes
+                });
+
+                anyChildren = all.Entries.Count;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Обзор первого уровня на {Controller} не удался.", controller);
+            }
+        }
+        catch (Exception ex)
+        {
+            return new BrowseProbe(controller, true, identity, 0, ex.Message, namingContext);
+        }
+
+        try
+        {
+            var nodes = Read(controller, RootDn, "");
+
+            return new BrowseProbe(
+                controller, true, identity, nodes.Count, null, namingContext, baseFound, anyChildren);
+        }
+        catch (Exception ex)
+        {
+            return new BrowseProbe(
+                controller, true, identity, 0, ex.Message, namingContext, baseFound, anyChildren);
+        }
     }
 
     /// <summary>Под какой учётной записью работает процесс — им же портал и представляется каталогу.</summary>
@@ -304,12 +456,17 @@ public sealed class DirectoryBrowser
         return Environment.UserName;
     }
 
-    private IReadOnlyList<DirectoryNode> Read(string controller, string baseDn, string needle)
+    /// <summary>
+    /// Соединение с контроллером, готовое к запросам. Одно на все обращения —
+    /// и обзор, и проверка настроены одинаково, иначе диагностика проверяла бы
+    /// не то, чем портал пользуется.
+    /// </summary>
+    private LdapConnection Connect(string controller)
     {
         var identifier = new LdapDirectoryIdentifier(
             controller, _ad.Port, fullyQualifiedDnsHostName: false, connectionless: false);
 
-        using var connection = new LdapConnection(identifier)
+        var connection = new LdapConnection(identifier)
         {
             AuthType = AuthType.Negotiate,
             AutoBind = false,
@@ -331,6 +488,20 @@ public sealed class DirectoryBrowser
 
         // Bind от имени процесса — учётной записи пула приложений IIS.
         connection.Bind();
+
+        return connection;
+    }
+
+    private IReadOnlyList<DirectoryNode> Read(string controller, string baseDn, string needle)
+    {
+        using var connection = Connect(controller);
+
+        // Корень уточняем у самого каталога. Опечатка в BaseDn (или лишний
+        // пробел, или корень от прошлого домена) не даёт НИКАКОЙ ошибки:
+        // поиск в несуществующей ветке просто ничего не находит, и окно
+        // выбора группы выглядит пустым без объяснений. Дешевле один
+        // короткий запрос, чем такая тишина.
+        baseDn = RootFor(connection, baseDn);
 
         var searching = needle.Length > 0;
         var scope = searching ? SearchScope.Subtree : SearchScope.OneLevel;

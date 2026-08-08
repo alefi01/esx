@@ -106,14 +106,21 @@
             <tr>
                 <th>Контроллер</th>
                 <th>Учётная запись приложения</th>
-                <th>Ответ</th>
+                <th>Что ответил каталог</th>
             </tr>
             </thead>
             <tbody>
             @foreach (var probe in Model.BrowseProbes)
             {
                 <tr>
-                    <td><code>@probe.Controller</code></td>
+                    <td>
+                        <code>@probe.Controller</code>
+                        @if (!string.IsNullOrEmpty(probe.NamingContext))
+                        {
+                            <br />
+                            <span class="hint">корень домена по версии контроллера: <code>@probe.NamingContext</code></span>
+                        }
+                    </td>
                     <td><code>@probe.BoundAs</code></td>
                     <td>
                         @if (!probe.Reachable)
@@ -126,18 +133,57 @@
                             <span class="badge badge--error">отказ</span>
                             <span class="hint">@probe.Error</span>
                         }
-                        else if (probe.Found == 0)
-                        {
-                            <span class="badge badge--warn">принял, но записей не отдал</span>
-                            <span class="hint">
-                                Каталог ответил без ошибки и вернул ноль записей. Значит,
-                                либо корень поиска указывает не туда, либо учётной записи,
-                                под которой работает пул приложений, не разрешено читать каталог.
-                            </span>
-                        }
                         else
                         {
-                            <span class="badge badge--ok">@probe.Found записей</span>
+                            @* Про корень поиска говорим ОТДЕЛЬНО от результата:
+                               портал умеет обойти неверный BaseDn, спросив корень
+                               у самого контроллера, — но настройку от этого
+                               исправить всё равно надо. *@
+                            @if (!string.IsNullOrWhiteSpace(Model.AdOptions.BaseDn) && !probe.BaseFound)
+                            {
+                                <span class="badge badge--error">корень поиска не найден</span>
+                                <span class="hint">
+                                    В настройках <code>ActiveDirectory:BaseDn</code> записано
+                                    <code>@Model.AdOptions.BaseDn</code> — такого объекта в каталоге нет.
+                                    @if (!string.IsNullOrEmpty(probe.NamingContext))
+                                    {
+                                        <span>Контроллер называет корнем домена <code>@probe.NamingContext</code>; впишите это значение. Пока настройка не исправлена, портал пользуется найденным корнем сам.</span>
+                                    }
+                                </span>
+                            }
+                            else if (string.IsNullOrWhiteSpace(Model.AdOptions.BaseDn))
+                            {
+                                <span class="badge badge--warn">корень поиска не задан</span>
+                                <span class="hint">
+                                    <code>ActiveDirectory:BaseDn</code> пуст, портал берёт корень
+                                    у контроллера: <code>@probe.NamingContext</code>.
+                                </span>
+                            }
+
+                            @if (probe.Found > 0)
+                            {
+                                <span class="badge badge--ok">@probe.Found записей</span>
+                                <span class="hint">обзор каталога работает</span>
+                            }
+                            else if (probe.AnyChildren == 0)
+                            {
+                                <span class="badge badge--warn">на первом уровне пусто</span>
+                                <span class="hint">
+                                    Запрос без всякого отбора не вернул из корня ни одного объекта.
+                                    Так бывает, когда корень указывает на отдельное подразделение,
+                                    а не на домен целиком.
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge badge--warn">отбор ничего не выбрал</span>
+                                <span class="hint">
+                                    На первом уровне лежит объектов: <b>@probe.AnyChildren</b>,
+                                    но под отбор обзора (подразделения, группы, люди) не подошёл ни один.
+                                    Это случай для разработчика: дело в самом запросе, а не в настройках
+                                    и не в правах — пришлите эту строку.
+                                </span>
+                            }
                         }
                     </td>
                 </tr>
