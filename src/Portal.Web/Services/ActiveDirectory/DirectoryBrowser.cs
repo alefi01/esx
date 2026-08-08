@@ -45,6 +45,12 @@ public sealed record DirectoryLevel(IReadOnlyList<DirectoryNode> Nodes, string? 
 /// без всякого отбора. Отличается от <paramref name="Found"/> только
 /// в одном случае: каталог читается, но наш отбор ничего не выбирает.
 /// </param>
+/// <param name="Sample">
+/// Несколько первых объектов первого уровня как есть: путь и классы.
+/// Нужен ровно тогда, когда объекты в каталоге ЕСТЬ, а обзор их
+/// не показывает: по этим строкам сразу видно, что именно приходит
+/// от контроллера и почему разбор с этим не справился.
+/// </param>
 public sealed record BrowseProbe(
     string Controller,
     bool Reachable,
@@ -53,7 +59,8 @@ public sealed record BrowseProbe(
     string? Error,
     string NamingContext = "",
     bool BaseFound = false,
-    int AnyChildren = 0);
+    int AnyChildren = 0,
+    IReadOnlyList<string>? Sample = null);
 
 /// <summary>
 /// Обзор каталога домена: подразделения, вложенные подразделения, группы
@@ -375,6 +382,7 @@ public sealed class DirectoryBrowser
         var namingContext = "";
         var baseFound = false;
         var anyChildren = 0;
+        var sample = new List<string>();
 
         try
         {
@@ -407,12 +415,26 @@ public sealed class DirectoryBrowser
             try
             {
                 var all = (SearchResponse)connection.SendRequest(new SearchRequest(
-                    effective, "(objectClass=*)", SearchScope.OneLevel, "distinguishedName")
+                    effective, "(objectClass=*)", SearchScope.OneLevel,
+                    "distinguishedName", "objectClass")
                 {
                     SizeLimit = MaxNodes
                 });
 
                 anyChildren = all.Entries.Count;
+
+                foreach (SearchResultEntry entry in all.Entries)
+                {
+                    if (sample.Count >= 5)
+                    {
+                        break;
+                    }
+
+                    var classes = Values(entry, "objectClass");
+
+                    sample.Add((entry.DistinguishedName ?? "без пути")
+                        + " — " + (classes.Count > 0 ? string.Join(", ", classes) : "классы не прочитались"));
+                }
             }
             catch (Exception ex)
             {
@@ -429,12 +451,14 @@ public sealed class DirectoryBrowser
             var nodes = Read(controller, RootDn, "");
 
             return new BrowseProbe(
-                controller, true, identity, nodes.Count, null, namingContext, baseFound, anyChildren);
+                controller, true, identity, nodes.Count, null,
+                namingContext, baseFound, anyChildren, sample);
         }
         catch (Exception ex)
         {
             return new BrowseProbe(
-                controller, true, identity, 0, ex.Message, namingContext, baseFound, anyChildren);
+                controller, true, identity, 0, ex.Message,
+                namingContext, baseFound, anyChildren, sample);
         }
     }
 
@@ -519,7 +543,7 @@ public sealed class DirectoryBrowser
         var request = new SearchRequest(
             baseDn, filter, scope,
             "objectClass", "distinguishedName", "sAMAccountName", "displayName", "cn", "ou",
-            "userAccountControl")
+            "userAccountControl", "groupType", "objectCategory")
         {
             SizeLimit = MaxNodes
         };
@@ -531,12 +555,39 @@ public sealed class DirectoryBrowser
         foreach (SearchResultEntry entry in response.Entries)
         {
             var classes = Values(entry, "objectClass");
+            var dn = entry.DistinguishedName ?? "";
 
             var isOu = classes.Contains("organizationalUnit", StringComparer.OrdinalIgnoreCase)
                        || classes.Contains("container", StringComparer.OrdinalIgnoreCase);
 
             var isGroup = classes.Contains("group", StringComparer.OrdinalIgnoreCase);
             var isUser = classes.Contains("user", StringComparer.OrdinalIgnoreCase) && !isGroup;
+
+            // Запасной путь на случай, если objectClass прочитать не удалось.
+            // Такое уже случалось (см. Values), и цена ошибки несоразмерна
+            // причине: дерево оказывается пустым целиком. Опознать запись
+            // можно и по другим признакам — по началу её пути в каталоге
+            // и по наличию атрибутов, которые бывают только у групп.
+            if (!isOu && !isGroup && !isUser)
+            {
+                if (dn.StartsWith("OU=", StringComparison.OrdinalIgnoreCase))
+                {
+                    isOu = true;
+                }
+                else if (Values(entry, "groupType").Count > 0)
+                {
+                    isGroup = true;
+                }
+                else if (Values(entry, "sAMAccountName").Count > 0)
+                {
+                    isUser = true;
+                }
+                else if (dn.StartsWith("CN=", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Раздел вроде CN=Users — в него заходят, как в подразделение.
+                    isOu = true;
+                }
+            }
 
             if (!isOu && !isGroup && !isUser)
             {
@@ -579,7 +630,7 @@ public sealed class DirectoryBrowser
             nodes.Add(new DirectoryNode(
                 isOu ? "ou" : isGroup ? "group" : "user",
                 name,
-                entry.DistinguishedName ?? "",
+                dn,
                 account));
         }
 
@@ -597,11 +648,31 @@ public sealed class DirectoryBrowser
             .ToList();
     }
 
-    private static string First(SearchResultEntry entry, string attribute) =>
-        entry.Attributes.Contains(attribute) && entry.Attributes[attribute].Count > 0
-            ? entry.Attributes[attribute][0]?.ToString() ?? ""
-            : "";
+    private static string First(SearchResultEntry entry, string attribute)
+    {
+        var values = Values(entry, attribute);
 
+        return values.Count > 0 ? values[0] : "";
+    }
+
+    /// <summary>
+    /// Значения атрибута строками.
+    ///
+    /// ПОЧЕМУ НЕ ПРОСТО ToString()
+    ///
+    /// Библиотека каталога хранит значение либо строкой, либо НАБОРОМ БАЙТ —
+    /// и что именно придёт, зависит от атрибута, от контроллера и от того,
+    /// на чём работает приложение. Для набора байт ToString() возвращает
+    /// «System.Byte[]» — не ошибку, а вполне себе строку. Из-за этого весь
+    /// разбор молча ломался: objectClass у каждой записи равнялся
+    /// «System.Byte[]», ни одна не признавалась ни подразделением,
+    /// ни группой, ни человеком, и обзор каталога возвращал пустое дерево
+    /// при полном отсутствии ошибок — на домене с сотнями объектов.
+    ///
+    /// Поэтому строки берутся тем способом, который сам разбирает оба
+    /// случая, а набор байт (если он всё же дошёл сюда) читается как UTF-8:
+    /// имена в каталоге хранятся именно в этой кодировке.
+    /// </summary>
     private static List<string> Values(SearchResultEntry entry, string attribute)
     {
         var result = new List<string>();
@@ -611,9 +682,41 @@ public sealed class DirectoryBrowser
             return result;
         }
 
-        foreach (var value in entry.Attributes[attribute])
+        var values = entry.Attributes[attribute];
+
+        try
         {
-            result.Add(value?.ToString() ?? "");
+            foreach (var value in values.GetValues(typeof(string)))
+            {
+                if (value is string text && text.Length > 0)
+                {
+                    result.Add(text);
+                }
+            }
+
+            if (result.Count > 0)
+            {
+                return result;
+            }
+        }
+        catch (Exception)
+        {
+            // Значение не приводится к строке — разбираем вручную ниже.
+        }
+
+        foreach (var value in values)
+        {
+            var text = value switch
+            {
+                string s => s,
+                byte[] bytes => System.Text.Encoding.UTF8.GetString(bytes),
+                _ => value?.ToString() ?? ""
+            };
+
+            if (text.Length > 0)
+            {
+                result.Add(text);
+            }
         }
 
         return result;

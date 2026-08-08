@@ -1538,3 +1538,8 @@ button.pin-btn.on{opacity:1;color:var(--accent)}
 .home-col-main .pin-card,
 .home-col-side .pin-card{margin:0}
 .home-clear{margin:0}
+
+/* Образец записей каталога в диагностике: длинные пути должны переноситься,
+   иначе таблица разъезжается вширь на весь экран. */
+.probe-sample{margin:8px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
+.probe-sample code{overflow-wrap:anywhere}
