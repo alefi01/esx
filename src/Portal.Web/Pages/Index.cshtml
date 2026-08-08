@@ -67,13 +67,17 @@
         <div class="home-cols@(Model.Items.Count == 0 ? " home-cols--pins" : "")">
 
             <div class="home-col-main">
+                <div class="side-head">
+                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
+                    Новые объявления
+                    @if (Model.UnreadCount > 0)
+                    {
+                        <span class="unread-count">@Model.UnreadCount</span>
+                    }
+                </div>
+
                 @if (Model.Items.Count == 0)
                 {
-                    <div class="side-head">
-                        <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
-                        Новые объявления
-                    </div>
-
                     <div class="home-clear">
                         <svg class="ic" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
                         <div>
@@ -93,30 +97,14 @@
                 }
                 else
                 {
-                    <div class="side-head home-unread-head">
-                        <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
-                        Новые объявления
-                        <span class="unread-count">@Model.UnreadCount</span>
-
-                        @* Отметка «прочитано» ставится ЯВНО, кнопкой. Раньше главная
-                           отмечала всё сама при открытии — с лентой «всё подряд» это
-                           было безобидно, а со списком «только новое» означало бы,
-                           что список исчезает от случайного захода на страницу. *@
-                        <form method="post" asp-page-handler="MarkRead" class="home-mark">
-                            <button class="btn sm" type="submit">
-                                <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>Прочитано
-                            </button>
-                        </form>
-
-                        <a class="feed-all" asp-page="/Announcements/Index">Вся лента</a>
-                    </div>
-
-                    <div class="ann-list">
-                        @foreach (var item in Model.Items)
-                        {
-                            @await Html.PartialAsync("_Announcement", new AnnouncementCard(item, Model.CanModify(item)))
-                        }
-                    </div>
+                    @* Карточки те же, что и справа, — см. _HomeCard. Открыв
+                       объявление в ленте, человек тем самым и отмечает его
+                       прочитанным: отдельной кнопки «прочитано» на главной
+                       больше нет. *@
+                    @foreach (var item in Model.Items)
+                    {
+                        @await Html.PartialAsync("_HomeCard", item)
+                    }
 
                     @if (Model.HasMore)
                     {
@@ -140,23 +128,7 @@
 
                     @foreach (var item in Model.Pinned)
                     {
-                        @* Карточка урезанная: заголовок, начало текста и дата.
-                           Полный текст — по ссылке в ленте. Правый столбец
-                           узкий, и целые объявления в нём превратились бы
-                           в стену текста, которую перестают читать.
-
-                           Текст здесь выводится КАК ТЕКСТ, без превращения
-                           адресов в ссылки. Причина не в лени: вся карточка
-                           сама по себе ссылка, а ссылка внутри ссылки —
-                           недопустимая разметка, и браузер молча разрывает
-                           внешнюю. Карточка при этом разваливается. Полный
-                           текст с рабочими ссылками — в ленте объявлений. *@
-                        <a class="pin-card@(item.IsImportant ? " important" : "")"
-                           asp-page="/Announcements/Index" asp-fragment="a@item.Id">
-                            <b>@item.Title</b>
-                            <span class="pin-body">@item.Body</span>
-                            <span class="pin-foot">@item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy") · @item.AuthorDisplayName</span>
-                        </a>
+                        @await Html.PartialAsync("_HomeCard", item)
                     }
                 </aside>
             }

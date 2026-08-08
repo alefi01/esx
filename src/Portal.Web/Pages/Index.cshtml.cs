@@ -126,16 +126,16 @@ public class IndexModel : PageModel
                 ? 0
                 : await _notifications.LastSeenAnnouncementIdAsync(userName, cancellationToken);
 
-            var unread = _db.Announcements.Where(a => a.Id > lastSeen);
+            // Закреплённое из «нового» исключено: оно и так стоит в правом
+            // столбце, и одна и та же карточка в обоих столбцах выглядела
+            // как ошибка вёрстки — да и была бесполезна.
+            var unread = _db.Announcements.Where(a => a.Id > lastSeen && !a.IsPinned);
 
             UnreadCount = await unread.CountAsync(cancellationToken);
 
-            // Закреплённые первыми — так же, как в ленте объявлений.
-            // Иначе главная и раздел «Объявления» показывали бы разное.
             Items = await unread
                 .Include(a => a.Files)
-                .OrderByDescending(a => a.IsPinned)
-                .ThenByDescending(a => a.CreatedAt)
+                .OrderByDescending(a => a.CreatedAt)
                 .ThenByDescending(a => a.Id)
                 .Take(FeedSize)
                 .ToListAsync(cancellationToken);
@@ -162,19 +162,7 @@ public class IndexModel : PageModel
         }
     }
 
-    /// <summary>
-    /// «Я всё прочитал». Отмечает текущее состояние ленты и возвращает
-    /// человека на главную — она становится пустой и спокойной.
-    /// </summary>
-    public async Task<IActionResult> OnPostMarkReadAsync(CancellationToken cancellationToken)
-    {
-        var userName = User.Identity?.Name;
-
-        if (!string.IsNullOrEmpty(userName))
-        {
-            await _notifications.MarkAllSeenAsync(userName, cancellationToken);
-        }
-
-        return RedirectToPage();
-    }
+    // Кнопки «прочитано» на главной больше нет: прочитанным объявление
+    // становится там, где его читают, — в ленте. Кнопка при этом означала
+    // «спрятать, не читая», и нажимали её именно так.
 }

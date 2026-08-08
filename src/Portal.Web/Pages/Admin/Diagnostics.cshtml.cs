@@ -36,6 +36,7 @@ public class DiagnosticsModel : PageModel
     private readonly PortalDbContext _db;
     private readonly Portal.Web.Services.Storage.FileStorage _fileStorage;
     private readonly Portal.Web.Security.AuthDiagnostics _authDiagnostics;
+    private readonly Portal.Web.Services.ActiveDirectory.DirectoryBrowser _browser;
     private readonly IWebHostEnvironment _environment;
 
     public DiagnosticsModel(
@@ -45,6 +46,7 @@ public class DiagnosticsModel : PageModel
         PortalDbContext db,
         Portal.Web.Services.Storage.FileStorage fileStorage,
         Portal.Web.Security.AuthDiagnostics authDiagnostics,
+        Portal.Web.Services.ActiveDirectory.DirectoryBrowser browser,
         IWebHostEnvironment environment)
     {
         _offices = offices;
@@ -53,6 +55,7 @@ public class DiagnosticsModel : PageModel
         _db = db;
         _fileStorage = fileStorage;
         _authDiagnostics = authDiagnostics;
+        _browser = browser;
         _environment = environment;
     }
 
@@ -175,6 +178,12 @@ public class DiagnosticsModel : PageModel
     public int? FileCount { get; private set; }
     public long? StorageUsedBytes { get; private set; }
 
+    /// <summary>
+    /// Что отвечает каталог на запрос обзора — по каждому контроллеру.
+    /// Отсюда видно, почему окно выбора группы показывает пустое дерево.
+    /// </summary>
+    public IReadOnlyList<Portal.Web.Services.ActiveDirectory.BrowseProbe> BrowseProbes { get; private set; } = [];
+
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         var address = HttpContext.Connection.RemoteIpAddress;
@@ -191,6 +200,22 @@ public class DiagnosticsModel : PageModel
         }
 
         ProbeAccess();
+
+        // Обзор каталога проверяется отдельно от входа: вход спрашивает
+        // «правильный ли пароль у человека», обзор — «дают ли САМОМУ ПОРТАЛУ
+        // читать дерево». Это разные вопросы и разные учётные записи,
+        // и один может работать при сломанном другом.
+        try
+        {
+            BrowseProbes = await Task.Run(_browser.Probe, cancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(25), cancellationToken);
+        }
+        catch (Exception)
+        {
+            // Проверка — часть страницы, а не сама страница: не получилось
+            // спросить каталог, остальная диагностика всё равно нужна.
+            BrowseProbes = [];
+        }
 
         await ProbeDatabaseAsync(cancellationToken);
 

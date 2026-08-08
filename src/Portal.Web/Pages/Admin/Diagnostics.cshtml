@@ -81,6 +81,73 @@
 </div>
 
 <div class="card">
+    <h2>Обзор каталога домена</h2>
+
+    <p class="hint">
+        Это НЕ вход в портал. Вход спрашивает у контроллера, верен ли пароль человека;
+        обзор — читает дерево подразделений от имени самого приложения, и разрешено ему
+        может быть совсем другое. Здесь видно, чем именно кончается попытка,
+        когда окно выбора группы показывает пустое дерево.
+    </p>
+
+    <dl class="facts">
+        <dt>Корень поиска (BaseDn)</dt>
+        <dd><code>@Model.AdOptions.BaseDn</code></dd>
+    </dl>
+
+    @if (Model.BrowseProbes.Count == 0)
+    {
+        <p class="hint">Ни одного контроллера домена в настройках нет — обзор невозможен.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+            <tr>
+                <th>Контроллер</th>
+                <th>Учётная запись приложения</th>
+                <th>Ответ</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var probe in Model.BrowseProbes)
+            {
+                <tr>
+                    <td><code>@probe.Controller</code></td>
+                    <td><code>@probe.BoundAs</code></td>
+                    <td>
+                        @if (!probe.Reachable)
+                        {
+                            <span class="badge badge--error">нет связи</span>
+                            <span class="hint">@probe.Error</span>
+                        }
+                        else if (probe.Error is not null)
+                        {
+                            <span class="badge badge--error">отказ</span>
+                            <span class="hint">@probe.Error</span>
+                        }
+                        else if (probe.Found == 0)
+                        {
+                            <span class="badge badge--warn">принял, но записей не отдал</span>
+                            <span class="hint">
+                                Каталог ответил без ошибки и вернул ноль записей. Значит,
+                                либо корень поиска указывает не туда, либо учётной записи,
+                                под которой работает пул приложений, не разрешено читать каталог.
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="badge badge--ok">@probe.Found записей</span>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+<div class="card">
     <h2>База данных</h2>
 
     <dl class="facts">

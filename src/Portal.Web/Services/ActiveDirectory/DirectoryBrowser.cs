@@ -25,6 +25,19 @@ public sealed record DirectoryNode(string Kind, string Name, string Dn, string A
 public sealed record DirectoryLevel(IReadOnlyList<DirectoryNode> Nodes, string? Problem = null);
 
 /// <summary>
+/// Что произошло при обращении к ОДНОМУ контроллеру — для страницы
+/// диагностики. Разбивает «дерево пустое» на понятные шаги: дошли ли
+/// до контроллера, приняли ли нас, сколько записей он вернул.
+/// </summary>
+/// <param name="Controller">Контроллер домена.</param>
+/// <param name="Reachable">Отозвался ли на своём порту.</param>
+/// <param name="BoundAs">Под какой учётной записью работает приложение.</param>
+/// <param name="Found">Сколько записей вернул запрос корня.</param>
+/// <param name="Error">Текст ошибки, если запрос не удался.</param>
+public sealed record BrowseProbe(
+    string Controller, bool Reachable, string BoundAs, int Found, string? Error);
+
+/// <summary>
 /// Обзор каталога домена: подразделения, вложенные подразделения, группы
 /// и люди — по одному уровню за раз.
 ///
@@ -231,6 +244,64 @@ public sealed class DirectoryBrowser
 
             return false;
         }
+    }
+
+    /// <summary>
+    /// Проверка обзора каталога по ВСЕМ контроллерам, для диагностики.
+    ///
+    /// В отличие от обычного обзора не останавливается на первом удачном:
+    /// когда «дерево пустое», важно видеть картину целиком — до кого дошли,
+    /// кто нас принял и сколько записей отдал. Пустой ответ без ошибки
+    /// означает, что каталог нас принял, но ничего не показал: либо корень
+    /// поиска (BaseDn) указывает не туда, либо учётной записи, под которой
+    /// работает пул приложений, не разрешено читать каталог.
+    /// </summary>
+    public IReadOnlyList<BrowseProbe> Probe()
+    {
+        var identity = ProcessAccount();
+        var result = new List<BrowseProbe>();
+
+        foreach (var controller in _offices.GetDomainControllerOrder(null))
+        {
+            if (!Answers(controller))
+            {
+                result.Add(new BrowseProbe(controller, false, identity, 0,
+                    $"не отвечает на порту {_ad.Port}"));
+
+                continue;
+            }
+
+            try
+            {
+                var nodes = Read(controller, RootDn, "");
+
+                result.Add(new BrowseProbe(controller, true, identity, nodes.Count, null));
+            }
+            catch (Exception ex)
+            {
+                result.Add(new BrowseProbe(controller, true, identity, 0, ex.Message));
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>Под какой учётной записью работает процесс — им же портал и представляется каталогу.</summary>
+    private static string ProcessAccount()
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return System.Security.Principal.WindowsIdentity.GetCurrent().Name;
+            }
+        }
+        catch (Exception)
+        {
+            // Не смогли узнать — это само по себе не ошибка портала.
+        }
+
+        return Environment.UserName;
     }
 
     private IReadOnlyList<DirectoryNode> Read(string controller, string baseDn, string needle)

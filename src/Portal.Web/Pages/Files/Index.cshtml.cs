@@ -130,27 +130,36 @@ public class IndexModel : PageModel
             return;
         }
 
-        foreach (var folder in Subfolders)
-        {
-            list.Add(Portal.Web.Pages.Shared.FileEntry.ForFolder(
+        // Порядок в папке: сначала ВСЁ закреплённое — папки, потом файлы, —
+        // и только потом обычное содержимое, тоже папками вперёд.
+        //
+        // Раньше закреплённые файлы стояли после всех папок вообще, и смысл
+        // закрепления терялся: в папке с двумя десятками подпапок поднятый
+        // наверх файл всё равно оказывался за краем экрана. Закреплённое —
+        // это «то, чем пользуются каждый день», и лежать оно должно вместе,
+        // одной группой в начале списка.
+        Portal.Web.Pages.Shared.FileEntry Folder(StorageFolder folder) =>
+            Portal.Web.Pages.Shared.FileEntry.ForFolder(
                 folder,
                 Url.Page("Index", new { id = folder.Id }) ?? "#",
                 ChildCounts.GetValueOrDefault(folder.Id),
                 FavoriteFolderIds.Contains(folder.Id),
                 CanManageFolder(folder),
-                ShowSizes ? FolderSizes.GetValueOrDefault(folder.Id) : null));
-        }
+                ShowSizes ? FolderSizes.GetValueOrDefault(folder.Id) : null);
 
-        foreach (var file in FilesInFolder)
-        {
-            list.Add(Portal.Web.Pages.Shared.FileEntry.ForFile(
+        Portal.Web.Pages.Shared.FileEntry File(StoredFile file) =>
+            Portal.Web.Pages.Shared.FileEntry.ForFile(
                 file,
                 Url.Page("Index", "Download", new { fileId = file.Id }) ?? "#",
                 PreviewKindOf(file),
                 FavoriteFileIds.Contains(file.Id),
                 CanDelete(file),
-                canManage: Access >= FolderAccess.Manage));
-        }
+                canManage: Access >= FolderAccess.Manage);
+
+        list.AddRange(Subfolders.Where(f => f.IsPinned).Select(Folder));
+        list.AddRange(FilesInFolder.Where(f => f.IsPinned).Select(File));
+        list.AddRange(Subfolders.Where(f => !f.IsPinned).Select(Folder));
+        list.AddRange(FilesInFolder.Where(f => !f.IsPinned).Select(File));
 
         Entries = list;
     }
@@ -1974,6 +1983,23 @@ public class IndexModel : PageModel
 
         var level = await _browser.ChildrenAsync(dn, q, cancellationToken);
 
+        // Пусто В КОРНЕ и без ошибки — это не «в домене ничего нет».
+        // Это значит, что каталог нас принял и ничего не показал: либо
+        // корень поиска указывает не туда, либо приложению не разрешено
+        // читать дерево. Вглубь дерева такой подсказки нет: пустое
+        // подразделение — дело обычное.
+        var problem = level.Problem;
+
+        if (problem is null
+            && level.Nodes.Count == 0
+            && string.IsNullOrWhiteSpace(q)
+            && string.IsNullOrWhiteSpace(dn))
+        {
+            problem = "Каталог ответил, но записей не вернул. Проверьте корень поиска "
+                + $"(ActiveDirectory:BaseDn = «{_browser.RootDn}») и права учётной записи, "
+                + "под которой работает пул приложений: подробности — на странице «Диагностика».";
+        }
+
         return new JsonResult(new
         {
             root = _browser.RootDn,
@@ -1983,7 +2009,7 @@ public class IndexModel : PageModel
             // «дерево не подгружается» без объяснения — это разбор по логам
             // на боевой машине, а с объяснением («не задан BaseDn», «ни один
             // контроллер не ответил») настройку правят сразу.
-            problem = level.Problem,
+            problem,
             nodes = level.Nodes.Select(n => new { n.Kind, n.Name, n.Dn, n.Account })
         });
     }

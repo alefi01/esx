@@ -1141,7 +1141,7 @@ html.nav-hidden .sidebar *{visibility:hidden}
    становятся один под другим, и закреплённое уходит вниз — там уже
    не до равенства, а срочное важнее постоянного. */
 .home-cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}
-.home-col-main{min-width:0}
+.home-col-main{min-width:0;display:flex;flex-direction:column;gap:10px}
 .home-col-side{min-width:0;display:flex;flex-direction:column;gap:10px}
 
 .side-head{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;
@@ -1528,3 +1528,13 @@ button.pin-btn.on{opacity:1;color:var(--accent)}
 .ann-page .side-head,
 .ann-page .pager{max-width:900px;margin-left:auto;margin-right:auto}
 .ann-page .ann-list{max-width:900px}
+
+/* Оба столбца главной живут по одним правилам: одинаковый заголовок,
+   одинаковые карточки, один и тот же промежуток. Раньше слева стояли
+   полные карточки ленты, справа — короткие, и строки в столбцах
+   не совпадали ни по высоте, ни по отступам. */
+.home-col-main .side-head,
+.home-col-side .side-head{margin-bottom:0;min-height:20px}
+.home-col-main .pin-card,
+.home-col-side .pin-card{margin:0}
+.home-clear{margin:0}
