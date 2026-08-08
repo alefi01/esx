@@ -25,6 +25,13 @@ namespace Portal.Web.Services.Text;
 /// Что при этом всё-таки поддерживается:
 ///   * переносы строк и пустые строки между абзацами
 ///   * ссылки http:// и https:// — распознаются автоматически и становятся кликабельными
+///   * выделение: **жирным** и ==жёлтым, как маркером==
+///
+/// Выделение сделано ЗНАКАМИ В ТЕКСТЕ, а не разметкой в базе, и по той же
+/// причине, по которой здесь нет визуального редактора: в базе по-прежнему
+/// лежит обычный текст, который невозможно выполнить. Знаки расставляются
+/// правым меню в поле ввода, но их можно набрать и руками — и в письме,
+/// и в переписке они читаются как выделение сами по себе.
 ///
 /// Класс не статический, потому что ему нужен HtmlEncoder из контейнера,
 /// а не встроенный HtmlEncoder.Default: в Program.cs кодировщик настроен так,
@@ -51,6 +58,20 @@ public sealed class PlainTextFormatter
     /// «зайдите на http://example.com.» — точка в конце не часть ссылки.
     /// </summary>
     private const string TrailingPunctuation = ".,;:!?)»\"'";
+
+    /// <summary>
+    /// Выделения. Ищутся УЖЕ В ЭКРАНИРОВАННОМ тексте: экранирование
+    /// не трогает звёздочки и знаки равенства, зато к этому моменту всё
+    /// опасное обезврежено, и вставить теги можно спокойно.
+    ///
+    /// Внутри выделения запрещены переносы строк: незакрытая пара знаков
+    /// иначе «съедала» бы полобъявления, превращая его в жирную простыню.
+    /// </summary>
+    private static readonly Regex BoldRegex = new(
+        @"\*\*([^\n*]+?)\*\*", RegexOptions.Compiled);
+
+    private static readonly Regex MarkRegex = new(
+        @"==([^\n=]+?)==", RegexOptions.Compiled);
 
     public IHtmlContent ToHtml(string? text)
     {
@@ -99,15 +120,26 @@ public sealed class PlainTextFormatter
                 continue;
             }
 
-            builder.Append(_encoder.Encode(text[start..i].ToString()));
+            AppendLine(builder, text[start..i]);
             builder.Append("<br />");
             start = i + 1;
         }
 
         if (start < text.Length)
         {
-            builder.Append(_encoder.Encode(text[start..].ToString()));
+            AppendLine(builder, text[start..]);
         }
+    }
+
+    /// <summary>Одна строка: сперва экранирование, потом выделения.</summary>
+    private void AppendLine(StringBuilder builder, ReadOnlySpan<char> line)
+    {
+        var encoded = _encoder.Encode(line.ToString());
+
+        encoded = BoldRegex.Replace(encoded, "<strong>$1</strong>");
+        encoded = MarkRegex.Replace(encoded, "<mark>$1</mark>");
+
+        builder.Append(encoded);
     }
 
     private void AppendLink(StringBuilder builder, string url)

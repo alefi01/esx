@@ -30,8 +30,19 @@
 
         <div class="field">
             <label asp-for="Input.Body">Текст</label>
-            <textarea asp-for="Input.Body" rows="12" maxlength="10000"></textarea>
+            @* data-format включает правое меню с выделением жирным
+               и жёлтым. Разметка при этом остаётся обычным текстом:
+               в базу уходят те же **звёздочки** и ==равно==, а в разметку
+               их превращает уже вывод (PlainTextFormatter). Так объявление
+               по-прежнему нельзя использовать, чтобы протащить в страницу
+               чужой код. *@
+            <textarea asp-for="Input.Body" rows="12" maxlength="10000" data-format></textarea>
             <span asp-validation-for="Input.Body" class="err"></span>
+            <span class="hint">
+                Правое нажатие по тексту — выделение <strong>жирным</strong> и
+                <mark>жёлтым</mark>. Их же можно набрать руками:
+                <code>**жирный**</code> и <code>==жёлтый==</code>.
+            </span>
         </div>
 
         <div class="form-actions">

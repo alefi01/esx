@@ -1543,3 +1543,24 @@ button.pin-btn.on{opacity:1;color:var(--accent)}
    иначе таблица разъезжается вширь на весь экран. */
 .probe-sample{margin:8px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
 .probe-sample code{overflow-wrap:anywhere}
+
+/* Строка ввода в переписке: скрепка, поле и «отправить» одной высоты
+   и по одной линии. Раньше кнопки были 41 и 34 пикселя, а поле росло
+   от 40 — при пустом поле всё стояло на разных уровнях, и строка
+   выглядела собранной наспех. */
+.chat-input{align-items:center;gap:9px}
+.chat-input textarea{min-height:42px;line-height:20px;padding:10px 14px}
+.chat-input .icon-btn,
+.chat-input .send-btn{width:42px;height:42px;flex:none;align-self:center}
+.chat-input .icon-btn{border-radius:12px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)}
+.chat-input .icon-btn:hover{color:var(--accent);border-color:var(--accent)}
+
+/* Поле выросло на несколько строк — кнопки остаются внизу, у последней
+   строки: тянуть их к середине высокого поля незачем. */
+.chat-input.tall{align-items:flex-end}
+
+/* Выделение жёлтым в объявлении. Свой цвет, а не браузерный: родной mark
+   ярко-жёлтый и в тёмной теме выжигает глаза, а текст на нём становится
+   нечитаемым — цвет букв браузер не меняет. */
+mark{background:color-mix(in srgb,var(--warn) 42%,transparent);color:inherit;
+  border-radius:3px;padding:0 2px}

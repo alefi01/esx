@@ -525,7 +525,16 @@ public sealed class DirectoryBrowser
         // поиск в несуществующей ветке просто ничего не находит, и окно
         // выбора группы выглядит пустым без объяснений. Дешевле один
         // короткий запрос, чем такая тишина.
-        baseDn = RootFor(connection, baseDn);
+        var root = RootFor(connection, RootDn);
+
+        // «Первый уровень» — это обзор самого корня, без поиска.
+        // Только к нему применяется отбор веток.
+        var atRoot = needle.Length == 0
+            && (string.IsNullOrWhiteSpace(baseDn)
+                || string.Equals(baseDn, RootDn, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(baseDn, root, StringComparison.OrdinalIgnoreCase));
+
+        baseDn = atRoot ? root : baseDn;
 
         var searching = needle.Length > 0;
         var scope = searching ? SearchScope.Subtree : SearchScope.OneLevel;
@@ -632,6 +641,17 @@ public sealed class DirectoryBrowser
                 name,
                 dn,
                 account));
+        }
+
+        // Отбор первого уровня. В корне домена лежит всё подряд, включая
+        // служебные разделы и чужие ветки; настройка сужает список до своих.
+        // Глубже по дереву отбор не действует — см. RootBranchPrefixes.
+        if (atRoot && _ad.RootBranchPrefixes.Length > 0)
+        {
+            nodes = nodes
+                .Where(n => _ad.RootBranchPrefixes.Any(prefix =>
+                    n.Name.StartsWith(prefix, StringComparison.CurrentCultureIgnoreCase)))
+                .ToList();
         }
 
         // Сначала ветки, потом группы, потом люди — и всё по алфавиту.

@@ -124,10 +124,30 @@ public class SettingsModel : PageModel
     [BindProperty(SupportsGet = true)]
     public string? ReturnTo { get; set; }
 
-    private IActionResult Back(int id) =>
-        string.Equals(ReturnTo, "files", StringComparison.OrdinalIgnoreCase)
+    private IActionResult Back(int id)
+    {
+        // Правка прав из ОКНА поверх списка файлов идёт запросом из кода
+        // страницы и отвечает JSON-ом: перезагрузка ради снятия одной строки
+        // закрывала окно целиком, и человек, убравший две группы, открывал
+        // его трижды. Уходит со страницы только «Сохранить» — он и должен
+        // завершать работу с окном.
+        if (string.Equals(Request.Headers.XRequestedWith, "XMLHttpRequest", StringComparison.Ordinal))
+        {
+            var error = ErrorMessage;
+            var status = StatusMessage;
+
+            // Сообщение показывает окно, а не следующая страница: иначе оно
+            // всплыло бы потом, посреди совсем другого действия.
+            ErrorMessage = null;
+            StatusMessage = null;
+
+            return new JsonResult(new { ok = error is null, message = error ?? status });
+        }
+
+        return string.Equals(ReturnTo, "files", StringComparison.OrdinalIgnoreCase)
             ? RedirectToPage("Index", new { id })
             : RedirectToPage(new { id });
+    }
 
     public async Task<IActionResult> OnPostSaveAsync(int id, CancellationToken cancellationToken)
     {

@@ -594,6 +594,67 @@
         button.textContent = open ? 'Свернуть' : 'Показать полностью';
     });
 
+    // Выделение текста в объявлении: жирным и жёлтым.
+    //
+    // Правым нажатием, а не панелью кнопок над полем: панель занимает место
+    // постоянно, а нужна раз в десять объявлений. Родное меню браузера
+    // («вставить», «проверить орфографию») при этом теряется только внутри
+    // этого поля и только там, где взамен предлагается своё.
+    //
+    // В текст вставляются ЗНАКИ, а не разметка: в базе объявление остаётся
+    // обычным текстом, который невозможно выполнить, — см. PlainTextFormatter.
+    document.addEventListener('contextmenu', e => {
+        const field = e.target.closest('textarea[data-format]');
+
+        if (!field) { return; }
+
+        e.preventDefault();
+
+        // Границы выделения запоминаем ЗДЕСЬ, а не в обработчике пункта
+        // меню: правое нажатие само по себе двигает курсор, и к моменту
+        // выбора пункта выделения может уже не быть — команда тогда
+        // молча не делала ничего.
+        const at = { from: field.selectionStart, to: field.selectionEnd };
+
+        const wrap = (marker, name) => {
+            const from = at.from;
+            const to = at.to;
+            const picked = field.value.slice(from, to);
+
+            if (!picked.trim()) {
+                toast('Сначала выделите текст, потом выберите ' + name, 'warn');
+                return;
+            }
+
+            // Повторный вызов на уже выделенном тексте снимает выделение:
+            // иначе снять его можно было бы только правкой знаков руками.
+            const already = field.value.slice(from - marker.length, from) === marker
+                && field.value.slice(to, to + marker.length) === marker;
+
+            const before = already ? field.value.slice(0, from - marker.length) : field.value.slice(0, from);
+            const after = already ? field.value.slice(to + marker.length) : field.value.slice(to);
+
+            field.value = already
+                ? before + picked + after
+                : before + marker + picked + marker + after;
+
+            // Возвращаем выделение на тот же текст: с него часто сразу
+            // ставят второе выделение — жирным и жёлтым вместе.
+            const shift = already ? -marker.length : marker.length;
+
+            field.focus();
+            field.setSelectionRange(from + shift, to + shift);
+
+            // Поле могло вырасти, а форма — следить за его высотой.
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+
+        showMenu(e.clientX, e.clientY, [
+            { icon: 'edit', label: 'Жирным', fn: () => wrap('**', 'жирное') },
+            { icon: 'palette', label: 'Выделить жёлтым', fn: () => wrap('==', 'выделение жёлтым') }
+        ]);
+    });
+
     // Вложения объявлений — тем же окном предпросмотра, что и файлы
     // хранилища.
     //
@@ -852,6 +913,11 @@
                 if (announced.has(key)) { return; }
 
                 announced.add(key);
+
+                // Про беседу, которая сейчас открыта, не сообщаем: человек
+                // смотрит прямо на неё, сообщение он уже видит в ленте,
+                // а всплывающее окошко поверх — только помеха.
+                if (n.url && location.pathname + location.search === n.url) { return; }
 
                 toast((n.kind === 'message' ? 'Новое сообщение: ' : 'Новое объявление: ') + n.title, 'info');
             });
@@ -1593,13 +1659,16 @@
                 ['Manage', 'Управление — удалять и менять права']
             ];
 
-            const rows = (data.permissions || []).map(p =>
+            const permRows = list => (list || []).map(p =>
                 `<div class="perm-row" data-perm="${p.id}">` +
                 `<span class="perm-kind">${p.isUser ? 'сотрудник' : 'группа'}</span>` +
                 `<code>${esc(p.groupName)}</code>` +
                 `<span class="perm-level">${esc(levelName(p.access))}</span>` +
                 `<button class="link danger" type="button" data-drop-perm="${p.id}">Убрать</button>` +
-                '</div>').join('');
+                '</div>').join('')
+                || '<p class="hint">Своих прав у папки пока нет.</p>';
+
+            const rows = '<div id="fsPerms">' + permRows(data.permissions) + '</div>';
 
             const m = openModal({
                 wide: true,
@@ -1702,12 +1771,57 @@
                     return;
                 }
 
-                submit(add, {
+                post(add, {
                     'NewPermission.GroupName': group,
                     'NewPermission.Access': $('#fsLevel', m).value,
                     'NewPermission.IsUser': pickedIsUser ? 'true' : 'false'
-                });
+                })
+                    .then(r => r.json())
+                    .then(answer => {
+                        toast(answer.message || 'Доступ выдан', answer.ok ? 'ok' : 'warn');
+
+                        field.value = '';
+                        pickedIsUser = false;
+
+                        // Наследование могло выключиться на сервере — оно
+                        // выключается само, как только у папки появляются
+                        // свои права. Галочку надо привести в соответствие,
+                        // иначе «Сохранить» вернёт её обратно.
+                        refreshPerms();
+                    })
+                    .catch(() => toast('Не удалось выдать доступ', 'danger'));
             };
+
+            /** Перечитать права и перерисовать список, не закрывая окно. */
+            function refreshPerms() {
+                fetch('/Files?handler=FolderSettings&folderId=' + data.id, {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                    .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                    .then(fresh => {
+                        $('#fsPerms', m).innerHTML = permRows(fresh.permissions);
+                        $('#fsInherit', m).checked = !!fresh.inherit;
+
+                        bindDropPerm();
+                    })
+                    .catch(() => toast('Список прав не обновился — закройте и откройте окно', 'warn'));
+            }
+
+            function bindDropPerm() {
+                $$('[data-drop-perm]', m).forEach(b => {
+                    b.onclick = () => {
+                        post('/Files/Settings/' + data.id + '?handler=RemovePermission&returnTo=files'
+                            + '&permissionId=' + b.dataset.dropPerm, {})
+                            .then(r => r.json())
+                            .then(answer => {
+                                toast(answer.message || 'Доступ убран', 'ok');
+                                refreshPerms();
+                            })
+                            .catch(() => toast('Не удалось убрать доступ', 'danger'));
+                    };
+                });
+            }
 
             // ---------- Выбор из дерева домена ----------
             //
@@ -1810,15 +1924,20 @@
             });
 
             // Нажатие мимо дерева его закрывает — как и любое другое меню.
+            //
+            // Но только НАСТОЯЩЕЕ нажатие мимо. Нажатие по строке дерева
+            // тоже доходит сюда — уже после того, как обработчик строки
+            // заменил содержимое дерева новым уровнем. Нажатая кнопка
+            // к этому времени из страницы удалена, и closest() по ней
+            // ничего не находит: получалось, что дерево закрывает само
+            // себя при каждом переходе на уровень глубже.
             m.addEventListener('click', e => {
+                if (!e.target.isConnected) { return; }
+
                 if (!e.target.closest('.fs-add')) { tree.hidden = true; }
             });
 
-            $$('[data-drop-perm]', m).forEach(b => {
-                b.onclick = () => submit(
-                    '/Files/Settings/' + data.id + '?handler=RemovePermission&returnTo=files'
-                    + '&permissionId=' + b.dataset.dropPerm, {});
-            });
+            bindDropPerm();
         }
 
         function levelName(access) {
@@ -2210,7 +2329,16 @@
             // Поле растёт вместе с текстом, но не выше предела из стилей.
             const grow = () => {
                 text.style.height = 'auto';
-                text.style.height = Math.min(text.scrollHeight, 110) + 'px';
+
+                const height = Math.min(text.scrollHeight, 110);
+
+                text.style.height = height + 'px';
+
+                // Пока поле в одну строку, кнопки стоят вровень с ним
+                // по середине; как только текст занял несколько строк —
+                // прижимаются к нижней. Признак ставится классом, потому
+                // что выравнивание задаётся стилями всей строки.
+                if (form) { form.classList.toggle('tall', height > 46); }
             };
 
             text.addEventListener('input', grow);

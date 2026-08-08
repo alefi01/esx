@@ -66,41 +66,19 @@
            сеткой по всей ширине, но каждая своей нормальной ширины. *@
         <div class="home-cols@(Model.Items.Count == 0 ? " home-cols--pins" : "")">
 
-            <div class="home-col-main">
-                <div class="side-head">
-                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
-                    Новые объявления
-                    @if (Model.UnreadCount > 0)
-                    {
+            @* Пустого блока «новые объявления» на главной нет вовсе:
+               строка «новых нет» — это сообщение ни о чём, занимающее
+               половину экрана. Нечего показать — столбца просто не будет,
+               и закреплённое займёт всю ширину сеткой карточек. *@
+            @if (Model.Items.Count > 0)
+            {
+                <div class="home-col-main">
+                    <div class="side-head">
+                        <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
+                        Новые объявления
                         <span class="unread-count">@Model.UnreadCount</span>
-                    }
-                </div>
-
-                @if (Model.Items.Count == 0)
-                {
-                    <div class="home-clear">
-                        <svg class="ic" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
-                        <div>
-                            <b>Новых объявлений нет</b>
-                            <span>
-                                @if (Model.TotalCount > 0)
-                                {
-                                    <a asp-page="/Announcements/Index">Посмотреть всю ленту (@Model.TotalCount)</a>
-                                }
-                                else
-                                {
-                                    @:Здесь появятся сообщения, которые должны увидеть все сотрудники
-                                }
-                            </span>
-                        </div>
                     </div>
-                }
-                else
-                {
-                    @* Карточки те же, что и справа, — см. _HomeCard. Открыв
-                       объявление в ленте, человек тем самым и отмечает его
-                       прочитанным: отдельной кнопки «прочитано» на главной
-                       больше нет. *@
+
                     @foreach (var item in Model.Items)
                     {
                         @await Html.PartialAsync("_HomeCard", item)
@@ -114,8 +92,8 @@
                             </a>
                         </p>
                     }
-                }
-            </div>
+                </div>
+            }
 
             @if (Model.Pinned.Count > 0)
             {
