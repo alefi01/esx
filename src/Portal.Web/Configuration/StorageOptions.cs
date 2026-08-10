@@ -19,7 +19,7 @@ public sealed class StorageOptions
     /// Предел размера одного файла по умолчанию, мегабайты.
     /// Применяется к папкам, где своё значение не задано и не унаследовано.
     /// </summary>
-    public int DefaultMaxFileSizeMb { get; set; } = 50;
+    public int DefaultMaxFileSizeMb { get; set; } = 500;
 
     /// <summary>
     /// Жёсткий верхний предел размера ОДНОГО файла, мегабайты.

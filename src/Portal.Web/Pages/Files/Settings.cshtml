@@ -79,12 +79,12 @@
         </div>
 
         <div class="field">
-            <label asp-for="Input.RetentionDays">Автоочистка: удалять файлы старше, дней</label>
+            <label asp-for="Input.RetentionDays">Автоудаление файлов папки, дней</label>
             <input asp-for="Input.RetentionDays" type="number" min="1" max="3650"
-                   placeholder="пусто — автоочистка выключена" />
+                   placeholder="пусто — не удалять" />
             <span asp-validation-for="Input.RetentionDays" class="err"></span>
             <p class="hint">
-                По умолчанию выключена. Файлы не стираются сразу, а попадают в корзину,
+                По умолчанию выключено — файлы лежат сколько угодно. Стираются они не сразу, а попадают в корзину,
                 где лежат ещё @Model.TrashDays дн. — есть время заметить ошибку в настройке.
                 На подпапки этот срок НЕ распространяется: у каждой папки он свой.
                 @if (Model.Folder?.RetentionLastRunAt is { } last)

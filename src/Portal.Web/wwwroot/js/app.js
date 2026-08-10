@@ -1365,6 +1365,9 @@
                 }
             });
 
+            entries.push({ sep: 1 });
+            clipEntries(items).forEach(entry => entries.push(entry));
+
             // В корзину — только файлы и только те, которые человеку
             // разрешено удалять. Папки удаляются по одной и только пустые:
             // пакетное удаление папок слишком легко сделать не глядя.
@@ -1419,6 +1422,87 @@
                 () => submit('/Files?handler=DeleteFiles' + (folderId ? '&folderId=' + folderId : ''),
                     { fileIds: deletable }),
                 true);
+        }
+
+        // ---------- Свой буфер обмена ----------
+        //
+        // Держится в sessionStorage, а не в переменной: копируют в одной
+        // папке, вставляют в другой — между этими двумя действиями страница
+        // перезагружается, и переменная не пережила бы перехода. И не
+        // в localStorage: буфер живёт до закрытия вкладки, а не вечно,
+        // иначе «вставить» предлагалось бы и назавтра.
+        //
+        // Буфер портала НЕ связан с буфером обмена Windows: положить сюда
+        // файл из проводника нельзя, и наоборот. Файлы из проводника
+        // по-прежнему просто перетаскивают в окно или вставляют по Ctrl+V —
+        // это отдельная дорога, и путать их не нужно.
+        const CLIP_KEY = 'portal.clip';
+
+        function clipRead() {
+            try {
+                const raw = sessionStorage.getItem(CLIP_KEY);
+
+                return raw ? JSON.parse(raw) : null;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function clipWrite(value) {
+            try {
+                if (value) {
+                    sessionStorage.setItem(CLIP_KEY, JSON.stringify(value));
+                } else {
+                    sessionStorage.removeItem(CLIP_KEY);
+                }
+            } catch (error) {
+                toast('Браузер не дал запомнить выбранное', 'warn');
+            }
+        }
+
+        /** Положить выделенное в буфер: mode — copy или cut. */
+        function clipPut(items, mode) {
+            const value = {
+                mode,
+                files: items.filter(i => i.file).map(i => i.file),
+                folders: items.filter(i => i.folder).map(i => i.folder),
+                count: items.length,
+                name: items.length === 1 ? items[0].name : ''
+            };
+
+            clipWrite(value);
+
+            const what = value.name ? `«${value.name}»` : `выбрано: ${value.count}`;
+
+            toast((mode === 'cut' ? 'Вырезано — ' : 'Скопировано — ') + what
+                + '. Откройте нужную папку и нажмите «Вставить».', 'info');
+        }
+
+        function clipPaste() {
+            const clip = clipRead();
+
+            if (!clip || !folderId) { return; }
+
+            // Вырезанное ПЕРЕМЕЩАЕТСЯ тем же обработчиком, что и
+            // перетаскивание: это одно и то же действие, и второй
+            // его разновидности на сервере быть не должно.
+            submit(clip.mode === 'cut' ? '/Files?handler=Move' : '/Files?handler=Copy', {
+                targetFolderId: folderId,
+                fileIds: clip.files,
+                folderIds: clip.folders
+            });
+
+            // Вырезанное из буфера уходит: вставить его второй раз
+            // означало бы перенести уже перенесённое.
+            if (clip.mode === 'cut') { clipWrite(null); }
+        }
+
+        /** Пункты «копировать» и «вырезать» — одинаковые для одного объекта и для группы. */
+        function clipEntries(items) {
+            return [
+                { icon: 'copy', label: 'Копировать', fn: () => clipPut(items, 'copy') },
+                { icon: 'cut', label: 'Вырезать', fn: () => clipPut(items, 'cut') }
+            ];
         }
 
         function open(item, node) {
@@ -1480,6 +1564,18 @@
                 });
             }
 
+            entries.push({ sep: 1 });
+            clipEntries([item]).forEach(entry => entries.push(entry));
+
+            if (folderId && clipRead()) {
+                entries.push({
+                    icon: 'paste',
+                    label: pasteLabel(),
+                    fn: clipPaste
+                });
+            }
+
+            entries.push({ sep: 1 });
             entries.push({ icon: 'share', label: 'Скопировать ссылку', fn: () => copyLink(item) });
 
             if (item.file && item.canDelete) {
@@ -1512,6 +1608,12 @@
                 entries.push({ icon: 'upload', label: 'Загрузить файлы', fn: () => $('#fileInput').click() });
             }
 
+            // «Вставить» показывается, только когда есть что вставлять
+            // и есть куда: в корне хранилища файл лежать не может.
+            if (canWrite && folderId && clipRead()) {
+                entries.push({ icon: 'paste', label: pasteLabel(), fn: clipPaste });
+            }
+
             if (folderId) {
                 entries.push({
                     icon: 'download',
@@ -1528,6 +1630,17 @@
             entries.push({ icon: 'restore', label: 'Обновить', fn: () => window.location.reload() });
 
             showMenu(x, y, entries);
+        }
+
+        /** Подпись «вставить»: человек должен видеть, что именно вставит. */
+        function pasteLabel() {
+            const clip = clipRead();
+
+            if (!clip) { return 'Вставить'; }
+
+            const what = clip.name ? `«${clip.name}»` : `${clip.count} шт.`;
+
+            return (clip.mode === 'cut' ? 'Вставить (перенести) ' : 'Вставить ') + what;
         }
 
         function toggleFav(item) {
@@ -1722,9 +1835,12 @@
                     `<input type="number" id="fsQuota" min="0" value="${data.quotaMb ?? ''}" placeholder="как у родителя" />` +
                     `<p class="hint">Сейчас действует: <b>${esc(data.effectiveQuota)}</b>. Пусто — значение родителя, <b>0 — без квоты</b>.</p></div>` +
 
-                    '<div class="field"><label for="fsDays">Автоочистка корзины, дней</label>' +
-                    `<input type="number" id="fsDays" min="0" value="${data.retentionDays ?? ''}" placeholder="автоочистка выключена" />` +
-                    '<p class="hint">Через сколько дней стирать с диска то, что лежит в корзине. Пусто — не стирать.</p></div>' +
+                    '<div class="field"><label for="fsDays">Автоудаление файлов папки, дней</label>' +
+                    `<input type="number" id="fsDays" min="0" value="${data.retentionDays ?? ''}" placeholder="не удалять" />` +
+                    '<p class="hint">Через сколько дней после загрузки убирать файлы ИЗ ЭТОЙ ПАПКИ. ' +
+                    'Убираются они в корзину, а не стираются сразу, — ошибку в сроке можно заметить и исправить. ' +
+                    'На вложенные папки срок не распространяется: у каждой свой. ' +
+                    '<b>Пусто — не удалять</b>, так и стоит по умолчанию.</p></div>' +
 
                     '</section>') +
 

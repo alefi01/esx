@@ -86,6 +86,24 @@ public sealed class FileStorage
         File.Move(PathFor(fromFolderId, storageName), Path.Combine(targetDirectory, storageName));
     }
 
+    /// <summary>
+    /// Делает копию файла в другой (или в той же) папке и возвращает новое имя
+    /// на диске.
+    ///
+    /// Копия — это НАСТОЯЩАЯ вторая копия данных, а не ссылка: портал должен
+    /// пережить удаление оригинала, а жёсткие ссылки к тому же работают не на
+    /// всяком томе и не переживают восстановление из архива.
+    /// </summary>
+    public async Task<string> CopyAsync(
+        int fromFolderId, int toFolderId, string storageName, CancellationToken cancellationToken)
+    {
+        EnsureConfigured();
+
+        await using var source = OpenRead(fromFolderId, storageName);
+
+        return await SaveAsync(toFolderId, source, cancellationToken);
+    }
+
     /// <summary>Открывает файл на чтение. Бросает исключение, если файла нет.</summary>
     public Stream OpenRead(int folderId, string storageName)
     {

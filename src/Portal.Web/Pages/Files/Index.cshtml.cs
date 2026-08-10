@@ -954,6 +954,16 @@ public class IndexModel : PageModel
                     $"из «{_tree.DisplayPath(source)}» в «{_tree.DisplayPath(Current!)}»");
 
                 file.FolderId = targetFolderId;
+
+                // Если такое имя в целевой папке уже занято, переносимый файл
+                // получает номер — «Договор (2).pdf». Два одинаковых имени
+                // рядом различить нельзя ничем, кроме как открыв оба.
+                var taken = await _db.Files
+                    .Where(f => f.FolderId == targetFolderId && f.DeletedAt == null && f.Id != file.Id)
+                    .Select(f => f.OriginalName)
+                    .ToListAsync(cancellationToken);
+
+                file.OriginalName = UniqueName(file.OriginalName, [.. taken]);
             }
             catch (Exception ex)
             {
@@ -1056,6 +1066,229 @@ public class IndexModel : PageModel
         }
 
         return RedirectToPage(new { id = toRoot ? (int?)null : targetFolderId });
+    }
+
+    /// <summary>
+    /// Копирование файлов и папок в текущую папку — «вставить» после
+    /// «копировать».
+    ///
+    /// В отличие от перемещения здесь появляются НОВЫЕ данные: каждый файл
+    /// пишется на диск второй раз и занимает место снова. Поэтому проверки
+    /// те же, что при загрузке, — предел размера, квота, запрещённые
+    /// расширения: иначе копированием можно было бы обойти всё сразу.
+    ///
+    /// Папка копируется со всем содержимым. Глубина ограничена — испорченное
+    /// дерево не должно уводить копирование в бесконечность.
+    /// </summary>
+    public async Task<IActionResult> OnPostCopyAsync(
+        int targetFolderId, int[] fileIds, int[] folderIds, CancellationToken cancellationToken)
+    {
+        var redirect = await LoadAsync(targetFolderId, cancellationToken);
+
+        if (redirect is not null)
+        {
+            return redirect;
+        }
+
+        if (Current is null || Access < FolderAccess.Write)
+        {
+            return Forbid();
+        }
+
+        var problems = new List<string>();
+        var used = UsedBytes;
+        var files = 0;
+        var folders = 0;
+
+        // ---------- Файлы ----------
+        var sources = await _db.Files
+            .Where(f => fileIds.Contains(f.Id) && f.DeletedAt == null)
+            .ToListAsync(cancellationToken);
+
+        foreach (var file in sources)
+        {
+            var from = _tree.Get(file.FolderId);
+
+            // Копируют то, что человеку и так разрешено читать и скачивать.
+            if (from is null || !_tree.CanRead(User, from))
+            {
+                problems.Add($"«{file.OriginalName}» — нет прав читать исходную папку");
+                continue;
+            }
+
+            var rejection = _validator.Validate(
+                file.OriginalName, file.SizeBytes, MaxFileSizeBytes, QuotaBytes, used);
+
+            if (rejection is not null)
+            {
+                problems.Add($"«{rejection.FileName}» — {rejection.Reason}");
+                continue;
+            }
+
+            try
+            {
+                await CopyFileAsync(file, Current.Id, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Не удалось скопировать файл {File}.", file.OriginalName);
+
+                problems.Add($"«{file.OriginalName}» — ошибка при работе с диском");
+                continue;
+            }
+
+            used += file.SizeBytes;
+            files++;
+        }
+
+        // ---------- Папки ----------
+        foreach (var folderId in folderIds)
+        {
+            var source = _tree.Get(folderId);
+
+            if (source is null || !_tree.IsVisible(User, source))
+            {
+                continue;
+            }
+
+            if (!_tree.CanRead(User, source))
+            {
+                problems.Add($"«{source.Name}» — нет прав читать папку");
+                continue;
+            }
+
+            // Папку нельзя скопировать внутрь себя самой: копирование
+            // пошло бы по кругу и не кончилось никогда.
+            if (source.Id == Current.Id || IsInside(Current, source))
+            {
+                problems.Add($"«{source.Name}» — нельзя скопировать папку внутрь себя");
+                continue;
+            }
+
+            try
+            {
+                await CopyFolderAsync(source, Current.Id, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Не удалось скопировать папку {Folder}.", source.Name);
+
+                problems.Add($"«{source.Name}» — ошибка при копировании");
+                continue;
+            }
+
+            folders++;
+        }
+
+        if (files > 0 || folders > 0)
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+
+            StatusMessage = files > 0 && folders > 0
+                ? $"Скопировано: файлов {files}, папок {folders}."
+                : files > 0
+                    ? $"Скопировано файлов: {files}."
+                    : $"Скопировано папок: {folders}.";
+        }
+
+        if (problems.Count > 0)
+        {
+            ErrorMessage = string.Join("; ", problems);
+        }
+
+        return RedirectToPage(new { id = targetFolderId });
+    }
+
+    /// <summary>
+    /// Одна копия файла: данные на диск, запись в базу.
+    ///
+    /// Имя подбирается свободное — «Договор (2).pdf», как в проводнике:
+    /// копия рядом с оригиналом под тем же именем сбивала бы с толку сильнее,
+    /// чем номер в скобках.
+    /// </summary>
+    private async Task CopyFileAsync(StoredFile file, int targetFolderId, CancellationToken cancellationToken)
+    {
+        var taken = await _db.Files
+            .Where(f => f.FolderId == targetFolderId && f.DeletedAt == null)
+            .Select(f => f.OriginalName)
+            .ToListAsync(cancellationToken);
+
+        var storageName = await _storage.CopyAsync(
+            file.FolderId, targetFolderId, file.StorageName, cancellationToken);
+
+        var copy = new StoredFile
+        {
+            FolderId = targetFolderId,
+            OriginalName = UniqueName(file.OriginalName, [.. taken]),
+            StorageName = storageName,
+            SizeBytes = file.SizeBytes,
+            ContentType = file.ContentType,
+            UploadedAt = _time.GetUtcNow().UtcDateTime,
+            UploadedByUserName = User.Identity?.Name ?? "",
+            UploadedByDisplayName = User.FindFirstValue(ClaimTypes.GivenName) ?? User.Identity?.Name ?? ""
+        };
+
+        _db.Files.Add(copy);
+
+        _audit.Add(AuditAction.Upload, copy.OriginalName,
+            $"копия «{file.OriginalName}» из «{_tree.DisplayPath(_tree.Get(file.FolderId)!)}»");
+    }
+
+    /// <summary>Копия папки вместе со всем содержимым.</summary>
+    private async Task CopyFolderAsync(
+        StorageFolder source, int targetParentId, CancellationToken cancellationToken, int depth = 0)
+    {
+        if (depth > 32)
+        {
+            return;
+        }
+
+        var neighbours = _tree.Get(targetParentId)?.Children.Select(c => c.Name).ToList() ?? [];
+
+        var copy = new StorageFolder
+        {
+            Name = UniqueName(source.Name, [.. neighbours]),
+            ParentId = targetParentId,
+            CreatedAt = _time.GetUtcNow().UtcDateTime,
+            CreatedByUserName = User.Identity?.Name ?? "",
+
+            // Права НЕ копируются: копия попадает в другое место дерева,
+            // и переносить в неё чужие ограничения — значит незаметно
+            // закрыть папку там, где её открывали. Копия наследует права
+            // того места, куда её положили.
+            InheritPermissions = true,
+            MaxFileSizeMb = source.MaxFileSizeMb,
+            QuotaMb = source.QuotaMb,
+            RetentionDays = source.RetentionDays
+        };
+
+        _db.Folders.Add(copy);
+
+        // Номер новой папки нужен уже сейчас: по нему раскладываются файлы
+        // на диске и к нему привязываются вложенные папки.
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _audit.Add(AuditAction.CreateFolder, copy.Name,
+            $"копия папки «{_tree.DisplayPath(source)}»");
+
+        var inside = await _db.Files
+            .Where(f => f.FolderId == source.Id && f.DeletedAt == null)
+            .ToListAsync(cancellationToken);
+
+        foreach (var file in inside)
+        {
+            await CopyFileAsync(file, copy.Id, cancellationToken);
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        foreach (var child in source.Children)
+        {
+            if (_tree.CanRead(User, child))
+            {
+                await CopyFolderAsync(child, copy.Id, cancellationToken, depth + 1);
+            }
+        }
     }
 
     /// <summary>
