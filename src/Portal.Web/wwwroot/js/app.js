@@ -1365,8 +1365,12 @@
                 }
             });
 
-            entries.push({ sep: 1 });
-            clipEntries(items).forEach(entry => entries.push(entry));
+            const clipboard = clipEntries(items);
+
+            if (clipboard.length) {
+                entries.push({ sep: 1 });
+                clipboard.forEach(entry => entries.push(entry));
+            }
 
             // В корзину — только файлы и только те, которые человеку
             // разрешено удалять. Папки удаляются по одной и только пустые:
@@ -1497,8 +1501,21 @@
             if (clip.mode === 'cut') { clipWrite(null); }
         }
 
-        /** Пункты «копировать» и «вырезать» — одинаковые для одного объекта и для группы. */
+        /**
+         * Пункты «копировать» и «вырезать» — одинаковые для одного объекта
+         * и для группы.
+         *
+         * У разделов ВЕРХНЕГО УРОВНЯ их нет: это скелет хранилища, его
+         * не перекладывают мышью. Тем, кому такой раздел разрешено менять,
+         * он показан как обычная папка (data-can-manage), — остальным
+         * пунктов не видно, и на сервере такая попытка тоже отклоняется.
+         */
         function clipEntries(items) {
+            const atRoot = !folderId;
+            const structural = atRoot && items.some(i => i.folder && !i.canManage);
+
+            if (structural) { return []; }
+
             return [
                 { icon: 'copy', label: 'Копировать', fn: () => clipPut(items, 'copy') },
                 { icon: 'cut', label: 'Вырезать', fn: () => clipPut(items, 'cut') }
@@ -1564,8 +1581,12 @@
                 });
             }
 
-            entries.push({ sep: 1 });
-            clipEntries([item]).forEach(entry => entries.push(entry));
+            const clipboard = clipEntries([item]);
+
+            if (clipboard.length) {
+                entries.push({ sep: 1 });
+                clipboard.forEach(entry => entries.push(entry));
+            }
 
             if (folderId && clipRead()) {
                 entries.push({

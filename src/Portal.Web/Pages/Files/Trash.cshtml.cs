@@ -21,20 +21,25 @@ public class TrashModel : PageModel
     private readonly FileStorage _storage;
     private readonly AuditLog _audit;
     private readonly StorageOptions _options;
+    private readonly ActiveDirectoryOptions _ad;
 
     public TrashModel(
         PortalDbContext db,
         FolderTree tree,
         FileStorage storage,
         AuditLog audit,
-        IOptions<StorageOptions> options)
+        IOptions<StorageOptions> options,
+        IOptions<ActiveDirectoryOptions> ad)
     {
         _db = db;
         _tree = tree;
         _storage = storage;
         _audit = audit;
         _options = options.Value;
+        _ad = ad.Value;
     }
+
+    private bool IsAdmin => User.IsInRole(_ad.AdminGroup);
 
     public sealed record TrashItem(StoredFile File, string FolderPath, bool CanRestore, DateTime PurgeAt);
 
@@ -210,12 +215,22 @@ public class TrashModel : PageModel
     }
 
     /// <summary>
-    /// Видеть и трогать запись в корзине может тот, кто управляет папкой,
-    /// либо тот, кто сам этот файл и удалил.
+    /// Видеть и трогать запись в корзине может ТОТ, КТО ЕЁ ТУДА ПОЛОЖИЛ,
+    /// и администратор портала.
+    ///
+    /// Раньше сюда попадал ещё и всякий, кто управляет папкой. Разница
+    /// оказалась существенной: корзина — это список того, что человек
+    /// счёл ненужным, с именами файлов и временем. По ней видно, кто чем
+    /// занимался и что решил убрать, — а общая рабочая папка теперь
+    /// открыта многим, и её содержимое удаляет кто угодно.
+    ///
+    /// Управляющий папкой при этом не остаётся без выхода: файл, убранный
+    /// по ошибке, восстанавливает тот, кто его убрал, а если он недоступен —
+    /// администратор портала, у которого корзина видна целиком.
     /// </summary>
     private bool CanAct(StoredFile file, StorageFolder folder)
     {
-        if (_tree.CanManage(User, folder))
+        if (IsAdmin)
         {
             return true;
         }

@@ -1157,6 +1157,17 @@ public class IndexModel : PageModel
                 continue;
             }
 
+            // Раздел ВЕРХНЕГО УРОВНЯ копировать может только тот, кто им
+            // управляет. Скопировать «Бухгалтерию» целиком случайным
+            // нажатием — это удвоить хранилище и развести две расходящиеся
+            // копии одного и того же; вниз по дереву цена ошибки несравнимо
+            // меньше.
+            if (source.ParentId is null && !_tree.CanManage(User, source))
+            {
+                problems.Add($"«{source.Name}» — раздел верхнего уровня копировать нельзя");
+                continue;
+            }
+
             // Папку нельзя скопировать внутрь себя самой: копирование
             // пошло бы по кругу и не кончилось никогда.
             if (source.Id == Current.Id || IsInside(Current, source))
@@ -2643,8 +2654,32 @@ public class IndexModel : PageModel
     public static long MaxTextPreviewBytes => PreviewSupport.MaxTextPreviewBytes;
 
     /// <summary>Может ли текущий пользователь удалить этот файл — для показа кнопки.</summary>
-    public bool CanDelete(StoredFile file) =>
-        Access >= FolderAccess.Manage
-        || (Access >= FolderAccess.Write
-            && string.Equals(file.UploadedByUserName, User.Identity?.Name, StringComparison.OrdinalIgnoreCase));
+    /// <summary>
+    /// Может ли человек убрать этот файл в корзину.
+    ///
+    /// Обычное правило: либо управление папкой, либо своё авторство при
+    /// праве записи — чтобы нельзя было выносить чужие документы из папки,
+    /// куда пустили складывать свои.
+    ///
+    /// Исключение — ОБЩАЯ рабочая папка, которую никто не настраивал:
+    /// там удалять может каждый, у кого есть запись. Такая папка и заведена
+    /// как общее рабочее место, и «положить может любой, убрать — только
+    /// автор» превращает её в свалку, разгребать которую ходят
+    /// к администратору.
+    /// </summary>
+    public bool CanDelete(StoredFile file)
+    {
+        if (Access >= FolderAccess.Manage)
+        {
+            return true;
+        }
+
+        if (Access < FolderAccess.Write)
+        {
+            return false;
+        }
+
+        return string.Equals(file.UploadedByUserName, User.Identity?.Name, StringComparison.OrdinalIgnoreCase)
+               || (Current is not null && _tree.UsesDefaultAccess(Current));
+    }
 }
