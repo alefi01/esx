@@ -488,6 +488,16 @@
 
             $$('[data-theme-bg]', panel).forEach(row =>
                 row.classList.toggle('on', row.dataset.themeBg === background));
+
+            const lite = $('[data-theme-lite]', panel);
+
+            if (lite) { lite.classList.toggle('on', window.portalTheme.lite()); }
+
+            // В облегчённом режиме выбор фона недоступен: картинка под
+            // рабочей областью там не показывается, и строки, которые
+            // ничего не делают, только сбивают с толку.
+            $$('[data-theme-bg]', panel).forEach(row =>
+                row.toggleAttribute('disabled', window.portalTheme.lite()));
         };
 
         paint();
@@ -513,11 +523,13 @@
         };
 
         panel.addEventListener('click', e => {
-            const row = e.target.closest('[data-theme-mode],[data-theme-bg]');
+            const row = e.target.closest('[data-theme-mode],[data-theme-bg],[data-theme-lite]');
 
             if (!row) { return; }
 
-            if (row.dataset.themeMode) {
+            if (row.hasAttribute('data-theme-lite')) {
+                window.portalTheme.setLite(!window.portalTheme.lite());
+            } else if (row.dataset.themeMode) {
                 window.portalTheme.set(row.dataset.themeMode);
             } else {
                 window.portalTheme.setBackground(row.dataset.themeBg, row.dataset.themeUrl || '');
@@ -857,6 +869,7 @@
 
             setCount('#chatBadge', data.messages || 0);
             setCount('#annBadge', data.announcements || 0);
+            setCount('#taskBadge', data.tasks || 0);
 
             const items = data.items || [];
 
@@ -919,7 +932,27 @@
                 // а всплывающее окошко поверх — только помеха.
                 if (n.url && location.pathname + location.search === n.url) { return; }
 
-                toast((n.kind === 'message' ? 'Новое сообщение: ' : 'Новое объявление: ') + n.title, 'info');
+                const what = n.kind === 'message' ? 'Новое сообщение: ' : 'Новое объявление: ';
+
+                toast(what + n.title, 'info');
+
+                // Звук — тот, который человек выбрал для этой беседы
+                // (его подбирает сервер, см. NotificationService).
+                if (window.portalSound && n.sound && n.sound !== 'none') {
+                    window.portalSound.play(n.sound);
+                }
+
+                // И окошко самой системы — но только если портал не на виду:
+                // человеку, который и так смотрит в портал, хватает всплывашки
+                // в углу страницы.
+                if (window.portalSound) {
+                    window.portalSound.notify(
+                        n.kind === 'message' ? 'Новое сообщение' : 'Новое объявление',
+                        // В личной беседе заголовок и автор — одно и то же имя,
+                        // и «Пётр Петров — Пётр Петров» в окошке выглядит сбоем.
+                        n.title + (n.author && n.author !== n.title ? ' — ' + n.author : ''),
+                        n.url);
+                }
             });
         }
 
@@ -2429,6 +2462,95 @@
 
 
     // ======================================================================
+    // 8б. Мои задачи и личные настройки
+    // ======================================================================
+
+    // Показать задачу коллеге — тем же окном выбора людей, что и в переписке.
+    document.addEventListener('click', e => {
+        const button = e.target.closest('[data-share-task]');
+
+        if (!button) { return; }
+
+        peoplePicker({
+            title: 'Кому показать задачу',
+            label: 'Сотрудник',
+            extra: `<p class="hint">«${esc(button.dataset.taskTitle || '')}» станет видна ему ` +
+                'в разделе «Мои задачи». Отмечать выполненной по-прежнему будете только вы.</p>',
+            onPick: login => submit(
+                '/Tasks?handler=Share&id=' + button.dataset.shareTask, { login })
+        });
+    });
+
+    // Личные настройки: звук, уведомления системы, облегчённый режим.
+    (function () {
+        const page = $('[data-personal-settings]');
+
+        if (!page) { return; }
+
+        // «Прослушать»: заодно это первое нажатие на странице, после
+        // которого браузер вообще разрешает звук.
+        $$('[data-sound-play]', page).forEach(button => {
+            button.onclick = () => {
+                const select = $('#' + button.dataset.soundPlay, page);
+                const value = select ? select.value : '';
+
+                if (!value || value === 'none') {
+                    toast('Этот вариант — без звука', 'info');
+                    return;
+                }
+
+                window.portalSound.play(value);
+            };
+        });
+
+        // ---------- Уведомления системы ----------
+        const state = $('#notifyState', page);
+        const ask = $('#notifyAsk', page);
+
+        const paintNotify = () => {
+            const status = window.portalSound.state();
+
+            state.textContent = status === 'granted' ? 'разрешены'
+                : status === 'denied' ? 'запрещены в браузере'
+                    : status === 'unsupported' ? 'браузер не умеет'
+                        : 'не спрашивали';
+
+            ask.disabled = status !== 'default';
+        };
+
+        paintNotify();
+
+        ask.onclick = () => {
+            window.portalSound.ask().then(result => {
+                paintNotify();
+
+                if (result === 'granted') {
+                    // Сразу показываем, как это выглядит: иначе непонятно,
+                    // сработало разрешение или нет.
+                    toast('Готово — Windows будет сообщать о новом', 'ok');
+                } else if (result === 'denied') {
+                    toast('Браузер запретил. Разрешить можно вручную: замок в адресной строке → «Уведомления».', 'warn');
+                }
+            });
+        };
+
+        // ---------- Облегчённый режим ----------
+        const lite = $('#liteMode', page);
+
+        if (lite && window.portalTheme) {
+            lite.checked = window.portalTheme.lite();
+
+            lite.onchange = () => {
+                window.portalTheme.setLite(lite.checked);
+
+                toast(lite.checked
+                    ? 'Облегчённый режим включён на этом компьютере'
+                    : 'Облегчённый режим выключен', 'info');
+            };
+        }
+    })();
+
+    // ======================================================================
     // 9. Переписки
     //
     // Страница обычная, серверная: список бесед и сообщения приходят готовыми.
@@ -2439,10 +2561,158 @@
     //   * проверка, не написал ли кто-нибудь, пока страница открыта.
     // ======================================================================
 
+    // Выбор людей нужен не только в переписке: задачу тоже показывают
+    // коллеге, выбирая его из того же справочника. Поэтому окно живёт
+    // здесь, на общем уровне, а не внутри раздела переписок.
+    // ---------- Выбор людей ----------
+    //
+    // Один и тот же список сотрудников нужен в трёх местах: «написать»,
+    // «создать группу», «добавить в группу». Поэтому он собран одной
+    // функцией, а различается только тем, что делать с выбранным.
+
+    /**
+     * Окно со строкой поиска и списком сотрудников.
+     *
+     * multi = false — нажатие сразу выполняет действие и закрывает окно;
+     * multi = true  — выбранные накапливаются, действие по кнопке внизу.
+     */
+    function peoplePicker(options) {
+        const chosen = new Map();
+
+        const m = openModal({
+            title: esc(options.title),
+            body: (options.extra || '') +
+                '<div class="field"><label for="peopleSearch">' + esc(options.label) + '</label>' +
+                '<input type="text" id="peopleSearch" autocomplete="off" ' +
+                'placeholder="Начните вводить фамилию или логин"></div>' +
+                '<div class="chosen" id="peopleChosen" hidden></div>' +
+                '<div class="people" id="peopleList"><p class="hint">Загружается…</p></div>',
+            foot: options.multi
+                ? '<button class="btn" type="button" data-mclose>Отмена</button>' +
+                  '<button class="btn primary" type="button" id="peopleOk">' + esc(options.okLabel) + '</button>'
+                : '<button class="btn" type="button" data-mclose>Отмена</button>'
+        });
+
+        const search = $('#peopleSearch', m);
+        const list = $('#peopleList', m);
+        const chosenBox = $('#peopleChosen', m);
+
+        const paintChosen = () => {
+            chosenBox.hidden = chosen.size === 0;
+
+            chosenBox.innerHTML = [...chosen.values()]
+                .map(p => `<span class="chip">${esc(p.displayName)}</span>`).join('');
+        };
+
+        const load = () => {
+            fetch('/Messages?handler=People&q=' + encodeURIComponent(search.value.trim()), {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                .then(people => {
+                    if (people.length === 0) {
+                        list.innerHTML = '<p class="hint">Никого не нашлось. ' +
+                            'Справочник сотрудников читается из Active Directory.</p>';
+                        return;
+                    }
+
+                    list.innerHTML = people.map(p =>
+                        `<button class="member-row" type="button" data-login="${esc(p.userName)}" ` +
+                        `data-name="${esc(p.displayName)}">` +
+                        `<div class="avatar" data-av="${avatarIndex(p.displayName)}">${esc(initials(p.displayName))}</div>` +
+                        `<div><b>${esc(p.displayName)}</b><span>${esc(p.userName)}</span></div>` +
+                        (options.multi ? '<span class="member-mark"></span>' : '') +
+                        '</button>').join('');
+
+                    $$('.member-row', list).forEach(row => {
+                        const login = row.dataset.login;
+
+                        if (chosen.has(login)) { row.classList.add('on'); }
+
+                        row.onclick = () => {
+                            if (!options.multi) {
+                                closeModal();
+                                options.onPick(login, row.dataset.name);
+                                return;
+                            }
+
+                            if (chosen.has(login)) {
+                                chosen.delete(login);
+                                row.classList.remove('on');
+                            } else {
+                                chosen.set(login, { userName: login, displayName: row.dataset.name });
+                                row.classList.add('on');
+                            }
+
+                            paintChosen();
+                        };
+                    });
+                })
+                .catch(() => {
+                    list.innerHTML = '<p class="hint">Не удалось получить список сотрудников. ' +
+                        'Возможно, недоступен контроллер домена.</p>';
+                });
+        };
+
+        // Ждём, пока человек допечатает: запрос уходит в Active Directory,
+        // и дёргать его на каждую букву незачем.
+        let timer = null;
+
+        search.addEventListener('input', () => {
+            clearTimeout(timer);
+            timer = setTimeout(load, 250);
+        });
+
+        setTimeout(() => search.focus(), 60);
+        load();
+
+        if (options.multi) {
+            $('#peopleOk', m).onclick = () => {
+                if (chosen.size === 0) {
+                    toast('Никто не выбран', 'warn');
+                    return;
+                }
+
+                closeModal();
+                options.onDone([...chosen.keys()], m);
+            };
+        }
+
+        return m;
+    }
+
+    /** Те же буквы и цвет кружка, что считает сервер (см. Avatars). */
+    function initials(name) {
+        const parts = String(name || '').split(/[\s._-]+/).filter(Boolean);
+
+        if (parts.length === 0) { return '?'; }
+
+        return (parts.length === 1 ? parts[0][0] : parts[0][0] + parts[1][0]).toUpperCase();
+    }
+
+    function avatarIndex(name) {
+        let sum = 0;
+
+        for (const c of String(name || '')) {
+            sum = (sum * 31 + c.charCodeAt(0)) & 0x7fffffff;
+        }
+
+        return sum % 8;
+    }
+
     const chat = $('[data-chat]');
 
     if (chat) {
         const settings = chat.dataset;
+
+        // Проверка «не пришло ли новое». Объявлена здесь, а не внизу, где
+        // живёт сама проверка: её вызывает ещё и отправка сообщения —
+        // чтобы своё сообщение появилось в ленте сразу, а не через
+        // несколько секунд, когда до него дойдёт очередной опрос.
+        // До того как страница договорится с сервером, вызов ничего
+        // не делает — это пустышка.
+        let checkNew = () => {};
         const conversationId = settings.conversation || '';
         const me = settings.me || '';
 
@@ -2493,6 +2763,152 @@
                         form.requestSubmit();
                     }
                 }
+            });
+        }
+
+        // ---------- Отправка без перезагрузки страницы ----------
+        //
+        // Раньше форма уходила обычным способом, и после каждой реплики
+        // страница перерисовывалась целиком: лента моргала, прокрутка
+        // прыгала к низу, курсор уходил из поля ввода и его приходилось
+        // возвращать мышью. За разговор в полсотни сообщений это
+        // полсотни морганий.
+        //
+        // Теперь сообщение уходит запросом, а пузырёк дорисовывается тем же
+        // путём, что и входящие (checkNew). Форма при этом осталась формой:
+        // без JavaScript она отправится как прежде, перенаправлением.
+        if (form && settings.canWrite === 'true') {
+            let sending = false;
+
+            form.addEventListener('submit', e => {
+                e.preventDefault();
+
+                if (sending) { return; }
+
+                const body = new FormData(form);
+
+                // Пустое не отправляем: на сервере это тоже отсеивается,
+                // но лишний запрос на каждый случайный Enter не нужен.
+                if (!text.value.trim() && !(files && files.files.length)) { return; }
+
+                sending = true;
+                form.classList.add('sending');
+
+                // Поле очищается СРАЗУ, не дожидаясь ответа: человек уже
+                // нажал «отправить» и начинает печатать следующее. Если
+                // отправка не удастся, текст вернётся обратно — ниже.
+                const sent = text.value;
+
+                text.value = '';
+                text.style.height = 'auto';
+                text.dispatchEvent(new Event('input', { bubbles: true }));
+
+                // Курсор остаётся в поле — писать дальше можно сразу,
+                // не целясь в него мышью.
+                text.focus();
+
+                fetch(form.getAttribute('action') || location.href, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body
+                })
+                    .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                    .then(answer => {
+                        if (answer.error) { toast(answer.error, 'warn'); }
+
+                        if (files) {
+                            files.value = '';
+                            files.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+
+                        // Своё сообщение показываем сразу, не дожидаясь
+                        // очередного опроса.
+                        checkNew();
+                    })
+                    .catch(reason => {
+                        // Набранное возвращаем: потерять написанное
+                        // из-за моргнувшей сети — худшее, что может быть.
+                        text.value = sent;
+                        text.dispatchEvent(new Event('input', { bubbles: true }));
+
+                        toast(reason === 401
+                            ? 'Вход в портал истёк — обновите страницу'
+                            : 'Сообщение не ушло: связь прервалась', 'danger');
+                    })
+                    .finally(() => {
+                        sending = false;
+                        form.classList.remove('sending');
+                        text.focus();
+                    });
+            });
+        }
+
+        // ---------- Перетаскивание файлов в переписку ----------
+        //
+        // Бросить файл можно куда угодно в окне беседы, не только в строку
+        // ввода: человек тянет документ из проводника и целится «в чат»,
+        // а не в полоску высотой сорок пикселей внизу.
+        //
+        // Файл при этом НЕ уходит сразу: он встаёт как приложенный, и его
+        // можно сопроводить текстом. Отправка без единого слова — частая
+        // причина переписок вида «а что это?».
+        if (files && settings.canWrite === 'true') {
+            const zone = $('.chat-panel', chat) || chat;
+
+            let depth = 0;
+
+            const fromOutside = e =>
+                !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+
+            const show = on => {
+                zone.classList.toggle('dropping', on);
+
+                if (!on) { depth = 0; }
+            };
+
+            zone.addEventListener('dragenter', e => {
+                if (!fromOutside(e)) { return; }
+
+                e.preventDefault();
+                depth++;
+                show(true);
+            });
+
+            zone.addEventListener('dragover', e => {
+                if (fromOutside(e)) { e.preventDefault(); }
+            });
+
+            zone.addEventListener('dragleave', e => {
+                if (!fromOutside(e)) { return; }
+
+                depth = Math.max(0, depth - 1);
+
+                if (depth === 0) { show(false); }
+            });
+
+            zone.addEventListener('drop', e => {
+                if (!fromOutside(e)) { return; }
+
+                e.preventDefault();
+                show(false);
+
+                const dropped = e.dataTransfer.files;
+
+                if (!dropped || !dropped.length) { return; }
+
+                // Складываем брошенное с тем, что уже приложено: обычно
+                // документы перетаскивают по одному, и второй не должен
+                // вытеснять первый.
+                const box = new DataTransfer();
+
+                [...files.files].forEach(f => box.items.add(f));
+                [...dropped].forEach(f => box.items.add(f));
+
+                files.files = box.files;
+                files.dispatchEvent(new Event('change', { bubbles: true }));
+
+                text.focus();
             });
         }
 
@@ -2766,143 +3182,6 @@
             showMenu(e.clientX, e.clientY, entries);
         });
 
-        // ---------- Выбор людей ----------
-        //
-        // Один и тот же список сотрудников нужен в трёх местах: «написать»,
-        // «создать группу», «добавить в группу». Поэтому он собран одной
-        // функцией, а различается только тем, что делать с выбранным.
-
-        /**
-         * Окно со строкой поиска и списком сотрудников.
-         *
-         * multi = false — нажатие сразу выполняет действие и закрывает окно;
-         * multi = true  — выбранные накапливаются, действие по кнопке внизу.
-         */
-        function peoplePicker(options) {
-            const chosen = new Map();
-
-            const m = openModal({
-                title: esc(options.title),
-                body: (options.extra || '') +
-                    '<div class="field"><label for="peopleSearch">' + esc(options.label) + '</label>' +
-                    '<input type="text" id="peopleSearch" autocomplete="off" ' +
-                    'placeholder="Начните вводить фамилию или логин"></div>' +
-                    '<div class="chosen" id="peopleChosen" hidden></div>' +
-                    '<div class="people" id="peopleList"><p class="hint">Загружается…</p></div>',
-                foot: options.multi
-                    ? '<button class="btn" type="button" data-mclose>Отмена</button>' +
-                      '<button class="btn primary" type="button" id="peopleOk">' + esc(options.okLabel) + '</button>'
-                    : '<button class="btn" type="button" data-mclose>Отмена</button>'
-            });
-
-            const search = $('#peopleSearch', m);
-            const list = $('#peopleList', m);
-            const chosenBox = $('#peopleChosen', m);
-
-            const paintChosen = () => {
-                chosenBox.hidden = chosen.size === 0;
-
-                chosenBox.innerHTML = [...chosen.values()]
-                    .map(p => `<span class="chip">${esc(p.displayName)}</span>`).join('');
-            };
-
-            const load = () => {
-                fetch('/Messages?handler=People&q=' + encodeURIComponent(search.value.trim()), {
-                    credentials: 'same-origin',
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
-                })
-                    .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
-                    .then(people => {
-                        if (people.length === 0) {
-                            list.innerHTML = '<p class="hint">Никого не нашлось. ' +
-                                'Справочник сотрудников читается из Active Directory.</p>';
-                            return;
-                        }
-
-                        list.innerHTML = people.map(p =>
-                            `<button class="member-row" type="button" data-login="${esc(p.userName)}" ` +
-                            `data-name="${esc(p.displayName)}">` +
-                            `<div class="avatar" data-av="${avatarIndex(p.displayName)}">${esc(initials(p.displayName))}</div>` +
-                            `<div><b>${esc(p.displayName)}</b><span>${esc(p.userName)}</span></div>` +
-                            (options.multi ? '<span class="member-mark"></span>' : '') +
-                            '</button>').join('');
-
-                        $$('.member-row', list).forEach(row => {
-                            const login = row.dataset.login;
-
-                            if (chosen.has(login)) { row.classList.add('on'); }
-
-                            row.onclick = () => {
-                                if (!options.multi) {
-                                    closeModal();
-                                    options.onPick(login, row.dataset.name);
-                                    return;
-                                }
-
-                                if (chosen.has(login)) {
-                                    chosen.delete(login);
-                                    row.classList.remove('on');
-                                } else {
-                                    chosen.set(login, { userName: login, displayName: row.dataset.name });
-                                    row.classList.add('on');
-                                }
-
-                                paintChosen();
-                            };
-                        });
-                    })
-                    .catch(() => {
-                        list.innerHTML = '<p class="hint">Не удалось получить список сотрудников. ' +
-                            'Возможно, недоступен контроллер домена.</p>';
-                    });
-            };
-
-            // Ждём, пока человек допечатает: запрос уходит в Active Directory,
-            // и дёргать его на каждую букву незачем.
-            let timer = null;
-
-            search.addEventListener('input', () => {
-                clearTimeout(timer);
-                timer = setTimeout(load, 250);
-            });
-
-            setTimeout(() => search.focus(), 60);
-            load();
-
-            if (options.multi) {
-                $('#peopleOk', m).onclick = () => {
-                    if (chosen.size === 0) {
-                        toast('Никто не выбран', 'warn');
-                        return;
-                    }
-
-                    closeModal();
-                    options.onDone([...chosen.keys()], m);
-                };
-            }
-
-            return m;
-        }
-
-        /** Те же буквы и цвет кружка, что считает сервер (см. Avatars). */
-        function initials(name) {
-            const parts = String(name || '').split(/[\s._-]+/).filter(Boolean);
-
-            if (parts.length === 0) { return '?'; }
-
-            return (parts.length === 1 ? parts[0][0] : parts[0][0] + parts[1][0]).toUpperCase();
-        }
-
-        function avatarIndex(name) {
-            let sum = 0;
-
-            for (const c of String(name || '')) {
-                sum = (sum * 31 + c.charCodeAt(0)) & 0x7fffffff;
-            }
-
-            return sum % 8;
-        }
-
         // ---------- Кнопки ----------
         const newDirect = $('#newDirectBtn');
 
@@ -3085,7 +3364,7 @@
                         '<a href="$1" rel="noopener noreferrer" target="_blank">$1</a>');
             }
 
-            setInterval(() => {
+            checkNew = () => {
                 if (document.visibilityState !== 'visible' || busy) { return; }
 
                 busy = true;
@@ -3130,7 +3409,9 @@
                     })
                     .catch(() => { /* связь могла моргнуть — молчим */ })
                     .finally(() => { busy = false; });
-            }, CHECK_MS);
+            };
+
+            setInterval(checkNew, CHECK_MS);
         }
     }
 

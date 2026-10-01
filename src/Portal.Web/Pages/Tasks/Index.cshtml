@@ -1,0 +1,207 @@
+@page
+@model Portal.Web.Pages.Tasks.IndexModel
+@{
+    ViewData["Title"] = "Мои задачи";
+}
+
+<section class="view active tasks-page">
+
+    @if (!string.IsNullOrEmpty(Model.StatusMessage))
+    {
+        <span data-flash="@Model.StatusMessage" data-flash-kind="ok" hidden></span>
+    }
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <span data-flash="@Model.ErrorMessage" data-flash-kind="danger" hidden></span>
+    }
+
+    <div class="view-head">
+        <h2>Мои задачи</h2>
+
+        @* Три списка — тремя ссылками, каждый со своим адресом: «в работе»
+           открывают каждый день, и он должен открываться сразу, без
+           снятия галочек. *@
+        <nav class="seg" aria-label="Какие задачи показывать">
+            <a class="seg-btn@(Model.ViewMode == "active" ? " on" : "")" asp-page="Index">
+                В работе
+                @if (Model.ActiveCount > 0)
+                {
+                    <span class="side-count">@Model.ActiveCount</span>
+                }
+            </a>
+            <a class="seg-btn@(Model.ViewMode == "done" ? " on" : "")" asp-page="Index" asp-route-view="done">
+                <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>Выполненные
+            </a>
+            <a class="seg-btn@(Model.ViewMode == "archive" ? " on" : "")" asp-page="Index" asp-route-view="archive">
+                <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-archive" /></svg>Архив
+            </a>
+        </nav>
+    </div>
+
+    @* Форма добавления стоит вверху и всегда раскрыта: задачу записывают
+       на ходу, и лишнее нажатие «создать» перед каждой записью — это ровно
+       та мелочь, из-за которой список дел перестают вести. *@
+    @if (Model.ViewMode == "active")
+    {
+        <form method="post" asp-page-handler="Create" class="card task-new">
+            <div asp-validation-summary="ModelOnly" class="alert err"></div>
+
+            <div class="task-new-row">
+                <input asp-for="Input.Title" class="task-title" maxlength="300"
+                       placeholder="Что нужно сделать" autocomplete="off" />
+
+                <input asp-for="Input.DueOn" type="date" class="task-due" title="Срок, необязательно" />
+
+                <button class="btn primary" type="submit">
+                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus" /></svg>Добавить
+                </button>
+            </div>
+
+            <span asp-validation-for="Input.Title" class="err"></span>
+
+            <textarea asp-for="Input.Notes" class="task-notes" rows="2" maxlength="4000"
+                      placeholder="Подробности — необязательно"></textarea>
+        </form>
+    }
+
+    @if (Model.Items.Count == 0)
+    {
+        <div class="empty">
+            <svg class="ic" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check-square" /></svg>
+            @if (Model.ViewMode == "done")
+            {
+                <b>Выполненных пока нет</b>
+                <p>Сюда попадают задачи, которые вы отметили галочкой</p>
+            }
+            else if (Model.ViewMode == "archive")
+            {
+                <b>Архив пуст</b>
+                <p>В архив убирают задачи, которые больше не нужны на виду, но и удалять их жалко</p>
+            }
+            else
+            {
+                <b>Задач нет</b>
+                <p>Запишите первую в поле выше — срок можно не ставить</p>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="task-list">
+            @foreach (var card in Model.Items)
+            {
+                var task = card.Task;
+
+                <div class="task-card@(task.IsDone ? " done" : "")@(card.Overdue ? " overdue" : "")">
+
+                    @* Галочка — это форма, а не кнопка с кодом: так она
+                       работает и без JavaScript, и права на неё проверяет
+                       сервер, а не разметка. *@
+                    @if (card.Mine)
+                    {
+                        <form method="post" asp-page-handler="Done" asp-route-id="@task.Id"
+                              asp-route-view="@Model.View" class="task-check-form">
+                            <button class="task-check@(task.IsDone ? " on" : "")" type="submit"
+                                    title="@(task.IsDone ? "Вернуть в работу" : "Отметить выполненной")">
+                                <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
+                            </button>
+                        </form>
+                    }
+                    else
+                    {
+                        <span class="task-check@(task.IsDone ? " on" : "") locked" title="Чужая задача — отмечает её хозяин">
+                            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
+                        </span>
+                    }
+
+                    <div class="task-body">
+                        <div class="task-title-row">
+                            <b>@task.Title</b>
+
+                            @if (task.DueOn is { } due)
+                            {
+                                <span class="task-due-chip@(card.Overdue ? " late" : "")">
+                                    <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(due)
+                                </span>
+                            }
+
+                            @if (!card.Mine)
+                            {
+                                @* Чужая задача: сразу видно, чья она, иначе
+                                   список превращается в кашу из своих и чужих дел. *@
+                                <span class="task-owner">
+                                    <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>@task.OwnerDisplayName
+                                </span>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(task.Notes))
+                        {
+                            <p class="task-notes-text">@task.Notes</p>
+                        }
+
+                        @if (task.Shares.Count > 0)
+                        {
+                            <div class="task-shared">
+                                <span class="hint">Видят:</span>
+                                @foreach (var share in task.Shares)
+                                {
+                                    <span class="chip">
+                                        @share.DisplayName
+                                        @if (card.Mine)
+                                        {
+                                            <button class="chip-x" type="submit" form="unshare-@task.Id-@share.Id"
+                                                    title="Убрать из списка">×</button>
+                                        }
+                                    </span>
+
+                                    @if (card.Mine)
+                                    {
+                                        @* Форма вынесена из разметки фишки: кнопка внутри
+                                           формы внутри формы — недопустимая разметка. *@
+                                        <form method="post" asp-page-handler="Unshare" asp-route-id="@task.Id"
+                                              asp-route-view="@Model.View" id="unshare-@task.Id-@share.Id" hidden>
+                                            <input type="hidden" name="login" value="@share.UserName" />
+                                        </form>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @if (card.Mine)
+                    {
+                        <div class="task-tools">
+                            <button class="icon-btn" type="button" title="Показать коллеге"
+                                    data-share-task="@task.Id" data-task-title="@task.Title">
+                                <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>
+                            </button>
+
+                            <form method="post" asp-page-handler="Archive" asp-route-id="@task.Id"
+                                  asp-route-view="@Model.View" class="head-form">
+                                <button class="icon-btn" type="submit"
+                                        title="@(task.IsArchived ? "Вернуть из архива" : "Убрать в архив")">
+                                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="@(task.IsArchived ? "#i-restore" : "#i-archive")" /></svg>
+                                </button>
+                            </form>
+
+                            <form method="post" asp-page-handler="Delete" asp-route-id="@task.Id"
+                                  asp-route-view="@Model.View" class="head-form">
+                                <button class="icon-btn del" type="submit" data-confirm-action
+                                        data-confirm-text="Удалить задачу «@task.Title»? Восстановить её будет нельзя — если нужно просто убрать с глаз, отправьте её в архив."
+                                        data-confirm-ok="Удалить"
+                                        title="Удалить насовсем">
+                                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash" /></svg>
+                                </button>
+                            </form>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @* Скрытая форма для окна «показать коллеге»: из неё код страницы
+       берёт antiforgery-токен. *@
+    <form method="post" asp-page-handler="Share" hidden></form>
+</section>

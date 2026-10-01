@@ -1572,3 +1572,169 @@ button.pin-btn.on{opacity:1;color:var(--accent)}
    нечитаемым — цвет букв браузер не меняет. */
 mark{background:color-mix(in srgb,var(--warn) 42%,transparent);color:inherit;
   border-radius:3px;padding:0 2px}
+
+/* ======================================================================
+   25. Облегчённый режим и спокойная переписка
+   ====================================================================== */
+
+/* ---------- Переписка: без движения ----------
+
+   В чате анимаций нет и в обычном режиме. Лента сообщений — не витрина:
+   на неё смотрят подолгу, сообщения приходят сами, и каждое всплывающее
+   облачко дёргает взгляд ровно тогда, когда человек читает предыдущее.
+   Наведения и нажатия по-прежнему отзываются — убрано только движение
+   самих сообщений и бесед. */
+.chat-view .msg{animation:none}
+.chat-view .convo,
+.chat-view .b-file,
+.chat-view .zip-row{animation:none}
+
+/* ---------- Облегчённый режим ----------
+
+   Признак lite ставится на <html> до отрисовки (см. theme.js).
+   Снимается то, что дорого рисовать на машине без ускорения графики:
+   движение, размытие, прозрачность, тени. Цвета и расположение
+   не меняются — портал должен выглядеть так же, а не хуже.
+
+   Правила нарочно широкие (!important, * ): цель не в тонкой настройке,
+   а в том, чтобы ни одно украшение не осталось незамеченным — их
+   по странице сотни, и перечислять каждое значило бы однажды забыть. */
+html.lite *,
+html.lite *::before,
+html.lite *::after{
+  animation:none !important;
+  transition:none !important;
+  box-shadow:none !important;
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+  filter:none !important;
+  text-shadow:none !important;
+}
+
+/* Наведение на плитку и карточку поднимало их преобразованием —
+   это самое заметное движение в списках. */
+html.lite .tile:hover,
+html.lite .frow:hover,
+html.lite .ann-card:hover,
+html.lite .pin-card:hover,
+html.lite .send-btn:hover,
+html.lite .notif:hover{transform:none !important}
+
+/* Полупрозрачные карточки на главной: прозрачность поверх фона заставляет
+   браузер пересчитывать слой при каждой прокрутке. В облегчённом режиме
+   они обычные, непрозрачные. */
+html.lite .home .ann-card,
+html.lite .home .pin-card,
+html.lite .home .home-clear{background:var(--surface) !important}
+
+/* Фоновая картинка не показывается вовсе (её выключает и theme.js),
+   но правило оставлено на случай, если слой остался от прежней вкладки. */
+html.lite .bg-layer{display:none !important}
+
+/* Градиенты — там, где они только украшают. Логотип и кнопка отправки
+   остаются цветными, просто одним цветом. */
+html.lite .send-btn,
+html.lite .brand-logo{background:var(--accent) !important}
+
+/* Строка, которую нельзя нажать: выбор фона в облегчённом режиме
+   ничего не делает, и это должно быть видно. */
+.theme-row[disabled]{opacity:.45;pointer-events:none}
+
+/* Перетаскивание файла в переписку: подсвечивается всё окно беседы,
+   потому что целятся именно в него, а не в строку ввода. Надпись
+   рисуется псевдоэлементом — отдельного блока в разметке для неё
+   заводить незачем, он нужен долю секунды. */
+.chat-panel{position:relative}
+.chat-panel.dropping::after{
+  content:"Отпустите — файлы приложатся к сообщению";
+  position:absolute;inset:0;z-index:6;border-radius:15px;
+  border:2px dashed var(--accent);background:var(--accent-soft);
+  display:flex;align-items:center;justify-content:center;
+  color:var(--accent);font-weight:700;font-size:15px;pointer-events:none}
+
+/* Пока сообщение уходит, кнопка отправки притушена. Без этого непонятно,
+   случилось ли что-нибудь после нажатия на медленном канале. */
+.chat-input.sending .send-btn{opacity:.5}
+
+/* ======================================================================
+   26. Мои задачи и личные настройки
+   ====================================================================== */
+
+/* Форма добавления — одной строкой: название, срок, кнопка. Подробности
+   ниже и мельче: их заполняют у одной задачи из пяти. */
+.task-new{margin-bottom:16px}
+.task-new-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+/* Поля формы задачи стоят не внутри .field, а в строку, поэтому вид
+   им задаётся здесь — тот же, что и у остальных полей портала. */
+.task-title,.task-due,.task-notes{border:1px solid var(--border);background:var(--surface2);
+  border-radius:10px;padding:10px 12px;font-size:13.5px;outline:none;transition:.15s;
+  color:var(--text);font-family:inherit}
+.task-title:focus,.task-due:focus,.task-notes:focus{border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-soft);background:var(--surface)}
+.task-title{flex:1;min-width:240px}
+.task-due{width:180px;flex:none}
+.task-notes{margin-top:10px;width:100%;resize:vertical;min-height:46px;display:block}
+
+.task-list{display:flex;flex-direction:column;gap:8px;max-width:980px}
+
+.task-card{display:flex;align-items:flex-start;gap:12px;background:var(--surface);
+  border:1px solid var(--border);border-radius:13px;padding:13px 15px;transition:.15s}
+.task-card:hover{box-shadow:var(--shadow)}
+
+/* Просроченное помечается полосой слева, а не красным текстом: текст
+   задачи должен читаться одинаково, просрочена она или нет. */
+.task-card.overdue{border-color:color-mix(in srgb,var(--danger) 45%,var(--border))}
+.task-card.overdue::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+  border-radius:3px 0 0 3px;background:var(--danger)}
+.task-card{position:relative;overflow:hidden}
+
+/* Выполненная не исчезает и не блёкнет до нечитаемости: её перечёркивают
+   и приглушают ровно настолько, чтобы отличать от работы. */
+.task-card.done .task-title-row b{text-decoration:line-through;color:var(--muted)}
+.task-card.done{opacity:.72}
+
+.task-check-form{flex:none;display:flex}
+.task-check{width:24px;height:24px;flex:none;border-radius:50%;border:2px solid var(--border);
+  background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;
+  color:transparent;transition:.15s;margin-top:1px}
+.task-check:hover{border-color:var(--accent);color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.task-check.on{background:var(--ok);border-color:var(--ok);color:#fff}
+.task-check.locked{cursor:default}
+.task-check.locked:hover{border-color:var(--border);color:transparent}
+.task-check.locked.on:hover{color:#fff}
+
+.task-body{flex:1;min-width:0}
+.task-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.task-title-row b{font-size:14px;overflow-wrap:anywhere}
+
+.task-due-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;
+  padding:2px 8px;border-radius:7px;background:var(--surface2);color:var(--muted)}
+.task-due-chip.late{background:rgba(229,72,77,.12);color:var(--danger)}
+
+.task-owner{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)}
+
+.task-notes-text{font-size:12.5px;color:var(--muted);line-height:1.55;margin-top:4px;
+  white-space:pre-line;overflow-wrap:anywhere}
+
+.task-shared{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
+.task-shared .chip{background:var(--surface2);color:var(--muted);gap:4px}
+.chip-x{background:none;border:none;color:inherit;cursor:pointer;font-size:14px;line-height:1;
+  padding:0 0 0 2px;opacity:.6}
+.chip-x:hover{opacity:1;color:var(--danger)}
+
+.task-tools{display:flex;gap:2px;opacity:0;transition:.15s}
+.task-card:hover .task-tools,.task-tools:focus-within{opacity:1}
+.task-tools .icon-btn{width:30px;height:30px}
+.task-tools .del:hover{color:var(--danger)}
+
+/* Звук по беседам: строка — это форма, поэтому выравнивание задаётся ей. */
+.snd-list{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.snd-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.snd-name{display:flex;align-items:center;gap:7px;flex:1;min-width:180px;font-size:13px;font-weight:600}
+.snd-row .sel{width:160px;flex:none}
+
+@media (max-width:760px){
+  .task-tools{opacity:1}
+  .snd-name{min-width:100%}
+}

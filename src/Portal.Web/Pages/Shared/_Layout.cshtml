@@ -249,6 +249,10 @@
             <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><use href="#i-chat" /></svg>Чат<span class="cnt" id="chatBadge" hidden>0</span>
         </a>
 
+        <a class="nav-item@(Nav("/Tasks"))" asp-page="/Tasks/Index">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check-square" /></svg>Мои задачи<span class="cnt" id="taskBadge" hidden>0</span>
+        </a>
+
         <div class="nav-label">Организация</div>
 
         <a class="nav-item@(Nav("/Announcements"))" asp-page="/Announcements/Index">
@@ -259,6 +263,12 @@
 
         <a class="nav-item@(Nav("/Files/Trash"))" asp-page="/Files/Trash">
             <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash" /></svg>Корзина
+        </a>
+
+        @* Личные настройки — не те, что «Настройка портала» ниже: те про
+           весь портал и видны администратору, эти про себя и видны всем. *@
+        <a class="nav-item@(Nav("/Settings"))" asp-page="/Settings/Index">
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-sliders" /></svg>Настройки
         </a>
 
         @if (isAdmin)
@@ -307,6 +317,9 @@
 <div id="toastRoot"></div>
 <div id="modalRoot"></div>
 
+@* sound.js подключается ДО app.js: оттуда его вызывает проверка
+   новых сообщений. *@
+<script src="~/js/sound.js" asp-append-version="true"></script>
 <script src="~/js/app.js" asp-append-version="true"></script>
 
 @await RenderSectionAsync("Scripts", required: false)

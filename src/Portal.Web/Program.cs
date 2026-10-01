@@ -304,6 +304,10 @@ builder.Services.AddScoped<FolderTree>();
 builder.Services.AddScoped<AuditLog>();
 builder.Services.AddScoped<NotificationService>();
 
+// Личные настройки (звук уведомлений) и задачи.
+builder.Services.AddScoped<Portal.Web.Services.Tasks.UserPreferences>();
+builder.Services.AddScoped<Portal.Web.Services.Tasks.TaskService>();
+
 // Кто в сети. Обращается к базе — Scoped.
 builder.Services.AddScoped<PresenceService>();
 
@@ -621,7 +625,10 @@ app.MapRazorPages();
 // ---------------------------------------------------------------------------
 
 app.MapGet("/api/notifications", async (
-    NotificationService notifications, HttpContext http, CancellationToken cancellationToken) =>
+    NotificationService notifications,
+    Portal.Web.Services.Tasks.TaskService tasks,
+    HttpContext http,
+    CancellationToken cancellationToken) =>
 {
     var user = http.User.Identity?.Name;
 
@@ -630,7 +637,15 @@ app.MapGet("/api/notifications", async (
         return Results.Unauthorized();
     }
 
-    return Results.Ok(await notifications.GetAsync(user, cancellationToken));
+    var summary = await notifications.GetAsync(user, cancellationToken);
+
+    // Число задач в работе берётся здесь, а не внутри службы уведомлений:
+    // задачи к уведомлениям отношения не имеют, им просто по дороге —
+    // страница и так спрашивает этот адрес раз в несколько секунд,
+    // и отдельный запрос ради одного числа был бы лишним.
+    var active = await tasks.ActiveCountAsync(user, cancellationToken);
+
+    return Results.Ok(summary with { Tasks = active });
 });
 
 app.MapPost("/api/notifications/seen", async (

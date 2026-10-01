@@ -40,9 +40,50 @@ public class PortalDbContext : DbContext
     public DbSet<SyncPeerState> SyncPeers => Set<SyncPeerState>();
     public DbSet<PortalSetting> Settings => Set<PortalSetting>();
 
+    public DbSet<UserTask> Tasks => Set<UserTask>();
+    public DbSet<UserTaskShare> TaskShares => Set<UserTaskShare>();
+    public DbSet<UserPreference> Preferences => Set<UserPreference>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<UserTask>(entity =>
+        {
+            // Списки строятся по хозяину задачи и по сроку — по ним и индексы.
+            entity.HasIndex(t => t.OwnerUserName);
+            entity.HasIndex(t => t.DueOn);
+
+            // Срок — это ДАТА, а не момент времени, и колонка у него такая же.
+            //
+            // Это не придирка к типу: PostgreSQL хранит timestamptz в UTC
+            // и требует от драйвера именно UTC-значение, а срок приходит
+            // из поля «дата» формы — без времени и без часового пояса.
+            // На такой паре «срок 3 октября» сохранить невозможно вообще:
+            // запрос падает прямо в драйвере. С типом date вопрос поясов
+            // не возникает — «к пятнице» одинаково пятница везде.
+            entity.Property(t => t.DueOn).HasColumnType("date");
+
+            entity.HasMany(t => t.Shares)
+                .WithOne(share => share.Task!)
+                .HasForeignKey(share => share.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<UserTaskShare>(entity =>
+        {
+            // «Что мне показали» — такой же частый запрос, как «что у меня».
+            entity.HasIndex(share => share.UserName);
+
+            // Один человек в списке один раз: добавить его дважды —
+            // это не ошибка пользователя, это ошибка в коде.
+            entity.HasIndex(share => new { share.TaskId, share.UserName }).IsUnique();
+        });
+
+        modelBuilder.Entity<UserPreference>(entity =>
+        {
+            entity.HasIndex(preference => new { preference.UserName, preference.Name }).IsUnique();
+        });
 
         modelBuilder.Entity<Announcement>(entity =>
         {

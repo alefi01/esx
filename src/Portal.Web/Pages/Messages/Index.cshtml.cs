@@ -271,18 +271,45 @@ public class IndexModel : PageModel
             return Forbid();
         }
 
+        // ОТПРАВКА БЕЗ ПЕРЕЗАГРУЗКИ СТРАНИЦЫ
+        //
+        // Обычная форма отвечала перенаправлением, и после каждой реплики
+        // страница перерисовывалась целиком: лента моргала, прокрутка
+        // прыгала, курсор уходил из поля ввода. В переписке это заметно
+        // сильнее, чем где-либо ещё, — сообщений за разговор десятки.
+        //
+        // Поэтому код страницы отправляет сообщение запросом и получает
+        // короткий ответ, а пузырёк дорисовывает сам — тем же путём,
+        // которым рисуются входящие. Без JavaScript форма работает
+        // по-прежнему: перенаправление никуда не делось.
+        var ajax = string.Equals(
+            Request.Headers.XRequestedWith, "XMLHttpRequest", StringComparison.Ordinal);
+
+        IActionResult Done(string? error)
+        {
+            if (!ajax)
+            {
+                ErrorMessage = error;
+
+                return RedirectToPage(new { id });
+            }
+
+            // Сообщение о беде показывает та же страница, а не следующая:
+            // следующей не будет.
+            return new JsonResult(new { ok = error is null, error });
+        }
+
         var text = (Body ?? "").Trim();
         var files = attachments ?? [];
 
         if (text.Length == 0 && files.Count == 0)
         {
-            return RedirectToPage(new { id });
+            return Done(null);
         }
 
         if (text.Length > 8000)
         {
-            ErrorMessage = "Сообщение слишком длинное.";
-            return RedirectToPage(new { id });
+            return Done("Сообщение слишком длинное.");
         }
 
         var now = _time.GetUtcNow().UtcDateTime;
@@ -347,11 +374,9 @@ public class IndexModel : PageModel
 
         if (message.Body.Length == 0 && message.Files.Count == 0)
         {
-            ErrorMessage = problems.Count > 0
+            return Done(problems.Count > 0
                 ? "Ничего не отправлено: " + string.Join("; ", problems)
-                : "Пустое сообщение.";
-
-            return RedirectToPage(new { id });
+                : "Пустое сообщение.");
         }
 
         _db.Messages.Add(message);
@@ -365,12 +390,9 @@ public class IndexModel : PageModel
         // непрочитанного показывал бы человеку его собственные сообщения.
         await _conversations.MarkReadAsync(id, UserName, cancellationToken);
 
-        if (problems.Count > 0)
-        {
-            ErrorMessage = "Не приложены: " + string.Join("; ", problems);
-        }
-
-        return RedirectToPage(new { id });
+        return Done(problems.Count > 0
+            ? "Не приложены: " + string.Join("; ", problems)
+            : null);
     }
 
     // ==================================================================
