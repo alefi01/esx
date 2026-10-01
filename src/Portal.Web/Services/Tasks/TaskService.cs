@@ -4,12 +4,34 @@ using Portal.Web.Data;
 
 namespace Portal.Web.Services.Tasks;
 
+/// <summary>
+/// Насколько горит задача. Считается по сроку и используется и в цвете
+/// карточки, и в напоминании при входе — чтобы «красное» значило
+/// в обоих местах ровно одно и то же.
+/// </summary>
+public enum TaskUrgency
+{
+    /// <summary>Срока нет или он далеко — больше пяти дней.</summary>
+    Calm = 0,
+
+    /// <summary>Пять дней и меньше.</summary>
+    Soon = 1,
+
+    /// <summary>Три дня и меньше.</summary>
+    Close = 2,
+
+    /// <summary>Завтра, сегодня или уже просрочено.</summary>
+    Now = 3
+}
+
 /// <summary>Задача вместе с тем, что нужно знать о ней странице.</summary>
 /// <param name="Task">Сама задача.</param>
 /// <param name="Mine">Моя ли она — от этого зависит, что с ней можно делать.</param>
 /// <param name="Overdue">Срок вышел, а задача не закрыта.</param>
 /// <param name="SharedWith">Кому она ещё видна, готовой строкой.</param>
-public sealed record TaskCard(UserTask Task, bool Mine, bool Overdue, string SharedWith);
+/// <param name="Urgency">Насколько горит — см. TaskUrgency.</param>
+public sealed record TaskCard(
+    UserTask Task, bool Mine, bool Overdue, string SharedWith, TaskUrgency Urgency);
 
 /// <summary>
 /// Задачи: свои и те, что показали коллеги.
@@ -75,8 +97,67 @@ public sealed class TaskService
                 t,
                 string.Equals(t.OwnerUserName, userName, StringComparison.OrdinalIgnoreCase),
                 t.CompletedAt is null && t.DueOn is { } due && due.Date < today,
-                string.Join(", ", t.Shares.Select(share => share.DisplayName))))
+                string.Join(", ", t.Shares.Select(share => share.DisplayName)),
+                UrgencyOf(t, today)))
             .ToList();
+    }
+
+    /// <summary>
+    /// Насколько горит задача.
+    ///
+    /// Выполненная не горит никогда, даже если срок давно прошёл: она
+    /// сделана, и красный цвет на ней — ложная тревога.
+    /// </summary>
+    public static TaskUrgency UrgencyOf(UserTask task, DateTime today)
+    {
+        if (task.CompletedAt is not null || task.DueOn is not { } due)
+        {
+            return TaskUrgency.Calm;
+        }
+
+        var days = (due.Date - today.Date).Days;
+
+        return days switch
+        {
+            <= 1 => TaskUrgency.Now,
+            <= 3 => TaskUrgency.Close,
+            <= 5 => TaskUrgency.Soon,
+            _ => TaskUrgency.Calm
+        };
+    }
+
+    /// <summary>
+    /// О чём напомнить при входе: СВОИ несделанные задачи, до срока которых
+    /// остался день или меньше.
+    ///
+    /// Только свои и только самые срочные. Напоминание, которое показывают
+    /// на каждый вход, живёт ровно до тех пор, пока его читают: стоит
+    /// добавить в него «через пять дней» и чужие задачи — и его начинают
+    /// закрывать не глядя, вместе с тем, что горит по-настоящему.
+    /// </summary>
+    public async Task<IReadOnlyList<UserTask>> UrgentAsync(
+        string userName, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(userName))
+        {
+            return [];
+        }
+
+        // Границу считаем на сервере и сравниваем с датой: DueOn — колонка
+        // date, и сравнение с ней идёт по дате, без часовых поясов.
+        var edge = DateTime.Now.Date.AddDays(1);
+
+        var list = await _db.Tasks
+            .Where(t => t.OwnerUserName.ToLower() == userName.ToLower()
+                        && t.CompletedAt == null
+                        && t.ArchivedAt == null
+                        && t.DueOn != null
+                        && t.DueOn <= edge)
+            .OrderBy(t => t.DueOn)
+            .Take(5)
+            .ToListAsync(cancellationToken);
+
+        return list;
     }
 
     /// <summary>Сколько задач в работе — число рядом с пунктом меню.</summary>

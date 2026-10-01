@@ -1682,12 +1682,37 @@ html.lite .brand-logo{background:var(--accent) !important}
   border:1px solid var(--border);border-radius:13px;padding:13px 15px;transition:.15s}
 .task-card:hover{box-shadow:var(--shadow)}
 
-/* Просроченное помечается полосой слева, а не красным текстом: текст
-   задачи должен читаться одинаково, просрочена она или нет. */
-.task-card.overdue{border-color:color-mix(in srgb,var(--danger) 45%,var(--border))}
-.task-card.overdue::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
-  border-radius:3px 0 0 3px;background:var(--danger)}
+/* Срок помечается полосой слева и цветом чипа, а не заливкой карточки:
+   заливка делает список пёстрым, и когда горит половина задач, не видно
+   уже ничего. Три ступени: пять дней — жёлтая, три — красная, день
+   и меньше — красная, и название жирнее. */
 .task-card{position:relative;overflow:hidden}
+.task-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+  border-radius:3px 0 0 3px;background:transparent}
+
+.task-card.urgent-soon::before{background:var(--warn)}
+.task-card.urgent-soon{border-color:color-mix(in srgb,var(--warn) 45%,var(--border))}
+
+.task-card.urgent-close::before,
+.task-card.urgent-now::before,
+.task-card.overdue::before{background:var(--danger)}
+.task-card.urgent-close,
+.task-card.urgent-now,
+.task-card.overdue{border-color:color-mix(in srgb,var(--danger) 45%,var(--border))}
+
+/* Последний день — единственное, что выделяется шрифтом. Если выделять
+   жирным и «через три дня», жирным станет весь список. */
+.task-card.urgent-now .task-title-row b{font-weight:800}
+
+.task-due-chip.urgent-soon{background:rgba(224,168,0,.14);color:var(--warn)}
+.task-due-chip.urgent-close,
+.task-due-chip.urgent-now{background:rgba(229,72,77,.12);color:var(--danger)}
+.task-due-chip.urgent-now{font-weight:700}
+
+/* Выполненная не горит: сделана — значит сделана, и красная полоса
+   на ней только мешает. */
+.task-card.done::before{background:transparent}
+.task-card.done{border-color:var(--border)}
 
 /* Выполненная не исчезает и не блёкнет до нечитаемости: её перечёркивают
    и приглушают ровно настолько, чтобы отличать от работы. */
@@ -1738,3 +1763,25 @@ html.lite .brand-logo{background:var(--accent) !important}
   .task-tools{opacity:1}
   .snd-name{min-width:100%}
 }
+
+/* ---------- Облегчённый режим: вес страницы ----------
+
+   Кроме движения и теней режим снимает и то, что приходится ЗАГРУЖАТЬ.
+   На медленном канале это важнее: ждут не отрисовки, а передачи.
+
+   Свой шрифт — первое, от чего отказываемся. Пять начертаний Inter это
+   полторы сотни килобайт при первом заходе, а системный шрифт Windows
+   уже на машине и выглядит в этом наборе размеров почти так же. */
+html.lite body,
+html.lite button,
+html.lite input,
+html.lite textarea,
+html.lite select{
+  font-family:'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif !important}
+
+/* Скруглённые углы, полосы и обводки остаются: они ничего не стоят.
+   А вот фоновые градиенты на крупных поверхностях заставляют браузер
+   перерисовывать их при каждой прокрутке. */
+html.lite .home-top,
+html.lite .view,
+html.lite .main{background-image:none !important}

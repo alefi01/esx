@@ -446,6 +446,36 @@ builder.Services.AddRazorPages(options =>
     options.Conventions.AuthorizePage("/Announcements/Delete", PortalPolicies.PublishAnnouncements);
 });
 
+// ---------------------------------------------------------------------------
+// Сжатие ответов.
+//
+// ЗАЧЕМ. Стили и код страницы весят вместе около трёхсот килобайт. В одной
+// сети с сервером это незаметно, а на канале между офисами — секунды
+// ожидания при каждом первом заходе. Сжатие уменьшает их примерно вчетверо.
+//
+// IIS сжимает статику сам, но только ту, которую отдаёт сам же. Файлы
+// портала отдаёт приложение, и до них встроенное сжатие IIS не доходит —
+// поэтому оно включается здесь.
+//
+// EnableForHttps включён намеренно. Общее правило «не сжимать под HTTPS»
+// защищает от атаки BREACH: она позволяет по размеру ответа подбирать
+// секреты в теле страницы, но для этого нужен злоумышленник, который
+// умеет заставлять браузер жертвы слать запросы и при этом видит их
+// размеры, — то есть уже находится внутри сети. Для внутреннего портала
+// это несоразмерно тому, что без сжатия по HTTPS каждая страница снова
+// станет весить втрое больше.
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+
+    options.MimeTypes =
+    [
+        "text/html", "text/css", "text/plain", "text/xml",
+        "application/javascript", "text/javascript",
+        "application/json", "image/svg+xml"
+    ];
+});
+
 var app = builder.Build();
 
 // ---------------------------------------------------------------------------
@@ -575,7 +605,29 @@ app.Use(async (context, next) =>
     await next();
 });
 
-app.UseStaticFiles();
+// Сжатие стоит ДО отдачи файлов: иначе сжимать будет уже нечего.
+app.UseResponseCompression();
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        // Стили, код страниц и значки подключаются с отпечатком в адресе
+        // (asp-append-version), то есть при любой правке адрес меняется.
+        // Значит, старый можно кэшировать надолго и не спрашивать о нём
+        // вовсе: на канале между офисами это убирает с каждого перехода
+        // по странице добрую сотню килобайт.
+        //
+        // Год и immutable — обычная практика для файлов с отпечатком.
+        // Файлы БЕЗ отпечатка (их открывают по прямой ссылке) кэшируются
+        // на час: ошибиться на час не страшно, а трафик всё равно экономит.
+        var versioned = context.Context.Request.Query.ContainsKey("v");
+
+        context.Context.Response.Headers.CacheControl = versioned
+            ? "public, max-age=31536000, immutable"
+            : "public, max-age=3600";
+    }
+});
 
 app.UseRouting();
 
@@ -645,7 +697,27 @@ app.MapGet("/api/notifications", async (
     // и отдельный запрос ради одного числа был бы лишним.
     var active = await tasks.ActiveCountAsync(user, cancellationToken);
 
-    return Results.Ok(summary with { Tasks = active });
+    // Задачи, у которых срок завтра или уже прошёл, — о них портал
+    // напоминает один раз за день, когда человек открывает его.
+    var urgent = await tasks.UrgentAsync(user, cancellationToken);
+
+    var today = DateTime.Now.Date;
+
+    return Results.Ok(new
+    {
+        summary.Unread,
+        summary.Announcements,
+        summary.Messages,
+        summary.Items,
+        Tasks = active,
+        UrgentTasks = urgent.Select(t => new
+        {
+            t.Id,
+            t.Title,
+            Due = Portal.Web.Pages.Tasks.IndexModel.DueText(t.DueOn!.Value),
+            Late = t.DueOn!.Value.Date < today
+        })
+    });
 });
 
 app.MapPost("/api/notifications/seen", async (

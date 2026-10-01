@@ -7,97 +7,12 @@
 @*
     Личные настройки. Всё, что здесь есть, касается только того, кто
     открыл страницу: коллеги ничего из этого не заметят.
-
-    Страница разделена по тому, ГДЕ живёт настройка: звуки и уведомления
-    привязаны к человеку и работают с любой машины, облегчённый режим —
-    к машине, потому что слабый компьютер это машина, а не человек.
 *@
 <section class="view active set-page" data-personal-settings>
 
     <div class="view-head">
         <h2>Настройки</h2>
         <span class="hint">Только для вас — у коллег останется как было</span>
-    </div>
-
-    @if (!string.IsNullOrEmpty(Model.StatusMessage))
-    {
-        <span data-flash="@Model.StatusMessage" data-flash-kind="ok" hidden></span>
-    }
-
-    <div class="card set-card">
-        <div class="set-head">
-            <h2>Звук новых сообщений</h2>
-        </div>
-
-        <form method="post" asp-page-handler="Sound" class="set-row snd-row">
-            <div class="field set-field">
-                <label for="defaultSound">Для всех бесед</label>
-                <select class="sel" id="defaultSound" name="sound" data-sound-pick>
-                    @foreach (var sound in Model.Sounds)
-                    {
-                        <option value="@sound.Id" selected="@(sound.Id == Model.DefaultSound)">@sound.Name</option>
-                    }
-                </select>
-            </div>
-
-            <button class="btn" type="button" data-sound-play="defaultSound">
-                <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-sound" /></svg>Прослушать
-            </button>
-
-            <button class="btn primary" type="submit">Сохранить</button>
-
-            <p class="hint set-note">
-                Звук собирается самим браузером, звуковых файлов портал не качает —
-                в сети без интернета это важнее, чем выбор из сорока мелодий.
-                <br />
-                Браузер молчит, пока на странице ничего не нажимали: это его защита
-                от сайтов, которые начинают играть сами. Нажмите «Прослушать» —
-                дальше звук будет приходить и без этого.
-            </p>
-        </form>
-    </div>
-
-    <div class="card set-card">
-        <div class="set-head">
-            <h2>Звук для отдельных бесед</h2>
-            <span class="set-now">перебивает общий</span>
-        </div>
-
-        @if (Model.Conversations.Count == 0)
-        {
-            <p class="hint">Бесед пока нет. Настроить звук для кого-то отдельно можно будет,
-                когда появится переписка.</p>
-        }
-        else
-        {
-            <div class="snd-list">
-                @foreach (var conversation in Model.Conversations)
-                {
-                    <form method="post" asp-page-handler="Sound" class="snd-row">
-                        <input type="hidden" name="conversationId" value="@conversation.Id" />
-
-                        <span class="snd-name">
-                            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="@(conversation.IsGroup ? "#i-users" : "#i-chat")" /></svg>
-                            @conversation.Title
-                        </span>
-
-                        <select class="sel" name="sound" id="snd@(conversation.Id)" data-sound-pick>
-                            <option value="" selected="@(conversation.Sound.Length == 0)">Как у всех</option>
-                            @foreach (var sound in Model.Sounds)
-                            {
-                                <option value="@sound.Id" selected="@(sound.Id == conversation.Sound)">@sound.Name</option>
-                            }
-                        </select>
-
-                        <button class="icon-btn" type="button" data-sound-play="snd@(conversation.Id)" title="Прослушать">
-                            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-sound" /></svg>
-                        </button>
-
-                        <button class="btn sm" type="submit">Сохранить</button>
-                    </form>
-                }
-            </div>
-        }
     </div>
 
     <div class="card set-card">
@@ -110,16 +25,6 @@
             <button class="btn" type="button" id="notifyAsk">
                 <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-bell" /></svg>Разрешить уведомления
             </button>
-
-            <p class="hint set-note">
-                Пока портал открыт хотя бы в одной вкладке, о новых сообщениях и объявлениях
-                будет сообщать сам Windows — всплывающим окошком в углу экрана, даже когда
-                вы работаете в другой программе. Вкладку при этом можно свернуть,
-                но не закрывать: закрытая вкладка ничего не проверяет.
-                <br />
-                Если браузер запрещает спрашивать, разрешение выдаётся вручную:
-                значок замка слева в адресной строке — «Уведомления» — «Разрешить».
-            </p>
         </div>
     </div>
 
@@ -132,19 +37,8 @@
         <div class="set-row">
             <label class="fs-check">
                 <input type="checkbox" id="liteMode" />
-                <span>Без движения, размытия и теней</span>
+                <span>Для слабых компьютеров и медленной сети</span>
             </label>
-
-            <p class="hint set-note">
-                Помогает, если портал подтормаживает при прокрутке списка файлов
-                и при открытии окон. Снимается всё, что рисуется впустую: плавное
-                появление плиток, размытая картинка под рабочей областью,
-                полупрозрачные карточки, тени. Цвета и расположение не меняются.
-                <br />
-                Настройка хранится <strong>в этом браузере</strong>, а не в учётной записи:
-                слабый компьютер — это машина, а не человек, и на новой машине
-                включать её заново незачем.
-            </p>
         </div>
     </div>
 

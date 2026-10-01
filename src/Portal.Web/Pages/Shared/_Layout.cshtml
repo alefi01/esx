@@ -16,10 +16,11 @@
     var isAdmin = User.IsInRole(adminGroup);
     var signedIn = User.Identity?.IsAuthenticated == true;
 
-    // Занятое место для карточки внизу меню. Значение общее для всех
-    // и лежит в памяти минуту, поэтому запроса к базе на каждой странице
-    // здесь нет — см. комментарий в StorageUsage.
-    var usage = signedIn
+    // Занятое место для карточки внизу меню. Считается только для
+    // администратора — только он эту карточку и видит; остальным незачем
+    // даже спрашивать. Значение общее для всех и лежит в памяти минуту,
+    // поэтому запроса к базе на каждой странице здесь нет — см. StorageUsage.
+    var usage = signedIn && isAdmin
         ? await Usage.GetAsync(Context.RequestAborted)
         : new StorageUsageInfo(0, 0, 0, Known: false);
 
@@ -290,16 +291,23 @@
             </a>
         }
 
-        @* Карточка «сколько занято». Общий объём задаётся настройкой
-           Storage:TotalCapacityGb; портал по ней ничего не запрещает —
-           она нужна, чтобы цифру было с чем сравнить. *@
-        <div class="storage-card">
-            <b>💾 Хранилище</b>
-            <p id="storageText">@usage.Caption</p>
-            @* Ширину полосы проставляет код страницы по data-percent:
-               встроенные стили запрещены политикой безопасности. *@
-            <div class="bar"><i id="storageBar" data-percent="@((int)Math.Round(usage.Fraction * 100))"></i></div>
-        </div>
+        @* Карточка «сколько занято» — только администратору.
+           Общий объём задаётся настройкой Storage:TotalCapacityGb; портал
+           по ней ничего не запрещает, она нужна, чтобы цифру было с чем
+           сравнить. Остальным это число ни о чём не говорит и ничего
+           им не даёт: место они не распределяют и повлиять на него
+           не могут — зато «осталось 12 ГБ» внизу экрана тревожит каждого,
+           кто собирался что-то загрузить. *@
+        @if (isAdmin)
+        {
+            <div class="storage-card">
+                <b>💾 Хранилище</b>
+                <p id="storageText">@usage.Caption</p>
+                @* Ширину полосы проставляет код страницы по data-percent:
+                   встроенные стили запрещены политикой безопасности. *@
+                <div class="bar"><i id="storageBar" data-percent="@((int)Math.Round(usage.Fraction * 100))"></i></div>
+            </div>
+        }
     </aside>
 
     <main class="main">

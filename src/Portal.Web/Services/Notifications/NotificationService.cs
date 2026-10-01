@@ -10,13 +10,10 @@ namespace Portal.Web.Services.Notifications;
 /// <param name="Author">Кто.</param>
 /// <param name="At">Когда, в местном времени.</param>
 /// <param name="Url">Куда вести по нажатию.</param>
-/// <param name="Sound">
-/// Каким звуком сообщить об этом событии. Выбирается ЗДЕСЬ, а не в браузере:
-/// настройка «от этой беседы звонок, от остальных тишина» живёт в базе,
-/// и тащить её на страницу целиком ради одного проигрывания незачем.
-/// </param>
+/// <param name="Sound">Каким звуком сообщить о событии. Сигнал один на всё.</param>
 public sealed record NotificationItem(
-    string Kind, int Id, string Title, string Author, DateTime At, string Url, string Sound = "");
+    string Kind, int Id, string Title, string Author, DateTime At, string Url,
+    string Sound = Portal.Web.Services.Tasks.UserPreferences.MessageSound);
 
 /// <summary>Сводка непрочитанного для одного человека.</summary>
 /// <param name="Unread">Всего непрочитанного — число на колокольчике.</param>
@@ -69,31 +66,9 @@ public sealed class NotificationService
     /// хранится номер последнего прочитанного сообщения, непрочитанное —
     /// это всё, что новее. Своё написанное в счёт не идёт.
     /// </summary>
-    /// <summary>
-    /// Звук для беседы: своя настройка, если задана, иначе общая, иначе
-    /// принятая по умолчанию. «none» означает «молча» и тоже является
-    /// настройкой — поэтому проверяется наличие ключа, а не пустота.
-    /// </summary>
-    private static string SoundFor(IReadOnlyDictionary<string, string> settings, int conversationId)
-    {
-        if (settings.TryGetValue(Portal.Web.Services.Tasks.UserPreferences.SoundFor(conversationId), out var own)
-            && own.Length > 0)
-        {
-            return own;
-        }
-
-        return settings.TryGetValue(Portal.Web.Services.Tasks.UserPreferences.MessageSound, out var common)
-               && common.Length > 0
-            ? common
-            : "soft";
-    }
-
     private async Task<(int Unread, List<NotificationItem> Items)> MessagesAsync(
         string userName, CancellationToken cancellationToken)
     {
-        // Личные настройки звука — одним запросом на всю проверку.
-        var settings = await _preferences.AllAsync(userName, cancellationToken);
-
         var mine = await _db.Participants
             .Where(p => p.UserName.ToLower() == userName.ToLower())
             .Select(p => new { p.ConversationId, p.LastReadMessageId })
@@ -140,8 +115,7 @@ public sealed class NotificationService
                 m.IsGroup && !string.IsNullOrWhiteSpace(m.Title) ? m.Title : m.AuthorDisplayName,
                 m.AuthorDisplayName,
                 m.CreatedAt.ToLocalTime(),
-                "/Messages?id=" + m.ConversationId,
-                SoundFor(settings, m.ConversationId)))
+                "/Messages?id=" + m.ConversationId))
             .ToList();
 
         return (unread.Count, items);
@@ -192,16 +166,10 @@ public sealed class NotificationService
 
         var (unreadMessages, messageItems) = await MessagesAsync(userName, cancellationToken);
 
-        var announcementSound = (await _preferences.AllAsync(userName, cancellationToken))
-            .TryGetValue(Portal.Web.Services.Tasks.UserPreferences.MessageSound, out var common)
-            && common.Length > 0
-                ? common
-                : "soft";
-
         var items = announcements
             .Select(a => new NotificationItem(
                 "announcement", a.Id, a.Title, a.AuthorDisplayName, a.CreatedAt.ToLocalTime(),
-                "/Announcements", announcementSound))
+                "/Announcements"))
             .Concat(messageItems)
             .OrderByDescending(i => i.At)
             .Take(MaxItems)

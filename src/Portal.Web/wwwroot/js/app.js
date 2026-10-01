@@ -840,8 +840,17 @@
 
         if (!bell || !panel) { return; }
 
-        /** Как часто спрашиваем. Семь секунд — «сразу» на глаз, но не поток запросов. */
-        const POLL_MS = 7000;
+        /**
+         * Как часто спрашиваем. Семь секунд — «сразу» на глаз, но не поток
+         * запросов.
+         *
+         * В облегчённом режиме — вчетверо реже. Он включается там, где
+         * канал узкий, а фоновый опрос на таком канале соперничает
+         * с самими страницами: человек ждёт открытия папки, пока портал
+         * в это же время спрашивает про уведомления.
+         */
+        const lite = window.portalTheme && window.portalTheme.lite();
+        const POLL_MS = lite ? 30000 : 7000;
 
         // Что уже показывали всплывающим сообщением — чтобы не показывать
         // одно и то же каждую минуту. Живёт до перезагрузки страницы.
@@ -911,6 +920,10 @@
                     .catch(() => toast('Не удалось отметить прочитанным', 'warn'));
             };
 
+            // Задачи, у которых срок на исходе. Напоминание показывается
+            // раз в день — см. remindTasks.
+            remindTasks(data.urgentTasks || []);
+
             // При первой проверке всплывающих сообщений не показываем:
             // человек только что открыл страницу, и непрочитанное для него
             // не новость, а просто счётчик на колокольчике.
@@ -936,11 +949,7 @@
 
                 toast(what + n.title, 'info');
 
-                // Звук — тот, который человек выбрал для этой беседы
-                // (его подбирает сервер, см. NotificationService).
-                if (window.portalSound && n.sound && n.sound !== 'none') {
-                    window.portalSound.play(n.sound);
-                }
+                if (window.portalSound) { window.portalSound.play('soft'); }
 
                 // И окошко самой системы — но только если портал не на виду:
                 // человеку, который и так смотрит в портал, хватает всплывашки
@@ -953,6 +962,46 @@
                         n.title + (n.author && n.author !== n.title ? ' — ' + n.author : ''),
                         n.url);
                 }
+            });
+        }
+
+        /**
+         * Напоминание о горящих задачах — тех, до срока которых остался
+         * день или меньше.
+         *
+         * Показывается ОДИН РАЗ В ДЕНЬ на вкладку, а не при каждом опросе
+         * и не на каждой странице: напоминание, которое выскакивает
+         * по десять раз за утро, перестают читать к обеду, и вместе с ним
+         * перестают читать всё остальное. День выбран как единица потому,
+         * что и сами сроки здесь измеряются днями.
+         */
+        function remindTasks(urgent) {
+            if (urgent.length === 0) { return; }
+
+            const KEY = 'portal.tasksRemindedOn';
+            const today = new Date().toISOString().slice(0, 10);
+
+            try {
+                if (sessionStorage.getItem(KEY) === today) { return; }
+
+                sessionStorage.setItem(KEY, today);
+            } catch (error) {
+                // Память браузера недоступна — лучше напомнить лишний раз,
+                // чем не напомнить вовсе.
+            }
+
+            urgent.forEach((task, index) => {
+                // Вразбивку: пять всплывашек разом встают стопкой и читаются
+                // как одна. Полсекунды между ними достаточно, чтобы заметить
+                // каждую.
+                setTimeout(() => {
+                    toast(
+                        (task.late ? 'Задача просрочена: ' : 'Срок задачи — ' + task.due + ': ')
+                            + task.title,
+                        task.late ? 'danger' : 'warn',
+                        'Открыть',
+                        () => { window.location.href = '/Tasks'; });
+                }, index * 500);
             });
         }
 
@@ -2487,22 +2536,6 @@
 
         if (!page) { return; }
 
-        // «Прослушать»: заодно это первое нажатие на странице, после
-        // которого браузер вообще разрешает звук.
-        $$('[data-sound-play]', page).forEach(button => {
-            button.onclick = () => {
-                const select = $('#' + button.dataset.soundPlay, page);
-                const value = select ? select.value : '';
-
-                if (!value || value === 'none') {
-                    toast('Этот вариант — без звука', 'info');
-                    return;
-                }
-
-                window.portalSound.play(value);
-            };
-        });
-
         // ---------- Уведомления системы ----------
         const state = $('#notifyState', page);
         const ask = $('#notifyAsk', page);
@@ -3304,7 +3337,8 @@
         // и рвётся, а висящее соединение там регулярно обрывается —
         // см. те же соображения в PresenceService.
         if (conversationId) {
-            const CHECK_MS = 5000;
+            // В облегчённом режиме реже: см. ту же причину у колокольчика.
+            const CHECK_MS = window.portalTheme && window.portalTheme.lite() ? 15000 : 5000;
 
             let lastId = parseInt(settings.lastMessage, 10) || 0;
             let busy = false;

@@ -81,7 +81,6 @@
             else
             {
                 <b>Задач нет</b>
-                <p>Запишите первую в поле выше — срок можно не ставить</p>
             }
         </div>
     }
@@ -92,7 +91,19 @@
             {
                 var task = card.Task;
 
-                <div class="task-card@(task.IsDone ? " done" : "")@(card.Overdue ? " overdue" : "")">
+                var urgency = card.Urgency switch
+                {
+                    Portal.Web.Services.Tasks.TaskUrgency.Now => " urgent-now",
+                    Portal.Web.Services.Tasks.TaskUrgency.Close => " urgent-close",
+                    Portal.Web.Services.Tasks.TaskUrgency.Soon => " urgent-soon",
+                    _ => ""
+                };
+
+                @* Цвет по сроку: за пять дней — жёлтая полоса, за три — красная,
+                   за день и позже — красная с жирным названием. Полосой и чипом,
+                   а не заливкой всей карточки: заливка делает список пёстрым,
+                   и когда горит половина задач, не видно уже ничего. *@
+                <div class="task-card@(task.IsDone ? " done" : "")@(card.Overdue ? " overdue" : "")@urgency">
 
                     @* Галочка — это форма, а не кнопка с кодом: так она
                        работает и без JavaScript, и права на неё проверяет
@@ -120,7 +131,7 @@
 
                             @if (task.DueOn is { } due)
                             {
-                                <span class="task-due-chip@(card.Overdue ? " late" : "")">
+                                <span class="task-due-chip@(card.Overdue ? " late" : "")@urgency">
                                     <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(due)
                                 </span>
                             }
