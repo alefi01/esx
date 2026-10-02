@@ -17,19 +17,21 @@
  */
 
 /* ======================================================================
-   Шрифт
+   Шрифт Inter
 
-   Макет нарисован в Inter, но файлов шрифта в wwwroot/fonts нет, а в сети
-   заказчика нет интернета, чтобы взять их с CDN. Пока их нет, @font-face
-   только заставлял каждый браузер дважды сходить за несуществующим файлом
-   и всё равно откатиться на системный шрифт — поэтому объявления убраны.
+   Макет нарисован в Inter. Файлы шрифта лежат рядом, в wwwroot/fonts,
+   и подключаются отсюда: в вашей сети нет интернета, и подключить шрифт
+   с CDN, как это сделано в макете, невозможно.
 
-   Чтобы вернуть Inter: положите inter-400/500/600/700/800.woff2 в
-   wwwroot/fonts (как это сделать, написано в docs/12-этап-7-макет.md),
-   верните сюда пять строк @font-face и впишите 'Inter' первым значением
-   в font-family у body ниже. Заодно верните и правило для html.lite,
-   которое от своего шрифта отказывалось.
+   Если файлов на месте нет, портал возьмёт системный шрифт (Segoe UI).
+   Ничего не сломается — только начертание букв будет другим.
+   Какие файлы нужны и где их взять, написано в docs/12-этап-7-макет.md.
    ====================================================================== */
+@font-face{font-family:'Inter';src:url('/fonts/inter-400.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Inter';src:url('/fonts/inter-500.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:'Inter';src:url('/fonts/inter-600.woff2') format('woff2');font-weight:600;font-style:normal;font-display:swap}
+@font-face{font-family:'Inter';src:url('/fonts/inter-700.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:'Inter';src:url('/fonts/inter-800.woff2') format('woff2');font-weight:800;font-style:normal;font-display:swap}
 
 /* ======================================================================
    1. Переменные оформления и основа
@@ -54,7 +56,7 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
-body{font-family:'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif;background:var(--bg);color:var(--text);overflow:hidden;transition:background .3s,color .3s}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);overflow:hidden;transition:background .3s,color .3s}
 ::-webkit-scrollbar{width:9px;height:9px}
 ::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:8px;border:2px solid transparent;background-clip:content-box}
 ::-webkit-scrollbar-thumb:hover{background:var(--muted);border:2px solid transparent;background-clip:content-box}
@@ -1767,9 +1769,15 @@ html.lite .brand-logo{background:var(--accent) !important}
    Кроме движения и теней режим снимает и то, что приходится ЗАГРУЖАТЬ.
    На медленном канале это важнее: ждут не отрисовки, а передачи.
 
-   Отказ от своего шрифта здесь был бы первым делом, но портал и в обычном
-   режиме идёт на системном (см. раздел «Шрифт» наверху), так что отнимать
-   уже нечего. Если Inter вернут — верните и правило, снимающее его тут. */
+   Свой шрифт — первое, от чего отказываемся. Пять начертаний Inter это
+   полторы сотни килобайт при первом заходе, а системный шрифт Windows
+   уже на машине и выглядит в этом наборе размеров почти так же. */
+html.lite body,
+html.lite button,
+html.lite input,
+html.lite textarea,
+html.lite select{
+  font-family:'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif !important}
 
 /* Скруглённые углы, полосы и обводки остаются: они ничего не стоят.
    А вот фоновые градиенты на крупных поверхностях заставляют браузер
