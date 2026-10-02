@@ -33,6 +33,7 @@ public class IndexModel : PageModel
     private readonly UploadValidator _validator;
     private readonly AuditLog _audit;
     private readonly PresenceService _presence;
+    private readonly Portal.Web.Services.Notifications.NotificationHub _hub;
     private readonly StorageOptions _storageOptions;
     private readonly ActiveDirectoryOptions _ad;
     private readonly TimeProvider _time;
@@ -46,6 +47,7 @@ public class IndexModel : PageModel
         UploadValidator validator,
         AuditLog audit,
         PresenceService presence,
+        Portal.Web.Services.Notifications.NotificationHub hub,
         IOptions<StorageOptions> storageOptions,
         IOptions<ActiveDirectoryOptions> ad,
         TimeProvider time,
@@ -58,6 +60,7 @@ public class IndexModel : PageModel
         _validator = validator;
         _audit = audit;
         _presence = presence;
+        _hub = hub;
         _storageOptions = storageOptions.Value;
         _ad = ad.Value;
         _time = time;
@@ -389,6 +392,18 @@ public class IndexModel : PageModel
         // Своё отправленное сразу считается прочитанным — иначе счётчик
         // непрочитанного показывал бы человеку его собственные сообщения.
         await _conversations.MarkReadAsync(id, UserName, cancellationToken);
+
+        // Будим страницы собеседников.
+        //
+        // Себя в список не включаем: своё сообщение человек и так видит —
+        // страница дорисовывает его сама, сразу после отправки.
+        //
+        // Делается ПОСЛЕ сохранения: разбуженная страница тут же спросит
+        // сервер, что нового, и должна увидеть уже записанное сообщение,
+        // а не пустоту.
+        _hub.Notify(conversation.Participants
+            .Select(p => p.UserName)
+            .Where(name => !string.Equals(name, UserName, StringComparison.OrdinalIgnoreCase)));
 
         return Done(problems.Count > 0
             ? "Не приложены: " + string.Join("; ", problems)

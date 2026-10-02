@@ -15,6 +15,7 @@ public class CreateModel : PageModel
     private readonly PortalDbContext _db;
     private readonly Portal.Web.Services.Announcements.AnnouncementStorage _storage;
     private readonly Portal.Web.Services.Storage.UploadValidator _validator;
+    private readonly Portal.Web.Services.Notifications.NotificationHub _hub;
     private readonly TimeProvider _time;
     private readonly ILogger<CreateModel> _logger;
 
@@ -22,12 +23,14 @@ public class CreateModel : PageModel
         PortalDbContext db,
         Portal.Web.Services.Announcements.AnnouncementStorage storage,
         Portal.Web.Services.Storage.UploadValidator validator,
+        Portal.Web.Services.Notifications.NotificationHub hub,
         TimeProvider time,
         ILogger<CreateModel> logger)
     {
         _db = db;
         _storage = storage;
         _validator = validator;
+        _hub = hub;
         _time = time;
         _logger = logger;
     }
@@ -84,6 +87,11 @@ public class CreateModel : PageModel
         {
             _db.Announcements.Add(announcement);
             await _db.SaveChangesAsync(cancellationToken);
+
+            // Объявление касается всех, поэтому будим все открытые страницы:
+            // кому оно новое, тот и услышит — остальным сервер в ответ
+            // на проверку скажет, что нового для них нет.
+            _hub.NotifyAll();
 
             // Вложения сохраняем ПОСЛЕ объявления: до сохранения у него
             // нет номера, а номер нужен для папки на диске.

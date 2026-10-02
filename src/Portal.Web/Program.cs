@@ -304,6 +304,10 @@ builder.Services.AddScoped<FolderTree>();
 builder.Services.AddScoped<AuditLog>();
 builder.Services.AddScoped<NotificationService>();
 
+// Шина «у вас что-то новое». Одна на весь процесс: она держит открытые
+// соединения страниц, а они живут дольше любого запроса.
+builder.Services.AddSingleton<NotificationHub>();
+
 // Личные настройки (звук уведомлений) и задачи.
 builder.Services.AddScoped<Portal.Web.Services.Tasks.UserPreferences>();
 builder.Services.AddScoped<Portal.Web.Services.Tasks.TaskService>();
@@ -718,6 +722,96 @@ app.MapGet("/api/notifications", async (
             Late = t.DueOn!.Value.Date < today
         })
     });
+});
+
+// ---------------------------------------------------------------------------
+// Поток событий: сервер сам сообщает странице, что ей пора обновиться.
+//
+// Нужен для одного случая, но важного: браузер свёрнут, человек работает
+// в другой программе. В этом состоянии браузер придушивает таймеры фоновых
+// вкладок до одного срабатывания в минуту, и опрос перестаёт быть опросом.
+// Приходящие по сети данные он так не придерживает — поэтому о новом
+// сообщении страница узнаёт отсюда мгновенно.
+//
+// Формат — обычный text/event-stream: его понимает сам браузер (EventSource),
+// и ничего, кроме HTTP, здесь не используется. Соединение рвётся — браузер
+// переподключается сам, а опрос по таймеру остаётся запасным путём.
+// ---------------------------------------------------------------------------
+
+app.MapGet("/api/notifications/stream", async (
+    NotificationHub hub, HttpContext http, CancellationToken cancellationToken) =>
+{
+    var user = http.User.Identity?.Name;
+
+    if (string.IsNullOrEmpty(user))
+    {
+        return Results.Unauthorized();
+    }
+
+    var response = http.Response;
+
+    response.ContentType = "text/event-stream";
+    response.Headers.CacheControl = "no-cache, no-store";
+
+    // Просьба к посредникам не копить ответ в буфере: соединение именно
+    // в том и состоит, что строчки уходят по одной. IIS и nginx понимают
+    // этот заголовок, остальные его просто не заметят.
+    response.Headers["X-Accel-Buffering"] = "no";
+
+    var (id, reader) = hub.Subscribe(user);
+
+    try
+    {
+        // Первая строка уходит сразу: по ней браузер понимает, что
+        // соединение установлено, а посредники — что ответ начался.
+        await response.WriteAsync(": открыто\n\n", cancellationToken);
+        await response.Body.FlushAsync(cancellationToken);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            // Ждём либо события, либо четверти минуты. Молчащее соединение
+            // закрывают и прокси, и сам IIS, поэтому в тишине отправляем
+            // двоеточие — для протокола это пустая строка-комментарий,
+            // которая ничего не значит, но держит канал живым.
+            using var tick = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+            tick.CancelAfter(TimeSpan.FromSeconds(25));
+
+            var woken = false;
+
+            try
+            {
+                woken = await reader.WaitToReadAsync(tick.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Прошли двадцать пять секунд без событий — это не ошибка.
+            }
+
+            if (woken)
+            {
+                while (reader.TryRead(out _)) { /* звонок один, сколько бы ни нажали */ }
+
+                await response.WriteAsync("event: new\ndata: 1\n\n", cancellationToken);
+            }
+            else
+            {
+                await response.WriteAsync(": тишина\n\n", cancellationToken);
+            }
+
+            await response.Body.FlushAsync(cancellationToken);
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        // Человек закрыл вкладку или ушёл со страницы — обычное дело.
+    }
+    finally
+    {
+        hub.Unsubscribe(user, id);
+    }
+
+    return Results.Empty;
 });
 
 app.MapPost("/api/notifications/seen", async (

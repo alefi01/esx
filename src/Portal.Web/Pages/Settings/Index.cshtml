@@ -25,6 +25,15 @@
             <button class="btn" type="button" id="notifyAsk">
                 <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-bell" /></svg>Разрешить уведомления
             </button>
+
+            @* Показывается только по открытому соединению — кнопка в этом
+               случае не сработает, и промолчать об этом нельзя. *@
+            <p class="hint set-note" id="notifyNote" hidden>
+                Всплывающие окошки Windows браузер выдаёт только по защищённому
+                соединению — портал пока открыт по обычному. Звук и мигание
+                вкладки при этом работают: когда приходит новое, в панели задач
+                видно число и моргающий заголовок.
+            </p>
         </div>
     </div>
 

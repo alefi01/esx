@@ -73,6 +73,36 @@
         soft: [[660, 0, 0.16, 0.10], [880, 0.09, 0.20, 0.08]]
     };
 
+    // ------------------------------------------------------------------
+    // Разрешение на звук.
+    //
+    // Браузер не даёт сайту играть, пока человек на странице ничего
+    // не нажал. Проверяется это один раз: достаточно любого нажатия —
+    // по ссылке, по кнопке, по пустому месту, — и звук работает
+    // до закрытия вкладки.
+    //
+    // Поэтому мы заводим звуковой движок при ПЕРВОМ же нажатии, не дожидаясь
+    // самого сигнала. Иначе первое сообщение за день приходило бы молча:
+    // к моменту его прихода нажатий ещё не было, и браузер отказывал.
+    //
+    // Это единственное, что нужно для звука. HTTPS ему не требуется —
+    // в отличие от окошек системы (см. ниже).
+    // ------------------------------------------------------------------
+
+    function unlock() {
+        var ctx = audio();
+
+        if (!ctx) { return; }
+
+        if (ctx.state === 'suspended') {
+            try { ctx.resume(); } catch (error) { /* не вышло — попробуем в другой раз */ }
+        }
+    }
+
+    ['pointerdown', 'keydown'].forEach(function (event) {
+        document.addEventListener(event, unlock, { once: false, passive: true });
+    });
+
     function play(name) {
         var voice = VOICES[name];
 
@@ -138,6 +168,12 @@
             return Promise.resolve('unsupported');
         }
 
+        // По открытому соединению спрашивать бесполезно: браузер ответит
+        // отказом, не показав человеку никакого вопроса.
+        if (!window.isSecureContext) {
+            return Promise.resolve('insecure');
+        }
+
         if (Notification.permission !== 'default') {
             return Promise.resolve(Notification.permission);
         }
@@ -149,14 +185,150 @@
         }
     }
 
+    // ------------------------------------------------------------------
+    // Заметность без окошек системы: заголовок вкладки и значок на ней.
+    //
+    // ЗАЧЕМ. Окошки Windows требуют защищённого соединения, и по открытому
+    // HTTP браузер отказывает в них молча. Но свёрнутый портал всё равно
+    // должен уметь позвать: человек работает в другой программе, а в панели
+    // задач у него висит вкладка.
+    //
+    // Поэтому при непрочитанном заголовок вкладки мигает, а на значке
+    // появляется число. В панели задач Windows это видно так же хорошо,
+    // как всплывающее окошко, и работает везде — хоть по HTTP, хоть
+    // без всяких разрешений.
+    //
+    // Мигание только пока вкладка НЕ на виду: человеку, который смотрит
+    // на портал, дёргать заголовок незачем — он и так всё видит.
+    // ------------------------------------------------------------------
+
+    var titleOriginal = document.title;
+    var titleTimer = null;
+    var titleSwapped = false;
+    var iconOriginal = null;
+
+    function iconLink() {
+        var link = document.querySelector('link[rel~="icon"]');
+
+        if (!link) {
+            link = document.createElement('link');
+            link.rel = 'icon';
+            document.head.appendChild(link);
+        }
+
+        if (iconOriginal === null) { iconOriginal = link.getAttribute('href') || ''; }
+
+        return link;
+    }
+
+    /**
+     * Значок вкладки с числом непрочитанного.
+     *
+     * Рисуется прямо в браузере, а не берётся готовой картинкой: иначе
+     * пришлось бы держать в портале по картинке на каждое число.
+     */
+    function paintIcon(count) {
+        var link = iconLink();
+
+        if (!count) {
+            link.setAttribute('href', iconOriginal || '/favicon.ico');
+            return;
+        }
+
+        try {
+            var size = 32;
+            var canvas = document.createElement('canvas');
+
+            canvas.width = size;
+            canvas.height = size;
+
+            var g = canvas.getContext('2d');
+
+            // Скруглённый квадрат цвета портала и число поверх. Своя
+            // отрисовка вместо наложения на родной значок: родной лежит
+            // в формате ICO, и не всякий браузер умеет рисовать его
+            // на холсте — а молча получить пустой значок хуже, чем
+            // нарисовать свой.
+            g.fillStyle = '#0067c0';
+            g.beginPath();
+            g.roundRect ? g.roundRect(0, 0, size, size, 7) : g.rect(0, 0, size, size);
+            g.fill();
+
+            g.fillStyle = '#ffffff';
+            g.textAlign = 'center';
+            g.textBaseline = 'middle';
+
+            var text = count > 9 ? '9+' : String(count);
+
+            g.font = 'bold ' + (count > 9 ? 17 : 22) + 'px system-ui, sans-serif';
+            g.fillText(text, size / 2, size / 2 + 1);
+
+            link.setAttribute('href', canvas.toDataURL('image/png'));
+        } catch (error) {
+            // Холст недоступен — обойдёмся мигающим заголовком.
+        }
+    }
+
+    function stopBlink() {
+        if (titleTimer !== null) {
+            clearInterval(titleTimer);
+            titleTimer = null;
+        }
+
+        if (titleSwapped) {
+            document.title = titleOriginal;
+            titleSwapped = false;
+        }
+    }
+
+    function blink(count) {
+        stopBlink();
+
+        if (!count || document.visibilityState === 'visible') { return; }
+
+        var alert = '(' + count + ') Новое — ' + titleOriginal;
+
+        document.title = alert;
+        titleSwapped = true;
+
+        titleTimer = setInterval(function () {
+            titleSwapped = !titleSwapped;
+            document.title = titleSwapped ? alert : titleOriginal;
+        }, 1400);
+    }
+
+    // Вернулись на вкладку — мигание прекращается сразу, не дожидаясь
+    // следующей проверки: человек уже здесь.
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') { stopBlink(); }
+    });
+
     window.portalSound = {
         play: play,
         notify: notify,
         ask: ask,
 
-        /** Поддерживает ли браузер окошки и что с разрешением. */
+        /**
+         * Сколько непрочитанного — отражается на вкладке: число на значке
+         * и мигающий заголовок, пока вкладка не на виду.
+         */
+        unread: function (count) {
+            paintIcon(count);
+            blink(count);
+        },
+
+        /**
+         * Что с окошками системы.
+         *
+         * Отдельно выделен случай «нужен HTTPS»: по открытому соединению
+         * браузер не отказывает в ответ на запрос, а сразу отвечает
+         * «запрещено», — и человек идёт искать, где он это запретил,
+         * хотя запрещал не он.
+         */
         state: function () {
             if (typeof Notification === 'undefined') { return 'unsupported'; }
+
+            if (!window.isSecureContext) { return 'insecure'; }
 
             return Notification.permission;
         }
