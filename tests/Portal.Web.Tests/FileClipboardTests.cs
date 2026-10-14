@@ -93,15 +93,16 @@ public class FileClipboardTests : IDisposable
     }
 
     /// <summary>
-    /// Копирования между папками портала больше нет.
+    /// Копирование делает ВТОРОЙ файл и не трогает исходный.
     ///
-    /// Оно жило только вместе с собственным буфером обмена (Ctrl+C — Ctrl+V),
-    /// который люди принимали за буфер обмена Windows. Обработчик убран,
-    /// и запрос к нему не должен ничего делать — иначе получилась бы
-    /// возможность, о которой в интерфейсе нет ни следа.
+    /// Когда-то копирования не было вовсе — его убрали вместе с собственным
+    /// буфером обмена, который люди принимали за буфер обмена Windows.
+    /// Потом оно вернулось, уже вместе с перетаскиванием и явным выбором
+    /// папки, и проверка здесь ровно об этом: в отличие от перемещения,
+    /// после копирования файл есть в обеих папках.
     /// </summary>
     [Fact]
-    public async Task Обработчика_копирования_больше_нет()
+    public async Task Файл_копируется_и_в_исходной_папке_остаётся()
     {
         using var factory = CreateFactory();
         var source = AddFolder(factory, "Исходная", null, ("Vse", FolderAccess.Write));
@@ -114,11 +115,15 @@ public class FileClipboardTests : IDisposable
 
         await PostIdsAsync(client, "/Files?handler=Copy", token, target, fileId);
 
-        // Файл остался один и там же, где был.
-        var files = factory.Query(db => db.Files.ToList());
+        var files = factory.Query(db => db.Files.OrderBy(f => f.Id).ToList());
 
-        Assert.Single(files);
+        Assert.Equal(2, files.Count);
         Assert.Equal(source, files[0].FolderId);
+        Assert.Equal(target, files[1].FolderId);
+
+        // Копия — отдельный файл на диске, а не вторая ссылка на тот же:
+        // иначе удаление одного уносило бы второй.
+        Assert.NotEqual(files[0].StorageName, files[1].StorageName);
     }
 
     [Fact]

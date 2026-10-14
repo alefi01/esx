@@ -226,7 +226,13 @@
                              data-mine="@mine.ToString().ToLowerInvariant()"
                              data-deleted="@((message.DeletedAt is not null).ToString().ToLowerInvariant())"
                              data-author="@message.AuthorDisplayName"
-                             data-body="@message.Body">
+                             @* Текст удалённого сообщения в разметку НЕ попадает.
+                                Пузырёк показывает «сообщение удалено», но раньше
+                                сам текст оставался в data-атрибуте: его видно
+                                в исходном коде страницы, и пункт «Копировать
+                                текст» в меню по правой кнопке его копировал.
+                                Удаление, которое ничего не удаляет, — не удаление. *@
+                             data-body="@(message.DeletedAt is null ? message.Body : "")">
                             @if (!mine)
                             {
                                 <div class="avatar" data-av="@Avatars.ColorIndex(message.AuthorDisplayName)">@Avatars.Initials(message.AuthorDisplayName)</div>

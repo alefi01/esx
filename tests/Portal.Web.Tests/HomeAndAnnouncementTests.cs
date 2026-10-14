@@ -60,10 +60,18 @@ public class HomeAndAnnouncementTests : IDisposable
         Assert.Contains("Подробности внутри.", html);
     }
 
+    /// <summary>
+    /// Прочитанным объявление считается после ЛЕНТЫ, а не после главной.
+    ///
+    /// На главной стоят короткие карточки — только непрочитанного и только
+    /// несколько штук. Отмечай их прочитанными при показе — и главная
+    /// пустела бы от одного взгляда на неё: обновил страницу, а там уже
+    /// ничего. Полный текст, вложения и отметка «увидел» — в ленте,
+    /// куда карточка и ведёт.
+    /// </summary>
     [Fact]
-    public async Task Открытие_главной_отмечает_объявления_прочитанными()
+    public async Task Прочитанным_объявление_становится_после_ленты_а_не_после_главной()
     {
-        // Главная и есть лента: открыв её, человек всё новое увидел.
         using var factory = CreateFactory();
 
         var client = await factory.LoginAsAsync("ivanov", Users);
@@ -71,7 +79,14 @@ public class HomeAndAnnouncementTests : IDisposable
 
         AddAnnouncement(factory, "Новое", "текст");
 
-        await client.GetStringAsync("/");
+        // Главная показывает новое, но прочитанным его не делает.
+        var home = await client.GetStringAsync("/");
+
+        Assert.Contains("Новое", home);
+        Assert.Contains("\"unread\":1", (await client.GetStringAsync("/api/notifications")).Replace(" ", ""));
+
+        // А вот лента — делает.
+        await client.GetStringAsync("/Announcements");
 
         var json = await client.GetStringAsync("/api/notifications");
 
@@ -111,7 +126,9 @@ public class HomeAndAnnouncementTests : IDisposable
 
         Assert.True(file.IsImage);
 
-        var html = await client.GetStringAsync("/");
+        // Смотрим ЛЕНТУ, а не главную: на главной стоят короткие карточки
+        // без вложений — полный вид объявления живёт в ленте.
+        var html = await client.GetStringAsync("/Announcements");
 
         // Картинка показывается прямо в ленте, а не ссылкой.
         Assert.Contains("ann-image", html);

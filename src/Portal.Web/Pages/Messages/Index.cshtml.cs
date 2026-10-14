@@ -1298,7 +1298,11 @@ public class IndexModel : PageModel
                 id = m.Id,
                 mine = string.Equals(m.AuthorUserName, UserName, StringComparison.OrdinalIgnoreCase),
                 author = m.AuthorDisplayName,
-                body = m.Body,
+
+                // У удалённого сообщения текста нет и в ответе: страница
+                // кладёт его в data-атрибут пузырька, а оттуда он виден
+                // и в исходном коде страницы, и в меню «Копировать текст».
+                body = m.DeletedAt == null ? m.Body : "",
                 deleted = m.DeletedAt != null,
                 edited = m.EditedAt != null,
                 at = m.CreatedAt.ToLocalTime().ToString("HH:mm"),

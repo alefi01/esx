@@ -161,9 +161,18 @@ public sealed class NotificationService
         var lastSeen = state?.LastSeenAnnouncementId ?? 0;
 
         // Первый вход человека в портал не должен вываливать на него
-        // все объявления за всю историю как «новые». Поэтому при отсутствии
-        // отметки считаем, что всё старое он уже видел, и заводим отметку молча.
-        if (state is null)
+        // все объявления за всю историю как «новые». Поэтому, пока границу
+        // никто не ставил, считаем, что всё старое он уже видел,
+        // и заводим отметку молча.
+        //
+        // «Впервые здесь» — это не «строки нет»: строку заводит отметка
+        // «человек в сети» (PresenceService) на самом первом запросе,
+        // раньше колокольчика. Признак — именно ПУСТАЯ граница
+        // (см. UserSeenState.LastSeenAnnouncementId); с проверкой на ноль
+        // вместо неё терялся бы другой случай: человек вошёл, когда
+        // объявлений ещё не было вовсе, и первое же опубликованное
+        // объявление осталось бы незамеченным.
+        if (state?.LastSeenAnnouncementId is null)
         {
             var newest = await _db.Announcements
                 .OrderByDescending(a => a.Id)
@@ -249,10 +258,11 @@ public sealed class NotificationService
     /// считать его по той же границе, что и колокольчик, — иначе числа
     /// в шапке и на странице разъедутся.
     ///
-    /// Первый вход человека в портал не должен вываливать на него все
-    /// объявления за всю историю как «новые»: отметки ещё нет, и границей
-    /// считается самое свежее объявление. Здесь она только читается,
-    /// а заводится при первом обращении колокольчика (см. GetAsync).
+    /// Пока границы нет (человек в портале впервые), она считается нулевой:
+    /// на главной он увидит последние объявления. Тревожным числом
+    /// на колокольчике они при этом не станут — границу поставит первый же
+    /// его запрос (см. GetAsync), и к следующему открытию главной
+    /// непрочитанного уже не будет.
     /// </summary>
     public async Task<int> LastSeenAnnouncementIdAsync(
         string userName, CancellationToken cancellationToken)
@@ -260,15 +270,7 @@ public sealed class NotificationService
         var state = await _db.Set<UserSeenState>()
             .FirstOrDefaultAsync(s => s.UserName == userName, cancellationToken);
 
-        if (state is not null)
-        {
-            return state.LastSeenAnnouncementId;
-        }
-
-        return await _db.Announcements
-            .OrderByDescending(a => a.Id)
-            .Select(a => a.Id)
-            .FirstOrDefaultAsync(cancellationToken);
+        return state?.LastSeenAnnouncementId ?? 0;
     }
 
     /// <summary>Отметить всё текущее прочитанным.</summary>
@@ -325,7 +327,8 @@ public sealed class NotificationService
 
         // Отметку двигаем только вперёд: если в соседней вкладке уже отметили
         // более свежее объявление, откатывать назад нельзя.
-        if (announcementId > state.LastSeenAnnouncementId)
+        if (announcementId > (state.LastSeenAnnouncementId ?? 0)
+            || state.LastSeenAnnouncementId is null)
         {
             state.LastSeenAnnouncementId = announcementId;
         }

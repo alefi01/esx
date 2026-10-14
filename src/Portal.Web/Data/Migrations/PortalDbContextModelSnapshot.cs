@@ -848,7 +848,7 @@ namespace Portal.Web.Data.Migrations
                     b.Property<DateTime?>("LastActiveAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("LastSeenAnnouncementId")
+                    b.Property<int?>("LastSeenAnnouncementId")
                         .HasColumnType("integer");
 
                     b.Property<DateTime?>("LastSeenMessagesAt")

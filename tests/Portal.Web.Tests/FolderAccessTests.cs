@@ -81,10 +81,38 @@ public class FolderAccessTests : IDisposable
         _db.SaveChanges();
     }
 
+    /// <summary>
+    /// Папка, которую никто не настраивал, открыта всем на запись —
+    /// и только на запись.
+    ///
+    /// Так решено сознательно (см. FolderTree.DefaultAccess): портал —
+    /// общее хранилище организации, и обычная папка в нём не секрет.
+    /// Раньше правило было обратным: нет прав — нет доступа, и после
+    /// каждой новой папки шли к администратору «выдайте всем доступ».
+    ///
+    /// А вот УПРАВЛЕНИЕ по умолчанию не даётся никому: переносить,
+    /// переименовывать и удалять разделы может только тот, кому это
+    /// прямо разрешено.
+    /// </summary>
     [Fact]
-    public async Task Без_прав_папка_недоступна()
+    public async Task Ненастроенная_папка_открыта_всем_на_запись()
     {
         var folder = AddFolder("Договоры");
+
+        var tree = await TreeAsync();
+
+        Assert.Equal(FolderAccess.Write, tree.AccessFor(UserWithGroups("WebUsers"), tree.Get(folder.Id)!));
+    }
+
+    /// <summary>
+    /// Как только права кто-то расставил, папка перестаёт быть общей:
+    /// действуют только заданные права, и чужой в неё не попадает.
+    /// </summary>
+    [Fact]
+    public async Task Настроенная_папка_закрыта_для_посторонних()
+    {
+        var folder = AddFolder("Договоры");
+        Grant(folder.Id, "Yuristy", FolderAccess.Write);
 
         var tree = await TreeAsync();
 
@@ -213,6 +241,10 @@ public class FolderAccessTests : IDisposable
         var parent = AddFolder("Общее");
         var child = AddFolder("Бухгалтерия", parent.Id);
 
+        // Родителя настраиваем ЧУЖОЙ группе — именно затем, чтобы он
+        // перестал быть «ненастроенной папкой, открытой всем»: иначе
+        // проверка «читать родителя нельзя» ничего не проверяет.
+        Grant(parent.Id, "Yuristy", FolderAccess.Read);
         Grant(child.Id, "Buhgalteriya", FolderAccess.Read);
 
         var tree = await TreeAsync();

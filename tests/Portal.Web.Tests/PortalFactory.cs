@@ -1,4 +1,7 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Primitives;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -156,9 +159,45 @@ public sealed class PortalFactory : WebApplicationFactory<Program>
             builder.UseSetting("Storage:RootPath", StorageRootPath);
         }
 
-        builder.ConfigureServices(services =>
+        // Не следить за файлами сайта.
+        //
+        // Разметка страниц просит браузер дописывать к адресам стилей
+        // и кода версию файла (asp-append-version). Чтобы версию не считать
+        // заново на каждый запрос, ASP.NET заводит наблюдателя за папкой
+        // wwwroot — по одному на каждый поднятый экземпляр приложения.
+        //
+        // На сервере экземпляр один, и наблюдатель там один. В тестах
+        // приложение поднимается на каждый тест, десятками и параллельно,
+        // а в Linux число наблюдателей на пользователя ограничено (обычно
+        // 128). Упёршись в предел, приложение отвечало «500» на любую
+        // страницу со стилями — и падал не тот тест, который «виноват»,
+        // а любой следующий. Та же беда, что когда-то была с наблюдением
+        // за appsettings.json (см. ниже).
+        //
+        // Тестам слежка не нужна вовсе: файлы за время теста не меняются.
+        builder.ConfigureServices((context, services) =>
         {
+            context.HostingEnvironment.WebRootFileProvider =
+                new NonWatchingFileProvider(context.HostingEnvironment.WebRootFileProvider);
+
             services.AddSingleton(Ad);
+
+            // Свои ключи шифрования на каждый поднятый экземпляр портала.
+            //
+            // Приложение кладёт ключи в App_Data\keys рядом с собой — для
+            // боевого сервера это правильно, но в тестах «рядом с собой»
+            // у всех экземпляров одно и то же место, а xUnit поднимает
+            // их десятками и параллельно. Они наперегонки читали и
+            // переписывали одни и те же файлы, и время от времени запрос
+            // падал с «500» на ровном месте: ключами подписывается cookie
+            // входа и токен формы.
+            //
+            // Падал при этом не тот тест, который «виноват», а любой
+            // следующий, — та же беда, что когда-то была с наблюдателями
+            // за appsettings.json (см. выше). Ключи в памяти снимают вопрос
+            // целиком: экземпляру приложения, который живёт одну минуту,
+            // хранить их негде и незачем.
+            services.AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider());
             services.Replace(ServiceDescriptor.Scoped<IAdAuthenticationService, FakeAdAuthenticationService>());
             services.Replace(ServiceDescriptor.Scoped<IUserDirectory, FakeUserDirectory>());
 
@@ -292,4 +331,25 @@ public sealed class TestRemoteIpStartupFilter : IStartupFilter
 
             next(app);
         };
+}
+
+/// <summary>
+/// Обёртка над поставщиком файлов, которая НЕ заводит наблюдателей
+/// за файловой системой: Watch всегда отвечает «ничего не менялось».
+///
+/// Нужна только тестам — см. пояснение в PortalFactory.ConfigureWebHost.
+/// Чтение файлов идёт как обычно, через настоящего поставщика.
+/// </summary>
+public sealed class NonWatchingFileProvider : IFileProvider
+{
+    private readonly IFileProvider _inner;
+
+    public NonWatchingFileProvider(IFileProvider inner) => _inner = inner;
+
+    public IDirectoryContents GetDirectoryContents(string subpath) =>
+        _inner.GetDirectoryContents(subpath);
+
+    public IFileInfo GetFileInfo(string subpath) => _inner.GetFileInfo(subpath);
+
+    public IChangeToken Watch(string filter) => NullChangeToken.Singleton;
 }

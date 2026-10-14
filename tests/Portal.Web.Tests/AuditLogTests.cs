@@ -4,13 +4,18 @@ using Portal.Web.Data;
 namespace Portal.Web.Tests;
 
 /// <summary>
-/// Лента активности.
+/// Журнал действий с файлами (/Admin/Audit).
 ///
-/// Главный вопрос — не «красиво ли выглядит», а «кому она видна».
-/// По такой ленте понятно, кто чем занимается, и обычному сотруднику
-/// этого знать незачем: раздел закрыт и не показывается в меню.
+/// Главный вопрос — не «красиво ли выглядит», а «кому он виден».
+/// По журналу понятно, кто что скачивал, и обычному сотруднику этого
+/// знать незачем: раздел закрыт и не показывается в меню.
+///
+/// Раньше эти проверки обращались к странице /Admin/Activity — «ленте
+/// активности». Её не стало при переходе на макет: осталась одна
+/// страница журнала. Проверки же продолжали стучаться по старому адресу
+/// и получать «404» — то есть много месяцев не проверяли ничего.
 /// </summary>
-public class ActivityTests
+public class AuditLogTests
 {
     private const string Users = "WebUsers";
     private const string Admins = "WebAdmins";
@@ -47,29 +52,28 @@ public class ActivityTests
     }
 
     [Fact]
-    public async Task Администратор_видит_ленту_событий()
+    public async Task Администратор_видит_записи_журнала()
     {
         using var factory = PrepareEvents();
         var client = await factory.LoginAsAsync("boss", Users, Admins);
 
-        var html = await client.GetStringAsync("/Admin/Activity");
+        var html = await client.GetStringAsync("/Admin/Audit");
 
-        Assert.Contains("Иванов Иван", html);
+        // В таблице журнала стоит логин, а не отображаемое имя: по логину
+        // ищут, и он однозначен — полных тёзок в домене хватает.
+        Assert.Contains("ivanov", html);
+        Assert.Contains("petrov", html);
         Assert.Contains("Договор аренды.docx", html);
         Assert.Contains("Старый акт.pdf", html);
-
-        // События сгруппированы по дням: сегодняшнее и позавчерашнее
-        // не должны идти сплошным списком.
-        Assert.Contains("Сегодня", html);
     }
 
     [Fact]
-    public async Task Обычному_сотруднику_лента_недоступна()
+    public async Task Обычному_сотруднику_журнал_недоступен()
     {
         using var factory = PrepareEvents();
         var client = await factory.LoginAsAsync("ivanov", Users);
 
-        var response = await client.GetAsync("/Admin/Activity");
+        var response = await client.GetAsync("/Admin/Audit");
 
         // При входе по cookie отказ — это перенаправление на страницу
         // «доступ запрещён», а не код 403.
@@ -89,11 +93,11 @@ public class ActivityTests
         var user = await factory.LoginAsAsync("ivanov", Users);
         var userHtml = await user.GetStringAsync("/");
 
-        Assert.DoesNotContain("/Admin/Activity", userHtml);
+        Assert.DoesNotContain("/Admin/Audit", userHtml);
 
         var admin = await factory.LoginAsAsync("boss", Users, Admins);
         var adminHtml = await admin.GetStringAsync("/");
 
-        Assert.Contains("/Admin/Activity", adminHtml);
+        Assert.Contains("/Admin/Audit", adminHtml);
     }
 }
