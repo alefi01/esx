@@ -196,6 +196,46 @@
         </div>
     </div>
 
+    @* Рейтинг игры — здесь же, потому что это единственная кнопка портала,
+       которую может нажать только администратор и которая к работе
+       отношения не имеет. Отдельной страницы ради одной кнопки не нужно. *@
+    <div class="card set-card" id="set-game">
+        <div class="set-head">
+            <h2>Рейтинг игры</h2>
+            <span class="set-now">
+                @if (Model.GamePlayers == 0)
+                {
+                    <text>пока никто не играл</text>
+                }
+                else
+                {
+                    <text>игроков: <b>@Model.GamePlayers</b>, очков: <b>@Model.GamePoints</b></text>
+                }
+            </span>
+        </div>
+
+        <div class="set-row">
+            <form method="post" asp-page-handler="ResetGame" class="inline-form">
+                <button class="btn danger" type="submit" data-confirm-action
+                        data-confirm-text="Обнулить рейтинг игры у всех сотрудников? Очки за всё время пропадут, вернуть их будет нельзя."
+                        data-confirm-ok="Обнулить рейтинг"
+                        @(Model.GamePlayers == 0 ? "disabled" : "")>
+                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash" /></svg>Обнулить рейтинг
+                </button>
+            </form>
+
+            <p class="hint set-note">
+                В портале есть игра — она открывается десятью нажатиями на своё имя
+                в правом верхнем углу. Очки складываются за всё время, и сотрудники
+                видят общую таблицу.
+                <br />
+                Очки считает браузер, поэтому вписать себе любое число может каждый,
+                кто разбирается. Отдельно это не лечится — на то и кнопка:
+                <strong>обнуляет у всех сразу</strong>, а не у одного.
+            </p>
+        </div>
+    </div>
+
     <div class="card set-card" id="set-file">
         <div class="set-head">
             <h2>Что настраивается в файле</h2>

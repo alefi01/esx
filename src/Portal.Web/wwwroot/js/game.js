@@ -4,8 +4,13 @@
     Отдельным файлом, а не тегом <script> внутри страницы: политика
     безопасности запрещает встроенные скрипты, и браузер их не выполняет.
 
-    Ни портала, ни сервера этот файл не касается: ни одного запроса
-    наружу он не делает и ничего не сохраняет.
+    С порталом игра соприкасается ровно в двух местах: в конце партии
+    отправляет набранные очки (/api/game/score) и читает общую таблицу
+    (/api/game/top). Всё остальное — по-прежнему только холст и клавиши.
+
+    Если портал ответил отказом (вход истёк, рейтинг обнулили), игра
+    продолжает работать как раньше, просто без таблицы: падать из-за
+    рейтинга пасхалке незачем.
 */
 (function () {
     'use strict';
@@ -30,6 +35,11 @@
     var left = false;
     var right = false;
 
+    // Очки этой партии уже ушли на сервер. Нужен, потому что конец партии
+    // рисуется в каждом кадре: без флага отправка повторялась бы
+    // шестьдесят раз в секунду.
+    var reported = false;
+
     function reset() {
         papers = [];
         score = 0;
@@ -40,6 +50,7 @@
         tick = 0;
         basket.x = W / 2;
         basket.color = 0;
+        reported = false;
     }
 
     function spawn() {
@@ -167,6 +178,8 @@
         if (lives <= 0) {
             lives = 0;
             over = true;
+
+            report(score);
         }
 
         papers.forEach(paper);
@@ -217,6 +230,102 @@
             return this;
         };
     }
+
+    // ==================================================================
+    // Рейтинг
+    //
+    // Таблица общая на всех, очки складываются за все партии. Считает их
+    // браузер, то есть вписать себе любое число может каждый, кто умеет
+    // открыть средства разработчика. Это принято сознательно: считать
+    // игру на сервере ради шуточного рейтинга никто не просил, а если
+    // в таблице появится ерунда — администратор обнуляет её одной
+    // кнопкой в настройках портала.
+    // ==================================================================
+
+    var state = document.getElementById('ratingState');
+    var rows = document.getElementById('ratingRows');
+
+    /** Экранирование: в таблицу попадают имена из каталога. */
+    function esc(text) {
+        return String(text === null || text === undefined ? '' : text)
+            .replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+    }
+
+    function line(row, apart) {
+        return '<tr class="' + (row.mine ? 'me' : '') + (apart ? ' apart' : '') + '">' +
+            '<td class="place">' + row.place + '</td>' +
+            '<td class="name">' + esc(row.displayName) + '</td>' +
+            '<td class="num">' + row.points + '</td>' +
+            '<td class="num">' + row.best + '</td>' +
+            '<td class="num">' + row.games + '</td>' +
+            '</tr>';
+    }
+
+    function loadRating() {
+        if (!rows || !state) { return; }
+
+        fetch('/api/game/top', {
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+            .then(function (data) {
+                var top = data.top || [];
+
+                if (top.length === 0) {
+                    state.textContent = 'пока никто не играл';
+                    rows.innerHTML = '';
+                    return;
+                }
+
+                state.textContent = 'игроков: ' + top.length
+                    + (data.mine ? ' · у вас ' + data.mine.points : '');
+
+                var html = top.map(function (row) { return line(row, false); }).join('');
+
+                // Своё место дописываем отдельной строкой, если в первые
+                // двадцать человек не попал: число «сколько у меня» ему
+                // интереснее всех остальных строк вместе.
+                if (data.mine && !data.mineInTop) {
+                    html += line(data.mine, true);
+                }
+
+                rows.innerHTML = html;
+            })
+            .catch(function (reason) {
+                state.textContent = reason === 401
+                    ? 'нужно войти в портал'
+                    : 'таблица недоступна';
+            });
+    }
+
+    function report(points) {
+        if (reported) { return; }
+
+        reported = true;
+
+        var body = new FormData();
+
+        body.append('points', String(points));
+
+        fetch('/api/game/score', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: body
+        })
+            .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+            .then(loadRating)
+            .catch(function () {
+                // Не записалось — ни игре, ни человеку это не мешает.
+                // Молчим: окошко «не удалось сохранить очки» посреди
+                // пасхалки выглядело бы серьёзнее самой игры.
+            });
+    }
+
+    loadRating();
 
     reset();
     step();

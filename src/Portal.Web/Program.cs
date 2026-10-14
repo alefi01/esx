@@ -312,6 +312,10 @@ builder.Services.AddSingleton<NotificationHub>();
 builder.Services.AddScoped<Portal.Web.Services.Tasks.UserPreferences>();
 builder.Services.AddScoped<Portal.Web.Services.Tasks.TaskService>();
 
+// Рейтинг игры-пасхалки. К работе портала отношения не имеет, но живёт
+// по тем же правилам, что и всё остальное: база, права, свой запрос.
+builder.Services.AddScoped<Portal.Web.Services.Game.GameRating>();
+
 // Кто в сети. Обращается к базе — Scoped.
 builder.Services.AddScoped<PresenceService>();
 
@@ -693,6 +697,13 @@ app.MapGet("/api/notifications", async (
         return Results.Unauthorized();
     }
 
+    // Ответ НЕ кэшируется, и это не перестраховка. Без такого заголовка
+    // браузер вправе отдать странице прошлый ответ из своей памяти —
+    // и тогда счётчик непрочитанного продолжает показывать число, которого
+    // на сервере уже нет. Именно на это и жаловались: «не всегда
+    // пропадает при прочтении».
+    http.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+
     var summary = await notifications.GetAsync(user, cancellationToken);
 
     // Число задач в работе берётся здесь, а не внутри службы уведомлений:
@@ -713,6 +724,11 @@ app.MapGet("/api/notifications", async (
         summary.Announcements,
         summary.Messages,
         summary.Items,
+
+        // Непрочитанное по беседам — по нему страница сама гасит значки
+        // в списке бесед, не дожидаясь перезагрузки.
+        summary.Conversations,
+
         Tasks = active,
         UrgentTasks = urgent.Select(t => new
         {
@@ -827,6 +843,86 @@ app.MapPost("/api/notifications/seen", async (
     await notifications.MarkAllSeenAsync(user, cancellationToken);
 
     return Results.NoContent();
+});
+
+// ---------------------------------------------------------------------------
+// Игра «Разбор завала»: рейтинг.
+//
+// Сама игра живёт отдельной страницей (wwwroot/game.html) и к порталу
+// не обращалась вовсе. Теперь обращается ровно за двумя вещами: прибавить
+// очки сыгранной партии и прочитать таблицу.
+//
+// Обе точки закрыты обычной политикой доступа: рейтинг сотрудников —
+// не то, что показывают кому попало. Страница игры при этом остаётся
+// доступной без входа: без него она просто не покажет таблицу.
+//
+// Очки присылает браузер, и подделать их может любой, кто откроет
+// средства разработчика. Это принято сознательно — считать игру на сервере
+// ради шуточного рейтинга никто не просил, а цена жульничества равна
+// строке в таблице, которую администратор может обнулить.
+// ---------------------------------------------------------------------------
+
+app.MapGet("/api/game/top", async (
+    Portal.Web.Services.Game.GameRating rating,
+    HttpContext http,
+    CancellationToken cancellationToken) =>
+{
+    var user = http.User.Identity?.Name;
+
+    if (string.IsNullOrEmpty(user))
+    {
+        return Results.Unauthorized();
+    }
+
+    http.Response.Headers.CacheControl = "no-store";
+
+    var top = await rating.TopAsync(user, cancellationToken);
+    var mine = await rating.MineAsync(user, cancellationToken);
+
+    return Results.Ok(new
+    {
+        Top = top,
+
+        // Своя строка отдельно: в первые двадцать человек может
+        // и не попасть, а своё место ему интереснее всего.
+        Mine = mine,
+        MineInTop = mine is not null && top.Any(row => row.Mine)
+    });
+});
+
+app.MapPost("/api/game/score", async (
+    Portal.Web.Services.Game.GameRating rating,
+    HttpContext http,
+    CancellationToken cancellationToken) =>
+{
+    var user = http.User.Identity?.Name;
+
+    if (string.IsNullOrEmpty(user))
+    {
+        return Results.Unauthorized();
+    }
+
+    // Запрос приходит от своей же страницы и несёт заголовок, который
+    // чужая страница поставить не может без разрешения портала, —
+    // этого здесь довольно: подделать можно только собственные очки
+    // в собственном рейтинге.
+    if (!string.Equals(http.Request.Headers.XRequestedWith, "XMLHttpRequest", StringComparison.Ordinal))
+    {
+        return Results.BadRequest();
+    }
+
+    var form = await http.Request.ReadFormAsync(cancellationToken);
+
+    if (!int.TryParse(form["points"], out var points))
+    {
+        return Results.BadRequest();
+    }
+
+    var name = http.User.FindFirst(System.Security.Claims.ClaimTypes.GivenName)?.Value ?? user;
+
+    var total = await rating.AddAsync(user, name, points, cancellationToken);
+
+    return Results.Ok(new { Total = total });
 });
 
 // Простая точка проверки живости — открывается без входа.

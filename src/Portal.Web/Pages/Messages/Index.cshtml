@@ -222,8 +222,10 @@
                         }
 
                         <div class="msg@(mine ? " mine" : "")" data-message="@message.Id"
+                             id="msg-@message.Id"
                              data-mine="@mine.ToString().ToLowerInvariant()"
                              data-deleted="@((message.DeletedAt is not null).ToString().ToLowerInvariant())"
+                             data-author="@message.AuthorDisplayName"
                              data-body="@message.Body">
                             @if (!mine)
                             {
@@ -246,6 +248,26 @@
                                 else if (!mine && Model.Current.IsGroup)
                                 {
                                     <div class="b-name">@message.AuthorDisplayName</div>
+                                }
+
+                                @if (message.DeletedAt is null && message.ReplyToMessageId is not null)
+                                {
+                                    @* Цитата — кнопка, а не ссылка: она прокручивает ленту
+                                       к исходному сообщению, а не ведёт на другой адрес.
+                                       Текст цитаты — снимок на момент ответа (см. Message),
+                                       поэтому читается и тогда, когда исходное удалили. *@
+                                    <button class="b-quote" type="button"
+                                            data-goto="@message.ReplyToMessageId">
+                                        <b>@message.ReplyToAuthor</b>
+                                        <span>@message.ReplyToText</span>
+                                    </button>
+                                }
+
+                                @if (message.DeletedAt is null && !string.IsNullOrEmpty(message.ForwardedFrom))
+                                {
+                                    <div class="b-fwd">
+                                        <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-forward" /></svg>Переслано: @message.ForwardedFrom
+                                    </div>
                                 }
 
                                 @if (message.DeletedAt is not null)
@@ -317,6 +339,52 @@
                                         </button>
                                     }
                                 </div>
+
+                                @* Реакции. Пустой блок остаётся в разметке всегда:
+                                   код страницы перерисовывает его на месте, когда
+                                   реакцию поставили или сняли, — и ему не нужно
+                                   разбираться, есть ли куда вставлять. *@
+                                <div class="b-reacts" data-reacts="@message.Id">
+                                    @{
+                                        var marks = message.Reactions
+                                            .GroupBy(r => r.Kind)
+                                            .OrderBy(g => MessageReactions.Order(g.Key))
+                                            .ToList();
+                                    }
+
+                                    @foreach (var group in marks)
+                                    {
+                                        var kind = MessageReactions.Find(group.Key);
+
+                                        if (kind is null)
+                                        {
+                                            @* Вид реакции убрали из набора, а отметки остались.
+                                               Молча пропускаем: рисовать нечем. *@
+                                            continue;
+                                        }
+
+                                        var isMine = group.Any(r =>
+                                            string.Equals(r.UserName, Model.UserName, StringComparison.OrdinalIgnoreCase));
+
+                                        var who = string.Join(", ", group
+                                            .Select(r => string.IsNullOrWhiteSpace(r.DisplayName) ? r.UserName : r.DisplayName)
+                                            .Take(12));
+
+                                        <button class="react@(isMine ? " on" : "")" type="button"
+                                                data-kind="@group.Key" title="@kind.Title — @who">
+                                            @if (kind.Glyph.Length > 0)
+                                            {
+                                                <span class="r-glyph">@kind.Glyph</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="r-caption">@kind.Caption</span>
+                                            }
+
+                                            <i>@group.Count()</i>
+                                        </button>
+                                    }
+                                </div>
                             </div>
                         </div>
                     }
@@ -324,8 +392,28 @@
 
                 @if (Model.CanWrite)
                 {
+                    @* Цитата над полем ввода: «отвечаем вот на это».
+                       Скрыта, пока ответ не выбран. Номер уходит на сервер
+                       скрытым полем — текст цитаты сервер собирает сам,
+                       от браузера он его не принимает. *@
+                    <div class="chat-reply" id="chatReply" hidden>
+                        <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-reply" /></svg>
+
+                        <div class="cr-text">
+                            <b id="chatReplyAuthor"></b>
+                            <span id="chatReplyBody"></span>
+                        </div>
+
+                        <button class="icon-btn" type="button" id="chatReplyCancel"
+                                title="Не отвечать (Esc)" aria-label="Отменить ответ">
+                            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-x" /></svg>
+                        </button>
+                    </div>
+
                     <form class="chat-input" method="post" asp-page-handler="Send" asp-route-id="@Model.Current.Id"
                           enctype="multipart/form-data" id="chatForm">
+
+                        <input type="hidden" asp-for="ReplyTo" id="chatReplyTo" value="0" />
 
                         <button class="icon-btn" type="button" id="attachBtn" title="Приложить файл">
                             <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clip" /></svg>

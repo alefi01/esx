@@ -34,6 +34,7 @@ public class PortalDbContext : DbContext
     public DbSet<ConversationParticipant> Participants => Set<ConversationParticipant>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<MessageFile> MessageFiles => Set<MessageFile>();
+    public DbSet<MessageReaction> MessageReactions => Set<MessageReaction>();
 
     // Синхронизация между филиалами.
     public DbSet<SyncOutboxEntry> SyncOutbox => Set<SyncOutboxEntry>();
@@ -43,6 +44,9 @@ public class PortalDbContext : DbContext
     public DbSet<UserTask> Tasks => Set<UserTask>();
     public DbSet<UserTaskShare> TaskShares => Set<UserTaskShare>();
     public DbSet<UserPreference> Preferences => Set<UserPreference>();
+
+    /// <summary>Очки в игре-пасхалке. К работе портала отношения не имеет.</summary>
+    public DbSet<GameScore> GameScores => Set<GameScore>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -247,6 +251,30 @@ public class PortalDbContext : DbContext
             entity.HasIndex(m => m.CreatedAt);
 
             entity.Ignore(m => m.IsDeleted);
+        });
+
+        modelBuilder.Entity<MessageReaction>(entity =>
+        {
+            entity.HasOne(r => r.Message)
+                .WithMany(m => m.Reactions)
+                .HasForeignKey(r => r.MessageId)
+                // Реакции — часть сообщения: нет сообщения, нет и реакций.
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Один человек ставит один вид реакции один раз. Правило
+            // записано в схеме, а не только в коде: нажатие «поставить»
+            // приходит из браузера, и два одновременных нажатия
+            // не должны превращаться в две одинаковые отметки.
+            entity.HasIndex(r => new { r.MessageId, r.UserName, r.Kind }).IsUnique();
+        });
+
+        modelBuilder.Entity<GameScore>(entity =>
+        {
+            // Один человек — одна строка.
+            entity.HasIndex(score => score.UserName).IsUnique();
+
+            // Рейтинг всегда сортируется по сумме очков по убыванию.
+            entity.HasIndex(score => score.Points);
         });
 
         modelBuilder.Entity<MessageFile>(entity =>

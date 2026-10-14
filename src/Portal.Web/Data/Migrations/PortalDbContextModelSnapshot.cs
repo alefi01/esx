@@ -345,6 +345,46 @@ namespace Portal.Web.Data.Migrations
                     b.ToTable("FolderPermissions");
                 });
 
+            modelBuilder.Entity("Portal.Web.Data.GameScore", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Best")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("Games")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Points")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Points");
+
+                    b.HasIndex("UserName")
+                        .IsUnique();
+
+                    b.ToTable("GameScores");
+                });
+
             modelBuilder.Entity("Portal.Web.Data.Message", b =>
                 {
                     b.Property<int>("Id")
@@ -391,6 +431,10 @@ namespace Portal.Web.Data.Migrations
                     b.Property<DateTime?>("EditedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ForwardedFrom")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
                     b.Property<Guid>("GlobalId")
                         .HasColumnType("uuid");
 
@@ -398,6 +442,17 @@ namespace Portal.Web.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)");
+
+                    b.Property<string>("ReplyToAuthor")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int?>("ReplyToMessageId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReplyToText")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
 
                     b.HasKey("Id");
 
@@ -456,6 +511,43 @@ namespace Portal.Web.Data.Migrations
                     b.HasIndex("PurgedAt");
 
                     b.ToTable("MessageFiles");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.MessageReaction", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<int>("MessageId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MessageId", "UserName", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("MessageReactions");
                 });
 
             modelBuilder.Entity("Portal.Web.Data.PortalSetting", b =>
@@ -929,6 +1021,17 @@ namespace Portal.Web.Data.Migrations
                     b.Navigation("Message");
                 });
 
+            modelBuilder.Entity("Portal.Web.Data.MessageReaction", b =>
+                {
+                    b.HasOne("Portal.Web.Data.Message", "Message")
+                        .WithMany("Reactions")
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Message");
+                });
+
             modelBuilder.Entity("Portal.Web.Data.StorageFolder", b =>
                 {
                     b.HasOne("Portal.Web.Data.StorageFolder", "Parent")
@@ -976,6 +1079,8 @@ namespace Portal.Web.Data.Migrations
             modelBuilder.Entity("Portal.Web.Data.Message", b =>
                 {
                     b.Navigation("Files");
+
+                    b.Navigation("Reactions");
                 });
 
             modelBuilder.Entity("Portal.Web.Data.StorageFolder", b =>

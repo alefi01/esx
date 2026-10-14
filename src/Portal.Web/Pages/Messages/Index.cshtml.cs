@@ -130,6 +130,16 @@ public class IndexModel : PageModel
     [MaxLength(8000, ErrorMessage = "Сообщение не длиннее 8000 символов")]
     public string Body { get; set; } = "";
 
+    /// <summary>
+    /// Номер сообщения, на которое отвечают. 0 — обычная реплика.
+    ///
+    /// От браузера приходит ТОЛЬКО номер: автора и текст цитаты сервер
+    /// читает сам из базы. Иначе любой мог бы прислать цитату с чужим
+    /// именем и словами, которых тот не говорил.
+    /// </summary>
+    [BindProperty]
+    public int ReplyTo { get; set; }
+
     [BindProperty]
     [MaxLength(120, ErrorMessage = "Название не длиннее 120 символов")]
     public string GroupTitle { get; set; } = "";
@@ -191,6 +201,10 @@ public class IndexModel : PageModel
         Items = await _db.Messages
             .Where(m => m.ConversationId == conversation.Id)
             .Include(m => m.Files)
+            // Реакции приходят вместе с лентой, а не отдельным запросом
+            // на каждое сообщение: их мало, а запросов было бы столько же,
+            // сколько реплик на странице.
+            .Include(m => m.Reactions)
             .OrderBy(m => m.Id)
             .ToListAsync(cancellationToken);
 
@@ -317,6 +331,31 @@ public class IndexModel : PageModel
 
         var now = _time.GetUtcNow().UtcDateTime;
 
+        // Цитата, если это ответ. Читаем цитируемое из базы по номеру
+        // и проверяем, что оно из ЭТОЙ беседы: иначе ответом можно было бы
+        // перетащить в беседу кусок чужой переписки, к которой доступа нет.
+        int? replyToId = null;
+        string? replyToAuthor = null;
+        string? replyToText = null;
+
+        if (ReplyTo > 0)
+        {
+            var quoted = await _db.Messages
+                .Where(m => m.Id == ReplyTo && m.ConversationId == id)
+                .Select(m => new { m.Id, m.AuthorDisplayName, m.Body, m.DeletedAt, Files = m.Files.Count })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (quoted is not null)
+            {
+                replyToId = quoted.Id;
+                replyToAuthor = quoted.AuthorDisplayName;
+                replyToText = QuoteText(quoted.Body, quoted.DeletedAt is not null, quoted.Files > 0);
+            }
+
+            // Сообщения нет (удалили, пока отвечали) — отправляем как обычную
+            // реплику. Отказывать не за что: текст человек уже написал.
+        }
+
         var message = new Message
         {
             ConversationId = id,
@@ -324,6 +363,10 @@ public class IndexModel : PageModel
             AuthorDisplayName = DisplayName,
             Body = text,
             CreatedAt = now,
+
+            ReplyToMessageId = replyToId,
+            ReplyToAuthor = replyToAuthor,
+            ReplyToText = replyToText,
 
             // Адрес отправителя. Показывается только администратору портала
             // и только в чужой переписке — см. Message.AuthorIp.
@@ -408,6 +451,315 @@ public class IndexModel : PageModel
         return Done(problems.Count > 0
             ? "Не приложены: " + string.Join("; ", problems)
             : null);
+    }
+
+    /// <summary>
+    /// Текст для цитаты: начало реплики, а не вся она.
+    ///
+    /// Цитата должна занимать одну строку: ответ на письмо в двадцать
+    /// строк, который начинается с этих же двадцати строк, читать
+    /// невозможно. Переводы строк внутри цитаты заменяются пробелом
+    /// по той же причине.
+    ///
+    /// У сообщения без текста (только вложение) цитировать нечего —
+    /// подставляется пометка, иначе цитата была бы пустой полоской.
+    /// </summary>
+    public static string QuoteText(string? body, bool deleted, bool hasFiles)
+    {
+        if (deleted)
+        {
+            return "сообщение удалено";
+        }
+
+        var text = (body ?? "").Replace("\r", " ").Replace("\n", " ").Trim();
+
+        while (text.Contains("  ", StringComparison.Ordinal))
+        {
+            text = text.Replace("  ", " ", StringComparison.Ordinal);
+        }
+
+        if (text.Length == 0)
+        {
+            return hasFiles ? "вложение" : "";
+        }
+
+        return text.Length <= 160 ? text : text[..159] + "…";
+    }
+
+    // ==================================================================
+    // Пересылка
+    // ==================================================================
+
+    /// <summary>
+    /// Пересылает сообщение в другую беседу.
+    ///
+    /// ПОЧЕМУ КОПИЯ, А НЕ ССЫЛКА
+    ///
+    /// Исходное сообщение лежит в беседе, доступа к которой у получателей
+    /// может не быть вовсе, — ссылка открывалась бы отказом. Поэтому
+    /// в новой беседе появляется новое сообщение с тем же текстом
+    /// и КОПИЯМИ вложений.
+    ///
+    /// Вложения копируются байт в байт и занимают место второй раз. Это
+    /// сознательная плата: пересылают обычно затем, что документ нужен
+    /// в другой беседе, а «ссылка на вложение чужой переписки» означала бы
+    /// доступ к ней по номеру файла — ровно то, от чего вложения и живут
+    /// в отдельном хранилище со своей проверкой прав.
+    ///
+    /// Подпись «переслано» с именем ставится всегда и снять её нельзя: чужие
+    /// слова должны быть подписаны чужим именем.
+    /// </summary>
+    public async Task<IActionResult> OnPostForwardAsync(
+        int id, int messageId, int targetId, CancellationToken cancellationToken)
+    {
+        var source = await _conversations.GetAsync(id, cancellationToken);
+
+        if (source is null || !_conversations.CanRead(User, source))
+        {
+            return NotFound();
+        }
+
+        // Пересылать может только участник беседы. Администратор портала
+        // чужую переписку читает, но выносить из неё сообщения в другие
+        // беседы — уже не чтение.
+        if (!ConversationService.IsParticipant(User, source))
+        {
+            return Forbid();
+        }
+
+        var target = await _conversations.GetAsync(targetId, cancellationToken);
+
+        if (target is null || !_conversations.CanRead(User, target))
+        {
+            return NotFound();
+        }
+
+        if (!ConversationService.CanWrite(User, target))
+        {
+            return Forbid();
+        }
+
+        var message = await _db.Messages
+            .Include(m => m.Files)
+            .FirstOrDefaultAsync(m => m.Id == messageId && m.ConversationId == id, cancellationToken);
+
+        if (message is null)
+        {
+            return NotFound();
+        }
+
+        if (message.DeletedAt is not null)
+        {
+            return new JsonResult(new { ok = false, error = "Удалённое сообщение переслать нельзя." });
+        }
+
+        var now = _time.GetUtcNow().UtcDateTime;
+
+        var copy = new Message
+        {
+            ConversationId = targetId,
+            AuthorUserName = UserName,
+            AuthorDisplayName = DisplayName,
+            Body = message.Body,
+            CreatedAt = now,
+            AuthorIp = HttpContext.Connection.RemoteIpAddress?.ToString(),
+
+            // Чьё это было. Берётся из самого сообщения, не от браузера.
+            ForwardedFrom = string.IsNullOrWhiteSpace(message.AuthorDisplayName)
+                ? message.AuthorUserName
+                : message.AuthorDisplayName
+        };
+
+        var lost = 0;
+
+        foreach (var file in message.Files.Where(f => f.PurgedAt is null))
+        {
+            try
+            {
+                if (!_storage.Exists(id, file.StorageName))
+                {
+                    lost++;
+                    continue;
+                }
+
+                await using var content = _storage.OpenRead(id, file.StorageName);
+
+                var storageName = await _storage.SaveAsync(targetId, content, cancellationToken);
+
+                copy.Files.Add(new MessageFile
+                {
+                    OriginalName = file.OriginalName,
+                    StorageName = storageName,
+                    SizeBytes = file.SizeBytes,
+                    ContentType = file.ContentType
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Не удалось скопировать вложение {Name} при пересылке.", file.OriginalName);
+
+                lost++;
+            }
+        }
+
+        if (copy.Body.Length == 0 && copy.Files.Count == 0)
+        {
+            return new JsonResult(new { ok = false, error = "Пересылать нечего: вложение недоступно." });
+        }
+
+        _db.Messages.Add(copy);
+
+        var tracked = await _db.Conversations.AsTracking()
+            .FirstAsync(c => c.Id == targetId, cancellationToken);
+
+        tracked.LastMessageAt = now;
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        // Своё отправленное считается прочитанным сразу — иначе человек
+        // увидел бы непрочитанное от самого себя.
+        await _conversations.MarkReadAsync(targetId, UserName, cancellationToken);
+
+        _hub.Notify(target.Participants
+            .Select(p => p.UserName)
+            .Where(name => !string.Equals(name, UserName, StringComparison.OrdinalIgnoreCase)));
+
+        var where = ConversationService.TitleFor(target, UserName);
+
+        return new JsonResult(new
+        {
+            ok = true,
+            url = "/Messages?id=" + targetId,
+            where,
+            note = lost > 0
+                ? $"Переслано в «{where}», но вложений не досталось: {lost}"
+                : $"Переслано в «{where}»"
+        });
+    }
+
+    // ==================================================================
+    // Реакции
+    // ==================================================================
+
+    /// <summary>
+    /// Ставит или снимает реакцию. Нажатие по уже поставленной — снимает.
+    ///
+    /// Колокольчик от реакции НЕ звонит, и это решение: реакция затевалась
+    /// ровно затем, чтобы не отвечать «принято» и никого не отвлекать.
+    /// Открытые страницы беседы увидят её при обычной проверке новых
+    /// сообщений — через несколько секунд.
+    /// </summary>
+    public async Task<IActionResult> OnPostReactAsync(
+        int id, int messageId, string kind, CancellationToken cancellationToken)
+    {
+        if (!MessageReactions.IsKnown(kind))
+        {
+            // Набор закрытый: всё, что пришло не из него, — ошибка в коде
+            // страницы либо чья-то самодеятельность.
+            return BadRequest();
+        }
+
+        var conversation = await _conversations.GetAsync(id, cancellationToken);
+
+        if (conversation is null || !_conversations.CanRead(User, conversation))
+        {
+            return NotFound();
+        }
+
+        // Ставить реакции может только участник: для беседы это такое же
+        // высказывание, как реплика, просто короткое. Администратор,
+        // читающий чужую переписку, в ней не участник.
+        if (!ConversationService.CanWrite(User, conversation))
+        {
+            return Forbid();
+        }
+
+        var message = await _db.Messages
+            .Where(m => m.Id == messageId && m.ConversationId == id)
+            .Select(m => new { m.Id, m.DeletedAt })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (message is null)
+        {
+            return NotFound();
+        }
+
+        if (message.DeletedAt is not null)
+        {
+            return new JsonResult(new { ok = false, error = "Сообщение удалено." });
+        }
+
+        var existing = await _db.MessageReactions.AsTracking()
+            .FirstOrDefaultAsync(
+                r => r.MessageId == messageId
+                     && r.Kind == kind
+                     && r.UserName.ToLower() == UserName.ToLower(),
+                cancellationToken);
+
+        if (existing is null)
+        {
+            _db.MessageReactions.Add(new MessageReaction
+            {
+                MessageId = messageId,
+                UserName = UserName,
+                DisplayName = DisplayName,
+                Kind = kind,
+                At = _time.GetUtcNow().UtcDateTime
+            });
+        }
+        else
+        {
+            _db.MessageReactions.Remove(existing);
+        }
+
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // Два нажатия подряд успели прийти одновременно, и уникальный
+            // индекс отбил второе. Для человека это не беда: реакция
+            // на месте. Пересчитываем и отвечаем обычным ответом.
+            _db.ChangeTracker.Clear();
+        }
+
+        var reactions = await ReactionsOfAsync(messageId, cancellationToken);
+
+        return new JsonResult(new { ok = true, messageId, reactions });
+    }
+
+    /// <summary>Реакции одного сообщения в том виде, в каком их ждёт страница.</summary>
+    private async Task<object[]> ReactionsOfAsync(int messageId, CancellationToken cancellationToken)
+    {
+        var rows = await _db.MessageReactions
+            .Where(r => r.MessageId == messageId)
+            .Select(r => new { r.Kind, r.UserName, r.DisplayName })
+            .ToListAsync(cancellationToken);
+
+        return Pack(rows.Select(r => (r.Kind, r.UserName, r.DisplayName)));
+    }
+
+    /// <summary>
+    /// Сворачивает отметки в то, что показывается под сообщением: по одной
+    /// строке на вид реакции, с числом и списком имён для подсказки.
+    /// </summary>
+    private object[] Pack(IEnumerable<(string Kind, string UserName, string DisplayName)> rows)
+    {
+        return rows
+            .GroupBy(r => r.Kind)
+            .OrderBy(g => MessageReactions.Order(g.Key))
+            .Select(g => (object)new
+            {
+                kind = g.Key,
+                count = g.Count(),
+                mine = g.Any(r => string.Equals(r.UserName, UserName, StringComparison.OrdinalIgnoreCase)),
+                who = string.Join(", ", g
+                    .Select(r => string.IsNullOrWhiteSpace(r.DisplayName) ? r.UserName : r.DisplayName)
+                    .Take(12))
+            })
+            .ToArray();
     }
 
     // ==================================================================
@@ -876,6 +1228,12 @@ public class IndexModel : PageModel
 
         var observer = !ConversationService.IsParticipant(User, conversation);
 
+        // Ответ НЕ кэшируется. Заголовок здесь не перестраховка: без него
+        // браузер вправе отдать страницу прошлый ответ из своей памяти,
+        // и тогда «новое» не появляется, а счётчик непрочитанного остаётся
+        // висеть, хотя всё уже прочитано. Ровно на это и жаловались.
+        Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+
         var fresh = await _db.Messages
             .Where(m => m.ConversationId == id && m.Id > afterId)
             .Include(m => m.Files)
@@ -899,10 +1257,42 @@ public class IndexModel : PageModel
 
         var readUpTo = others.Count == 0 ? 0 : others.Min(p => p.LastReadMessageId);
 
+        // Реакции по последним сообщениям беседы — а не только по новым.
+        //
+        // Реакцию ставят на то, что уже написано, и чаще всего на реплику,
+        // которая давно в ленте. Присылать реакции только вместе с новыми
+        // сообщениями значило бы, что чужая отметка появляется лишь после
+        // того, как кто-нибудь напишет следующую реплику.
+        //
+        // Берём сто последних: столько и видно на экране при прокрутке
+        // вверх, а весит такой список пустяки.
+        var recent = await _db.Messages
+            .Where(m => m.ConversationId == id)
+            .OrderByDescending(m => m.Id)
+            .Select(m => m.Id)
+            .Take(100)
+            .ToListAsync(cancellationToken);
+
+        var marks = await _db.MessageReactions
+            .Where(r => recent.Contains(r.MessageId))
+            .Select(r => new { r.MessageId, r.Kind, r.UserName, r.DisplayName })
+            .ToListAsync(cancellationToken);
+
+        var reactions = marks
+            .GroupBy(r => r.MessageId)
+            .ToDictionary(
+                g => g.Key.ToString(),
+                g => Pack(g.Select(r => (r.Kind, r.UserName, r.DisplayName))));
+
+        // Сообщения, у которых реакций не осталось вовсе, тоже нужны:
+        // иначе снятая кем-то реакция не исчезла бы с чужой страницы.
+        // Поэтому страница получает список всех недавних номеров.
         return new JsonResult(new
         {
             hasNew = fresh.Count > 0,
             readUpTo,
+            reactions,
+            reacted = recent,
             messages = fresh.Select(m => new
             {
                 id = m.Id,
@@ -913,6 +1303,10 @@ public class IndexModel : PageModel
                 edited = m.EditedAt != null,
                 at = m.CreatedAt.ToLocalTime().ToString("HH:mm"),
                 ip = observer ? m.AuthorIp : null,
+                replyTo = m.ReplyToMessageId,
+                replyAuthor = m.ReplyToAuthor,
+                replyText = m.ReplyToText,
+                forwardedFrom = m.ForwardedFrom,
                 files = m.Files.Where(f => f.PurgedAt == null).Select(f => new
                 {
                     id = f.Id,

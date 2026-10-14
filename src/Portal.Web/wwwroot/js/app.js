@@ -870,6 +870,48 @@
             element.textContent = value > 99 ? '99+' : String(value);
         }
 
+        /**
+         * Значки непрочитанного в списке бесед — на странице переписок.
+         *
+         * ЗАЧЕМ ЭТО ЗДЕСЬ, А НЕ В РАЗДЕЛЕ ПЕРЕПИСОК
+         *
+         * Число непрочитанных в одной беседе — часть той же сводки, что
+         * и число на колокольчике: иначе они считаются в двух местах
+         * и однажды разойдутся.
+         *
+         * Именно из-за отсутствия этого кода «число не всегда пропадало
+         * при прочтении»: беседу открывали, сервер сдвигал отметку,
+         * колокольчик гас — а значок в списке слева оставался висеть
+         * до перезагрузки страницы, потому что его нарисовал сервер
+         * и больше никто к нему не возвращался.
+         */
+        function paintConvoBadges(list) {
+            const rows = $$('[data-convo]');
+
+            if (rows.length === 0) { return; }
+
+            const unread = new Map();
+
+            list.forEach(row => unread.set(String(row.id), row.unread));
+
+            rows.forEach(row => {
+                const count = unread.get(row.dataset.convo) || 0;
+                let badge = $('.unread', row);
+
+                if (count === 0) {
+                    if (badge) { badge.remove(); }
+                    return;
+                }
+
+                if (!badge) {
+                    badge = el('<span class="unread"></span>');
+                    row.appendChild(badge);
+                }
+
+                badge.textContent = count > 99 ? '99+' : String(count);
+            });
+        }
+
         function render(data) {
             const unread = data.unread || 0;
 
@@ -879,6 +921,8 @@
             setCount('#chatBadge', data.messages || 0);
             setCount('#annBadge', data.announcements || 0);
             setCount('#taskBadge', data.tasks || 0);
+
+            paintConvoBadges(data.conversations || []);
 
             // То же число — на саму вкладку: значок с цифрой и мигающий
             // заголовок, пока портал свёрнут. Это единственный способ
@@ -951,9 +995,16 @@
                 // а всплывающее окошко поверх — только помеха.
                 if (n.url && location.pathname + location.search === n.url) { return; }
 
-                const what = n.kind === 'message' ? 'Новое сообщение: ' : 'Новое объявление: ';
+                // В всплывашке — кто и что написал. Раньше было только
+                // «Новое сообщение: Иванов», и чтобы понять, бросать ли
+                // работу, приходилось открывать портал.
+                const what = n.kind === 'message' ? 'Новое сообщение' : 'Новое объявление';
 
-                toast(what + n.title, 'info');
+                toast(
+                    what + ' · ' + n.title + (n.preview ? ': ' + n.preview : ''),
+                    'info',
+                    'Открыть',
+                    () => { window.location.href = n.url; });
 
                 if (window.portalSound) { window.portalSound.play('soft'); }
 
@@ -961,12 +1012,16 @@
                 // человеку, который и так смотрит в портал, хватает всплывашки
                 // в углу страницы.
                 if (window.portalSound) {
-                    window.portalSound.notify(
-                        n.kind === 'message' ? 'Новое сообщение' : 'Новое объявление',
-                        // В личной беседе заголовок и автор — одно и то же имя,
-                        // и «Пётр Петров — Пётр Петров» в окошке выглядит сбоем.
-                        n.title + (n.author && n.author !== n.title ? ' — ' + n.author : ''),
-                        n.url);
+                    // В заголовке окошка — от кого, в теле — сам текст.
+                    // Так уведомление отвечает на вопрос «это срочно?»
+                    // целиком, не заставляя открывать портал.
+                    //
+                    // В личной беседе заголовок и автор — одно и то же имя,
+                    // и «Пётр Петров — Пётр Петров» выглядело бы сбоем.
+                    const from = n.title
+                        + (n.author && n.author !== n.title ? ' — ' + n.author : '');
+
+                    window.portalSound.notify(from, n.preview || what, n.url);
                 }
             });
         }
@@ -1137,6 +1192,22 @@
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible' && timer !== null) { poll(); }
         });
+
+        /**
+         * «Спроси сервер прямо сейчас» — для других разделов.
+         *
+         * Нужно переписке: человек открыл беседу, сервер при отрисовке
+         * страницы отметил всё прочитанным, но колокольчик об этом
+         * не знает и до очередного опроса показывает старое число.
+         * Семь секунд с горящим счётчиком непрочитанного над открытой
+         * и уже прочитанной беседой — это и есть «не всегда срабатывает».
+         */
+        window.portalNotify = {
+            refresh() {
+                lastPollAt = 0;
+                poll();
+            }
+        };
     })();
 
     // ======================================================================
@@ -2847,6 +2918,33 @@
         // удаление сообщений, но не правка: чужие слова менять нельзя.
         const isAdminObserver = settings.observer === 'true';
 
+        const canWrite = settings.canWrite === 'true';
+
+        /**
+         * Виды реакций — тот же набор и тот же порядок, что на сервере
+         * (см. MessageReactions). Список двоится сознательно: страница
+         * рисует реакции сразу после нажатия, не дожидаясь ответа,
+         * и для этого ей нужны знаки и подписи.
+         *
+         * ПРАВЯ ОДИН СПИСОК, ПРАВЬТЕ ОБА. Сервер проверяет код реакции
+         * по своему списку, поэтому лишний вид, добавленный только здесь,
+         * просто не сохранится — порча данных исключена, а вот кнопка,
+         * которая ничего не делает, появится.
+         */
+        const REACTIONS = [
+            { kind: 'smile', glyph: '\u{1F642}', title: 'Улыбка' },
+            { kind: 'sad', glyph: '\u{1F641}', title: 'Грустно' },
+            { kind: 'laugh', glyph: '\u{1F606}', title: 'Смешно' },
+            { kind: 'serious', glyph: '\u{1F610}', title: 'Серьёзно' },
+            { kind: 'plus', glyph: '\u{2795}', title: 'Плюс' },
+            { kind: 'yes-sir', caption: 'Так точно', title: 'Так точно' },
+            { kind: 'aye', caption: 'Есть', title: 'Есть' },
+            { kind: 'no-sir', caption: 'Никак нет', title: 'Никак нет' },
+            { kind: 'serve', caption: 'Служу России', title: 'Служу России' }
+        ];
+
+        const reactionOf = kind => REACTIONS.find(r => r.kind === kind);
+
         // ---------- Лента сообщений ----------
         const msgs = $('#msgs');
 
@@ -2948,6 +3046,11 @@
                             files.value = '';
                             files.dispatchEvent(new Event('change', { bubbles: true }));
                         }
+
+                        // Ответ отправлен — полоска с цитатой больше
+                        // не нужна: следующая реплика обычная, пока
+                        // не выбрали новую цитату.
+                        clearReply();
 
                         // Своё сообщение показываем сразу, не дожидаясь
                         // очередного опроса.
@@ -3188,6 +3291,328 @@
             load('');
         }
 
+        // ---------- Ответ на сообщение ----------
+        //
+        // На сервер уходит ТОЛЬКО номер цитируемого сообщения (скрытое поле
+        // в форме). Автора и текст цитаты сервер читает сам из базы: прими
+        // он их от браузера, любой мог бы приписать коллеге слова, которых
+        // тот не говорил.
+        //
+        // Полоска над полем ввода нужна затем, чтобы человек видел, на что
+        // отвечает. Без неё ответ отличается от обычной реплики только
+        // тем, что получатель потом увидит цитату, — а отправитель нет.
+
+        const replyBar = $('#chatReply');
+        const replyIdField = $('#chatReplyTo');
+
+        function setReply(node) {
+            if (!replyBar || !replyIdField || !node) { return; }
+
+            replyIdField.value = node.dataset.message;
+
+            $('#chatReplyAuthor').textContent = node.dataset.mine === 'true'
+                ? 'Вы'
+                : (node.dataset.author || '');
+
+            // Текст цитаты здесь только для вида — на сервер он не уходит.
+            const body = (node.dataset.body || '').replace(/\s+/g, ' ').trim();
+
+            $('#chatReplyBody').textContent = body
+                || (node.dataset.deleted === 'true' ? 'сообщение удалено' : 'вложение');
+
+            replyBar.hidden = false;
+
+            if (text) { text.focus(); }
+        }
+
+        function clearReply() {
+            if (!replyBar || !replyIdField) { return; }
+
+            replyIdField.value = '0';
+            replyBar.hidden = true;
+        }
+
+        if (replyBar) {
+            $('#chatReplyCancel').onclick = clearReply;
+
+            // Esc отменяет ответ — но только пока не открыто окно поверх
+            // страницы: там Esc нужнее самому окну.
+            document.addEventListener('keydown', e => {
+                if (e.key === 'Escape' && !replyBar.hidden && !$('#modalRoot .overlay')) {
+                    clearReply();
+                }
+            });
+        }
+
+        /** Прокрутка к сообщению, на которое отвечали. */
+        function gotoMessage(id) {
+            const node = $(`[data-message="${id}"]`, chat);
+
+            if (!node) {
+                // Сообщения на странице нет: его удалили или оно осталось
+                // выше загруженной части переписки.
+                toast('Это сообщение больше не показывается', 'info');
+                return;
+            }
+
+            node.scrollIntoView({ block: 'center' });
+
+            // Подсветка на секунду: в длинной ленте прокрутка сама по себе
+            // не отвечает на вопрос «куда именно меня привели».
+            node.classList.add('found');
+            setTimeout(() => node.classList.remove('found'), 1200);
+        }
+
+        // ---------- Пересылка ----------
+        //
+        // Беседы для выбора берутся из списка слева, который и так есть
+        // на странице: отдельный запрос к серверу за тем же самым означал
+        // бы второй список, который однажды разойдётся с первым.
+
+        function forwardMessage(node) {
+            const rows = $$('[data-convo]')
+                .filter(row => row.dataset.convo !== conversationId)
+                .map(row => ({
+                    id: row.dataset.convo,
+                    title: row.dataset.convoTitle || 'переписка',
+                    group: row.dataset.convoGroup === 'true'
+                }));
+
+            if (rows.length === 0) {
+                alertDlg('Переслать некуда',
+                    'Других переписок в вашем списке нет. Начните переписку с сотрудником '
+                    + 'или создайте группу — после этого сообщение можно будет переслать.');
+                return;
+            }
+
+            const m = openModal({
+                title: 'Переслать сообщение',
+                body: '<div class="field"><label for="fwdSearch">Кому</label>' +
+                    '<input type="text" id="fwdSearch" autocomplete="off" ' +
+                    'placeholder="Название беседы или фамилия"></div>' +
+                    '<div class="people" id="fwdList"></div>' +
+                    '<p class="hint">У пересланного сообщения останется подпись ' +
+                    'с именем автора, а вложения уйдут копиями.</p>',
+                foot: '<button class="btn" type="button" data-mclose>Отмена</button>'
+            });
+
+            const list = $('#fwdList', m);
+            const search = $('#fwdSearch', m);
+
+            const paint = () => {
+                const needle = search.value.trim().toLowerCase();
+
+                const shown = needle
+                    ? rows.filter(row => row.title.toLowerCase().includes(needle))
+                    : rows;
+
+                if (shown.length === 0) {
+                    list.innerHTML = '<p class="hint">Ничего не нашлось.</p>';
+                    return;
+                }
+
+                list.innerHTML = shown.map(row =>
+                    `<button class="member-row" type="button" data-to="${esc(row.id)}">` +
+                    `<div class="avatar" data-av="${avatarIndex(row.title)}">` +
+                    (row.group ? ic('users', 15) : esc(initials(row.title))) + '</div>' +
+                    `<div><b>${esc(row.title)}</b><span>${row.group ? 'группа' : 'переписка'}</span></div>` +
+                    '</button>').join('');
+
+                $$('[data-to]', list).forEach(button => {
+                    button.onclick = () => {
+                        closeModal();
+
+                        post('/Messages?handler=Forward&id=' + conversationId, {
+                            messageId: node.dataset.message,
+                            targetId: button.dataset.to
+                        })
+                            .then(r => r.json())
+                            .then(answer => {
+                                if (!answer.ok) {
+                                    toast(answer.error || 'Переслать не удалось', 'warn');
+                                    return;
+                                }
+
+                                toast(answer.note, 'ok', 'Перейти',
+                                    () => { window.location.href = answer.url; });
+                            })
+                            .catch(() => toast('Переслать не удалось: связь прервалась', 'danger'));
+                    };
+                });
+            };
+
+            search.addEventListener('input', paint);
+            setTimeout(() => search.focus(), 60);
+            paint();
+        }
+
+        // ---------- Реакции ----------
+        //
+        // Половина реплик в рабочей переписке — «принято», «ок», «сделаю».
+        // Каждая такая поднимает беседу наверх и звонит колокольчиком всем
+        // участникам группы. Реакция говорит то же самое молча.
+        //
+        // Отметка рисуется СРАЗУ, не дожидаясь ответа сервера: нажатие
+        // должно отзываться мгновенно. Ответ приходит с пересчитанным
+        // списком и заменяет нарисованное — если сервер отказал,
+        // нарисованное откатится само.
+
+        /** Перерисовывает полоску реакций под одним сообщением. */
+        function paintReactions(id, marks) {
+            const box = $(`[data-reacts="${id}"]`, chat);
+
+            if (!box) { return; }
+
+            box.innerHTML = (marks || []).map(mark => {
+                const kind = reactionOf(mark.kind);
+
+                if (!kind) { return ''; }
+
+                const face = kind.glyph
+                    ? `<span class="r-glyph">${esc(kind.glyph)}</span>`
+                    : `<span class="r-caption">${esc(kind.caption)}</span>`;
+
+                return `<button class="react${mark.mine ? ' on' : ''}" type="button" ` +
+                    `data-kind="${esc(mark.kind)}" title="${esc(kind.title)} — ${esc(mark.who)}">` +
+                    face + `<i>${mark.count}</i></button>`;
+            }).join('');
+        }
+
+        function react(id, kind) {
+            if (!canWrite) { return; }
+
+            const box = $(`[data-reacts="${id}"]`, chat);
+            const already = box && $(`.react[data-kind="${kind}"].on`, box);
+
+            // Мгновенный отклик: поставленную отметку подсвечиваем, снятую
+            // гасим. Числа при этом не трогаем — их пересчитает сервер.
+            if (already) { already.classList.remove('on'); }
+
+            post('/Messages?handler=React&id=' + conversationId, { messageId: id, kind })
+                .then(r => r.json())
+                .then(answer => {
+                    if (!answer.ok) {
+                        toast(answer.error || 'Реакция не поставилась', 'warn');
+                        return;
+                    }
+
+                    paintReactions(answer.messageId, answer.reactions);
+                })
+                .catch(() => {
+                    toast('Реакция не поставилась: связь прервалась', 'warn');
+
+                    if (already) { already.classList.add('on'); }
+                });
+        }
+
+        /** Окошко выбора реакции — девять кнопок у места нажатия. */
+        function pickReaction(x, y, id) {
+            hideMenu();
+
+            const box = el('<div class="ctx react-pick">' + REACTIONS.map(r =>
+                `<button type="button" data-kind="${r.kind}" title="${esc(r.title)}">` +
+                (r.glyph
+                    ? `<span class="r-glyph">${esc(r.glyph)}</span>`
+                    : `<span class="r-caption">${esc(r.caption)}</span>`) +
+                '</button>').join('') + '</div>');
+
+            document.body.appendChild(box);
+
+            const rect = box.getBoundingClientRect();
+
+            box.style.left = Math.min(x, window.innerWidth - rect.width - 10) + 'px';
+            box.style.top = Math.min(y, window.innerHeight - rect.height - 10) + 'px';
+
+            const close = () => box.remove();
+
+            $$('[data-kind]', box).forEach(button => {
+                button.onclick = () => {
+                    close();
+                    react(id, button.dataset.kind);
+                };
+            });
+
+            // Закрывается тем же способом, что контекстное меню: нажатием
+            // мимо. Обработчик одноразовый — иначе они копились бы.
+            setTimeout(() => {
+                document.addEventListener('click', function once(e) {
+                    if (!e.target.closest('.react-pick')) {
+                        close();
+                        document.removeEventListener('click', once);
+                    }
+                });
+            }, 0);
+        }
+
+        // Нажатие по уже стоящей реакции — поставить или снять свою.
+        // Нажатие по цитате — прокрутка к тому, на что отвечали.
+        chat.addEventListener('click', e => {
+            const mark = e.target.closest('.react');
+
+            if (mark) {
+                const holder = mark.closest('[data-reacts]');
+
+                if (holder) { react(holder.dataset.reacts, mark.dataset.kind); }
+
+                return;
+            }
+
+            const quote = e.target.closest('[data-goto]');
+
+            if (quote) { gotoMessage(quote.dataset.goto); }
+        });
+
+        // ---------- Файлы из буфера обмена ----------
+        //
+        // Ctrl+V с картинкой или файлом. Снимок экрана — самый частый
+        // случай: человек нажимает Print Screen, и дальше ему нужно
+        // одно нажатие, а не «сохранить на диск, найти, приложить».
+        //
+        // У снимка экрана нет имени файла (браузер отдаёт его как
+        // «image.png» или вовсе без имени), поэтому имя даём сами —
+        // со временем, чтобы в беседе из пяти снимков их можно было
+        // различить.
+        if (files && canWrite) {
+            document.addEventListener('paste', e => {
+                if (!e.clipboardData) { return; }
+
+                // Вставка в поле ввода текста остаётся вставкой текста:
+                // забирать себе Ctrl+V с обычным текстом нельзя.
+                const dropped = [...(e.clipboardData.files || [])];
+
+                if (dropped.length === 0) { return; }
+
+                e.preventDefault();
+
+                const box = new DataTransfer();
+
+                [...files.files].forEach(f => box.items.add(f));
+
+                dropped.forEach(f => {
+                    const nameless = !f.name || f.name === 'image.png' || f.name === 'blob';
+
+                    if (!nameless) {
+                        box.items.add(f);
+                        return;
+                    }
+
+                    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+                    const extension = (f.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '');
+
+                    box.items.add(new File([f], `Снимок ${stamp}.${extension}`, { type: f.type }));
+                });
+
+                files.files = box.files;
+                files.dispatchEvent(new Event('change', { bubbles: true }));
+
+                toast(dropped.length === 1
+                    ? 'Файл из буфера приложен'
+                    : 'Файлов из буфера приложено: ' + dropped.length, 'ok');
+
+                if (text) { text.focus(); }
+            });
+        }
+
         // ---------- Удаление и правка сообщения ----------
 
         function deleteMessage(id) {
@@ -3235,6 +3660,19 @@
             const deleted = node.dataset.deleted === 'true';
             const body = node.dataset.body || '';
             const entries = [];
+
+            // Ответ, пересылка и реакция — первыми: ими пользуются чаще,
+            // чем правкой и копированием, а нижние пункты меню нужно
+            // искать глазами.
+            if (!deleted && canWrite) {
+                entries.push({ icon: 'reply', label: 'Ответить', fn: () => setReply(node) });
+                entries.push({ icon: 'forward', label: 'Переслать', fn: () => forwardMessage(node) });
+                entries.push({
+                    icon: 'smile', label: 'Поставить реакцию',
+                    fn: () => pickReaction(e.clientX, e.clientY, node.dataset.message)
+                });
+                entries.push({ sep: 1 });
+            }
 
             if (body) {
                 entries.push({ icon: 'copy', label: 'Копировать текст', fn: () => copyText(body, 'Текст скопирован') });
@@ -3441,8 +3879,10 @@
                 const box = el('<div class="msg' + (msg.mine ? ' mine' : '') + '"></div>');
 
                 box.dataset.message = msg.id;
+                box.id = 'msg-' + msg.id;
                 box.dataset.mine = String(msg.mine);
                 box.dataset.deleted = String(msg.deleted);
+                box.dataset.author = msg.author || '';
                 box.dataset.body = msg.body || '';
 
                 if (!msg.mine) {
@@ -3463,15 +3903,30 @@
                     ? '<div class="b-text b-deleted">сообщение удалено</div>'
                     : (msg.body ? `<div class="b-text">${linkify(msg.body)}</div>` : '');
 
+                // Цитата и пометка «переслано от…» — тем же видом, что
+                // и у сообщений, пришедших вместе со страницей.
+                const quote = !msg.deleted && msg.replyTo
+                    ? `<button class="b-quote" type="button" data-goto="${msg.replyTo}">` +
+                      `<b>${esc(msg.replyAuthor)}</b><span>${esc(msg.replyText)}</span></button>`
+                    : '';
+
+                const forwarded = !msg.deleted && msg.forwardedFrom
+                    ? `<div class="b-fwd">${ic('forward', 12)}Переслано: ${esc(msg.forwardedFrom)}</div>`
+                    : '';
+
                 box.appendChild(el(
-                    '<div class="bubble">' + name + text + files +
+                    '<div class="bubble">' + name + quote + forwarded + text + files +
                     '<div class="b-time">' +
                     (msg.edited ? '<span class="b-edited">изменено</span>' : '') +
                     esc(msg.at) +
                     (msg.mine && !msg.deleted && !isAdminObserver
                         ? `<span class="b-ticks" title="Отправлено">${ic('check', 15)}</span>`
                         : '') +
-                    '</div></div>'));
+                    '</div>' +
+                    // Пустая полоска под реакции: её заполнит paintReactions,
+                    // когда реакцию поставят.
+                    `<div class="b-reacts" data-reacts="${msg.id}"></div>` +
+                    '</div>'));
 
                 return box;
             }
@@ -3514,6 +3969,25 @@
                             $('use', tick).setAttribute('href', read ? '#i-check-all' : '#i-check');
                         });
 
+                        // Реакции: чужие отметки появляются и исчезают сами.
+                        // Проходим по всем недавним сообщениям, а не только
+                        // по тем, у кого реакции есть, — иначе снятая кем-то
+                        // отметка осталась бы на странице навсегда.
+                        (data.reacted || []).forEach(id => {
+                            const marks = (data.reactions || {})[String(id)];
+
+                            const box = $(`[data-reacts="${id}"]`, chat);
+
+                            if (!box) { return; }
+
+                            // Полоску не трогаем, если и была пустой, и осталась:
+                            // лишняя перерисовка сбрасывала бы подсказку,
+                            // которую человек как раз читает.
+                            if (!marks && box.children.length === 0) { return; }
+
+                            paintReactions(id, marks || []);
+                        });
+
                         if (!data.hasNew) { return; }
 
                         // Дорисовываем в конец и прокручиваем — но только
@@ -3534,12 +4008,32 @@
                         });
 
                         if (atBottom) { msgs.scrollTop = msgs.scrollHeight; }
+
+                        // Пришедшее сервер тут же отметил прочитанным
+                        // (см. OnGetNewAsync). Спрашиваем колокольчик
+                        // сразу, иначе число непрочитанного висело бы
+                        // над беседой, которую человек уже читает.
+                        if (window.portalNotify) { window.portalNotify.refresh(); }
                     })
                     .catch(() => { /* связь могла моргнуть — молчим */ })
                     .finally(() => { busy = false; });
             };
 
             setInterval(checkNew, CHECK_MS);
+
+            // Вернулись на вкладку — проверяем сразу. Пока вкладка была
+            // скрыта, проверка не шла (см. выход по visibilityState
+            // в начале checkNew), и без этого человек смотрел бы
+            // на беседу без последних сообщений до следующего такта.
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') { checkNew(); }
+            });
+
+            // Беседа открыта, и сервер при отрисовке страницы отметил всё
+            // прочитанным. Колокольчик об этом ещё не знает: его опрос
+            // случится через несколько секунд, и всё это время над открытой
+            // беседой горит число непрочитанных. Спрашиваем сразу.
+            if (window.portalNotify) { window.portalNotify.refresh(); }
         }
     }
 

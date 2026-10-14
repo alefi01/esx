@@ -10,16 +10,39 @@ namespace Portal.Web.Services.Notifications;
 /// <param name="Author">Кто.</param>
 /// <param name="At">Когда, в местном времени.</param>
 /// <param name="Url">Куда вести по нажатию.</param>
+/// <param name="Preview">
+/// Начало самого текста — то, что показывается во всплывашке и в окошке
+/// Windows под именем.
+///
+/// Раньше в уведомлении было только «Новое сообщение» и имя: чтобы понять,
+/// нужно ли бросать работу, приходилось открывать портал. Теперь видно
+/// и первые слова; если в сообщении только вложение — так и написано.
+/// </param>
 /// <param name="Sound">Каким звуком сообщить о событии. Сигнал один на всё.</param>
 public sealed record NotificationItem(
     string Kind, int Id, string Title, string Author, DateTime At, string Url,
+    string Preview = "",
     string Sound = Portal.Web.Services.Tasks.UserPreferences.MessageSound);
+
+/// <summary>Сколько непрочитанного в одной беседе — для значка в списке бесед.</summary>
+/// <param name="Id">Номер беседы.</param>
+/// <param name="Unread">Сколько непрочитанных сообщений.</param>
+public sealed record ConversationUnread(int Id, int Unread);
 
 /// <summary>Сводка непрочитанного для одного человека.</summary>
 /// <param name="Unread">Всего непрочитанного — число на колокольчике.</param>
 /// <param name="Announcements">Из них объявлений — число рядом с пунктом меню.</param>
 /// <param name="Messages">Из них сообщений в беседах — число рядом с пунктом меню.</param>
 /// <param name="Items">Последние события списком, вперемешку, свежие сверху.</param>
+/// <param name="Conversations">
+/// Непрочитанное по каждой беседе, где оно есть.
+///
+/// Нужно затем, чтобы значки в списке бесед гасли и загорались сами,
+/// а не оставались такими, какими их отрисовал сервер при загрузке
+/// страницы. Именно из-за этого число непрочитанных «не всегда
+/// пропадало»: беседу открыли, отметка на сервере сдвинулась, а значок
+/// в списке рядом остался висеть до перезагрузки.
+/// </param>
 /// <param name="Tasks">
 /// Сколько задач в работе. К «непрочитанному» не прибавляется: задача —
 /// не новость, и колокольчик от неё звонить не должен. Это просто число
@@ -30,6 +53,7 @@ public sealed record NotificationSummary(
     int Announcements,
     int Messages,
     IReadOnlyList<NotificationItem> Items,
+    IReadOnlyList<ConversationUnread> Conversations,
     int Tasks = 0);
 
 /// <summary>
@@ -66,7 +90,7 @@ public sealed class NotificationService
     /// хранится номер последнего прочитанного сообщения, непрочитанное —
     /// это всё, что новее. Своё написанное в счёт не идёт.
     /// </summary>
-    private async Task<(int Unread, List<NotificationItem> Items)> MessagesAsync(
+    private async Task<(int Unread, List<NotificationItem> Items, List<ConversationUnread> ByConversation)> MessagesAsync(
         string userName, CancellationToken cancellationToken)
     {
         var mine = await _db.Participants
@@ -76,7 +100,7 @@ public sealed class NotificationService
 
         if (mine.Count == 0)
         {
-            return (0, []);
+            return (0, [], []);
         }
 
         var ids = mine.Select(m => m.ConversationId).ToList();
@@ -115,10 +139,18 @@ public sealed class NotificationService
                 m.IsGroup && !string.IsNullOrWhiteSpace(m.Title) ? m.Title : m.AuthorDisplayName,
                 m.AuthorDisplayName,
                 m.CreatedAt.ToLocalTime(),
-                "/Messages?id=" + m.ConversationId))
+                "/Messages?id=" + m.ConversationId,
+                Shorten(m.Body)))
             .ToList();
 
-        return (unread.Count, items);
+        // Сколько непрочитанного в какой беседе — по этому списку страница
+        // гасит и зажигает значки в списке бесед, не перезагружаясь.
+        var byConversation = unread
+            .GroupBy(m => m.ConversationId)
+            .Select(g => new ConversationUnread(g.Key, g.Count()))
+            .ToList();
+
+        return (unread.Count, items, byConversation);
     }
 
     public async Task<NotificationSummary> GetAsync(string userName, CancellationToken cancellationToken)
@@ -145,7 +177,7 @@ public sealed class NotificationService
             var firstVisit = await MessagesAsync(userName, cancellationToken);
 
             return new NotificationSummary(
-                firstVisit.Unread, 0, firstVisit.Unread, firstVisit.Items);
+                firstVisit.Unread, 0, firstVisit.Unread, firstVisit.Items, firstVisit.ByConversation);
         }
 
         var unreadQuery = _db.Announcements.Where(a => a.Id > lastSeen);
@@ -164,7 +196,8 @@ public sealed class NotificationService
             })
             .ToListAsync(cancellationToken);
 
-        var (unreadMessages, messageItems) = await MessagesAsync(userName, cancellationToken);
+        var (unreadMessages, messageItems, byConversation) =
+            await MessagesAsync(userName, cancellationToken);
 
         var items = announcements
             .Select(a => new NotificationItem(
@@ -176,7 +209,36 @@ public sealed class NotificationService
             .ToList();
 
         return new NotificationSummary(
-            unreadAnnouncements + unreadMessages, unreadAnnouncements, unreadMessages, items);
+            unreadAnnouncements + unreadMessages, unreadAnnouncements, unreadMessages, items,
+            byConversation);
+    }
+
+    /// <summary>
+    /// Начало текста для уведомления.
+    ///
+    /// Коротко: всплывашка живёт несколько секунд, а окошко Windows
+    /// обрезает длинный текст само, но по-своему — лучше сделать это
+    /// предсказуемо. Переводы строк заменяются пробелом: в одну строку
+    /// уведомления они всё равно не влезут.
+    ///
+    /// Пустой текст означает сообщение из одного вложения — так и пишем,
+    /// иначе уведомление выглядело бы оборванным.
+    /// </summary>
+    private static string Shorten(string? body)
+    {
+        var text = (body ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
+
+        while (text.Contains("  ", StringComparison.Ordinal))
+        {
+            text = text.Replace("  ", " ", StringComparison.Ordinal);
+        }
+
+        if (text.Length == 0)
+        {
+            return "вложение";
+        }
+
+        return text.Length <= 120 ? text : text[..119] + "…";
     }
 
     /// <summary>

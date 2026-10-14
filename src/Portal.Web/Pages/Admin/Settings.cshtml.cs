@@ -19,12 +19,18 @@ public class SettingsModel : PageModel
     private readonly PortalSettings _settings;
     private readonly StorageUsage _usage;
     private readonly PortalCleanup _cleanup;
+    private readonly Portal.Web.Services.Game.GameRating _game;
 
-    public SettingsModel(PortalSettings settings, StorageUsage usage, PortalCleanup cleanup)
+    public SettingsModel(
+        PortalSettings settings,
+        StorageUsage usage,
+        PortalCleanup cleanup,
+        Portal.Web.Services.Game.GameRating game)
     {
         _settings = settings;
         _usage = usage;
         _cleanup = cleanup;
+        _game = game;
     }
 
     /// <summary>Сколько занято сейчас — чтобы вводимый предел было с чем сравнить.</summary>
@@ -32,6 +38,11 @@ public class SettingsModel : PageModel
 
     /// <summary>Что накопилось и что уйдёт при уборке.</summary>
     public IReadOnlyList<CleanupLine> Cleanup { get; private set; } = [];
+
+    /// <summary>Сколько человек в рейтинге игры и сколько у них очков.</summary>
+    public int GamePlayers { get; private set; }
+
+    public long GamePoints { get; private set; }
 
     public static string Size(long bytes) => UploadValidator.Format(bytes);
 
@@ -105,6 +116,18 @@ public class SettingsModel : PageModel
             // всё равно должна открыться и дать сохранить настройки.
             Cleanup = [];
         }
+
+        try
+        {
+            (GamePlayers, GamePoints) = await _game.TotalsAsync(cancellationToken);
+        }
+        catch (Exception)
+        {
+            // То же соображение: из-за рейтинга шуточной игры страница
+            // настроек портала открываться не перестанет.
+            GamePlayers = 0;
+            GamePoints = 0;
+        }
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
@@ -140,6 +163,30 @@ public class SettingsModel : PageModel
     public async Task<IActionResult> OnPostCleanupAsync(CancellationToken cancellationToken)
     {
         StatusMessage = await _cleanup.RunAsync(User.Identity?.Name ?? "", cancellationToken);
+
+        return RedirectToPage();
+    }
+
+    /// <summary>
+    /// «Обнулить рейтинг» игры-пасхалки.
+    ///
+    /// Зачем это вообще нужно: очки считает браузер, и подделать их может
+    /// любой, кто откроет средства разработчика. Пока рейтинг остаётся
+    /// шуткой, это никого не трогает; когда в нём появляется строка
+    /// с миллионом очков — шутка кончается. Эта кнопка возвращает всё
+    /// к началу.
+    ///
+    /// Удаляются ВСЕ строки сразу: обнулить одного человека нельзя
+    /// намеренно — иначе администратор оказывается судьёй в игре,
+    /// а это не его работа.
+    /// </summary>
+    public async Task<IActionResult> OnPostResetGameAsync(CancellationToken cancellationToken)
+    {
+        var removed = await _game.ResetAsync(cancellationToken);
+
+        StatusMessage = removed == 0
+            ? "Рейтинг игры и так был пуст."
+            : $"Рейтинг игры обнулён: убрано строк — {removed}.";
 
         return RedirectToPage();
     }
