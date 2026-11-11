@@ -17,6 +17,15 @@ public static class PortalPolicies
     /// либо в группе администраторов. Читать ленту могут все, у кого есть доступ к порталу.
     /// </summary>
     public const string PublishAnnouncements = "PublishAnnouncements";
+
+    /// <summary>
+    /// Право ставить задачи другим сотрудникам: членство в группе
+    /// ActiveDirectory:HeadGroup либо в группе администраторов.
+    ///
+    /// Назначение начальником отдела тут ни при чём: задачи ставятся
+    /// кому угодно в портале, а отдел — это про папку и объявления.
+    /// </summary>
+    public const string AssignTasks = "AssignTasks";
 }
 
 /// <summary>Собственные типы claim'ов, которых нет в стандартном наборе.</summary>

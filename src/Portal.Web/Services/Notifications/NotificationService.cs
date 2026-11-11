@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Portal.Web.Data;
+using Portal.Web.Services.Announcements;
 
 namespace Portal.Web.Services.Notifications;
 
@@ -73,13 +75,18 @@ public sealed class NotificationService
 
     private readonly PortalDbContext _db;
     private readonly TimeProvider _time;
+    private readonly AnnouncementFeed _feed;
     private readonly Portal.Web.Services.Tasks.UserPreferences _preferences;
 
     public NotificationService(
-        PortalDbContext db, TimeProvider time, Portal.Web.Services.Tasks.UserPreferences preferences)
+        PortalDbContext db,
+        TimeProvider time,
+        AnnouncementFeed feed,
+        Portal.Web.Services.Tasks.UserPreferences preferences)
     {
         _db = db;
         _time = time;
+        _feed = feed;
         _preferences = preferences;
     }
 
@@ -153,65 +160,39 @@ public sealed class NotificationService
         return (unread.Count, items, byConversation);
     }
 
-    public async Task<NotificationSummary> GetAsync(string userName, CancellationToken cancellationToken)
+    /// <summary>
+    /// Сводка непрочитанного.
+    ///
+    /// Принимает не логин, а самого человека с его группами: объявления
+    /// теперь живут в папках, и «что ему видно» считается по правам
+    /// на эти папки.
+    /// </summary>
+    public async Task<NotificationSummary> GetAsync(
+        ClaimsPrincipal user, CancellationToken cancellationToken)
     {
-        var state = await _db.Set<UserSeenState>()
-            .FirstOrDefaultAsync(s => s.UserName == userName, cancellationToken);
-
-        var lastSeen = state?.LastSeenAnnouncementId ?? 0;
-
-        // Первый вход человека в портал не должен вываливать на него
-        // все объявления за всю историю как «новые». Поэтому, пока границу
-        // никто не ставил, считаем, что всё старое он уже видел,
-        // и заводим отметку молча.
-        //
-        // «Впервые здесь» — это не «строки нет»: строку заводит отметка
-        // «человек в сети» (PresenceService) на самом первом запросе,
-        // раньше колокольчика. Признак — именно ПУСТАЯ граница
-        // (см. UserSeenState.LastSeenAnnouncementId); с проверкой на ноль
-        // вместо неё терялся бы другой случай: человек вошёл, когда
-        // объявлений ещё не было вовсе, и первое же опубликованное
-        // объявление осталось бы незамеченным.
-        if (state?.LastSeenAnnouncementId is null)
-        {
-            var newest = await _db.Announcements
-                .OrderByDescending(a => a.Id)
-                .Select(a => a.Id)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            await SaveStateAsync(userName, newest, cancellationToken);
-
-            // Сообщения при этом НЕ прячем: их отметка своя, по каждой беседе,
-            // и человек, которому написали до первого входа, должен это увидеть.
-            var firstVisit = await MessagesAsync(userName, cancellationToken);
-
-            return new NotificationSummary(
-                firstVisit.Unread, 0, firstVisit.Unread, firstVisit.Items, firstVisit.ByConversation);
-        }
-
-        var unreadQuery = _db.Announcements.Where(a => a.Id > lastSeen);
-
-        var unreadAnnouncements = await unreadQuery.CountAsync(cancellationToken);
-
-        var announcements = await unreadQuery
-            .OrderByDescending(a => a.Id)
-            .Take(MaxItems)
-            .Select(a => new
-            {
-                a.Id,
-                a.Title,
-                a.AuthorDisplayName,
-                a.CreatedAt
-            })
-            .ToListAsync(cancellationToken);
+        var userName = user.Identity?.Name ?? "";
 
         var (unreadMessages, messageItems, byConversation) =
             await MessagesAsync(userName, cancellationToken);
 
+        var unreadAnnouncements = await _feed.UnreadCountAsync(user, cancellationToken);
+
+        var fresh = await _feed.UnreadAsync(user, MaxItems, cancellationToken);
+
+        var announcements = fresh
+            .Select(entry => new NotificationItem(
+                "announcement",
+                entry.Item.Id,
+                entry.Item.Title,
+                entry.Item.AuthorDisplayName,
+                entry.Item.CreatedAt.ToLocalTime(),
+                // Ведём в папку, а не в ленту: ленты больше нет, объявление
+                // живёт там, где лежат документы отдела.
+                entry.Folder is null ? "/" : "/Files?id=" + entry.Folder.Id,
+                Shorten(entry.Item.Body)))
+            .ToList();
+
         var items = announcements
-            .Select(a => new NotificationItem(
-                "announcement", a.Id, a.Title, a.AuthorDisplayName, a.CreatedAt.ToLocalTime(),
-                "/Announcements"))
             .Concat(messageItems)
             .OrderByDescending(i => i.At)
             .Take(MaxItems)
@@ -220,6 +201,99 @@ public sealed class NotificationService
         return new NotificationSummary(
             unreadAnnouncements + unreadMessages, unreadAnnouncements, unreadMessages, items,
             byConversation);
+    }
+
+    /// <summary>
+    /// Отметить прочитанным всё, что человеку сейчас видно.
+    ///
+    /// Кнопка «Прочитать все» в колокольчике. Обычный путь другой:
+    /// объявления папки становятся прочитанными, когда человек эту папку
+    /// открывает (см. AnnouncementFeed).
+    /// </summary>
+    public async Task MarkAllSeenAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        await _feed.MarkAllSeenAsync(user, cancellationToken);
+
+        // Заодно двигаем старую общую границу: по ней считаются объявления,
+        // оставшиеся от прежней ленты и не привязанные ни к какой папке.
+        var userName = user.Identity?.Name ?? "";
+
+        if (string.IsNullOrEmpty(userName))
+        {
+            return;
+        }
+
+        var newest = await _db.Announcements
+            .Where(a => a.FolderId == null)
+            .MaxAsync(a => (int?)a.Id, cancellationToken) ?? 0;
+
+        await SaveStateAsync(userName, newest, cancellationToken);
+    }
+
+    /// <summary>
+    /// Запоминает, как показывать этого человека.
+    ///
+    /// Нужно для переписок: если контроллер домена недоступен, список
+    /// собеседников собирается из тех, кто уже входил в портал, — и без
+    /// имени в нём были бы одни логины. Вызывается при входе.
+    /// </summary>
+    public async Task RememberUserAsync(
+        string userName, string displayName, bool isHead, CancellationToken cancellationToken)
+    {
+        var state = await _db.Set<UserSeenState>().AsTracking()
+            .FirstOrDefaultAsync(s => s.UserName == userName, cancellationToken);
+
+        if (state is null)
+        {
+            // Строки ещё нет — заводим её прямо здесь.
+            //
+            // Раньше тут стоял выход «заведёт первый же запрос уведомлений»,
+            // и из-за него терялось всё, ради чего этот метод и зовут:
+            // человек входил ПЕРВЫЙ раз, строки не было, имя и признак
+            // начальника не сохранялись, а строку потом заводил колокольчик —
+            // пустую. В списке «кого назначить начальником» такой человек
+            // не появлялся до второго входа.
+            //
+            // Граница прочитанных остаётся ПУСТОЙ: это признак «человек
+            // здесь впервые», и по нему служба уведомлений не вываливает
+            // на него все объявления за всю историю (см. GetAsync).
+            _db.Add(new UserSeenState
+            {
+                UserName = userName,
+                DisplayName = displayName ?? "",
+                IsHead = isHead,
+                UpdatedAt = _time.GetUtcNow().UtcDateTime
+            });
+
+            await _db.SaveChangesAsync(cancellationToken);
+
+            return;
+        }
+
+        var changed = false;
+
+        if (!string.IsNullOrWhiteSpace(displayName) && state.DisplayName != displayName)
+        {
+            state.DisplayName = displayName;
+            changed = true;
+        }
+
+        // Членство в группе начальников запоминается при каждом входе:
+        // по нему администратор выбирает, кого назначить начальником
+        // отдела, и этот выбор должен работать, даже когда контроллер
+        // домена недоступен (см. UserSeenState.IsHead).
+        if (state.IsHead != isHead)
+        {
+            state.IsHead = isHead;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            state.UpdatedAt = _time.GetUtcNow().UtcDateTime;
+
+            await _db.SaveChangesAsync(cancellationToken);
+        }
     }
 
     /// <summary>
@@ -248,69 +322,6 @@ public sealed class NotificationService
         }
 
         return text.Length <= 120 ? text : text[..119] + "…";
-    }
-
-    /// <summary>
-    /// Граница «прочитанного»: номер последнего объявления, которое человек
-    /// отметил как увиденное. Всё, что новее, для него новое.
-    ///
-    /// Нужна главной странице: она показывает только непрочитанное и должна
-    /// считать его по той же границе, что и колокольчик, — иначе числа
-    /// в шапке и на странице разъедутся.
-    ///
-    /// Пока границы нет (человек в портале впервые), она считается нулевой:
-    /// на главной он увидит последние объявления. Тревожным числом
-    /// на колокольчике они при этом не станут — границу поставит первый же
-    /// его запрос (см. GetAsync), и к следующему открытию главной
-    /// непрочитанного уже не будет.
-    /// </summary>
-    public async Task<int> LastSeenAnnouncementIdAsync(
-        string userName, CancellationToken cancellationToken)
-    {
-        var state = await _db.Set<UserSeenState>()
-            .FirstOrDefaultAsync(s => s.UserName == userName, cancellationToken);
-
-        return state?.LastSeenAnnouncementId ?? 0;
-    }
-
-    /// <summary>Отметить всё текущее прочитанным.</summary>
-    public async Task MarkAllSeenAsync(string userName, CancellationToken cancellationToken)
-    {
-        var newest = await _db.Announcements
-            .OrderByDescending(a => a.Id)
-            .Select(a => a.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        await SaveStateAsync(userName, newest, cancellationToken);
-    }
-
-    /// <summary>
-    /// Запоминает, как показывать этого человека.
-    ///
-    /// Нужно для переписок: если контроллер домена недоступен, список
-    /// собеседников собирается из тех, кто уже входил в портал, — и без
-    /// имени в нём были бы одни логины. Вызывается при входе.
-    /// </summary>
-    public async Task RememberUserAsync(
-        string userName, string displayName, CancellationToken cancellationToken)
-    {
-        var state = await _db.Set<UserSeenState>().AsTracking()
-            .FirstOrDefaultAsync(s => s.UserName == userName, cancellationToken);
-
-        if (state is null)
-        {
-            // Строки ещё нет — заведёт её первый же запрос уведомлений,
-            // а пока просто нечего обновлять.
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(displayName) && state.DisplayName != displayName)
-        {
-            state.DisplayName = displayName;
-            state.UpdatedAt = _time.GetUtcNow().UtcDateTime;
-
-            await _db.SaveChangesAsync(cancellationToken);
-        }
     }
 
     private async Task SaveStateAsync(string userName, int announcementId, CancellationToken cancellationToken)

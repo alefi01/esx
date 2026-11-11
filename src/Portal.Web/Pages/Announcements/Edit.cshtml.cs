@@ -12,30 +12,35 @@ namespace Portal.Web.Pages.Announcements;
 /// <summary>
 /// Редактирование объявления.
 ///
-/// Политика PublishAnnouncements пускает сюда всех публикаторов, поэтому
-/// внутри обязательно проверяется ещё и авторство: публикатор правит только
-/// свои объявления, администратор — любые. Без этой второй проверки любой
-/// член группы публикаторов мог бы переписать чужое объявление,
-/// просто подставив другой номер в адресе.
+/// Право проверяется по самому объявлению: его правит автор, начальник
+/// отдела, в папке которого оно висит, и администратор портала. Проверка
+/// идёт и при открытии формы, и при сохранении — POST можно отправить
+/// и в обход страницы, просто подставив чужой номер.
 /// </summary>
 public class EditModel : PageModel
 {
     private readonly PortalDbContext _db;
     private readonly TimeProvider _time;
+    private readonly Portal.Web.Services.Storage.FolderTree _tree;
     private readonly ActiveDirectoryOptions _adOptions;
     private readonly ILogger<EditModel> _logger;
 
     public EditModel(
         PortalDbContext db,
         TimeProvider time,
+        Portal.Web.Services.Storage.FolderTree tree,
         IOptions<ActiveDirectoryOptions> adOptions,
         ILogger<EditModel> logger)
     {
         _db = db;
         _time = time;
+        _tree = tree;
         _adOptions = adOptions.Value;
         _logger = logger;
     }
+
+    /// <summary>Папка объявления — в неё же возвращаемся после сохранения.</summary>
+    public int? FolderId { get; private set; }
 
     [BindProperty]
     public InputModel Input { get; set; } = new();
@@ -72,10 +77,14 @@ public class EditModel : PageModel
             return NotFound();
         }
 
-        if (!AnnouncementPermissions.CanModify(User, announcement, _adOptions.AdminGroup))
+        await _tree.LoadAsync(cancellationToken);
+
+        if (!AnnouncementPermissions.CanModify(User, announcement, _tree, _adOptions.AdminGroup))
         {
             return Forbid();
         }
+
+        FolderId = announcement.FolderId;
 
         Input = new InputModel
         {
@@ -109,10 +118,14 @@ public class EditModel : PageModel
         // Права проверяются ЗАНОВО при сохранении, а не только при открытии формы:
         // между открытием и отправкой могло пройти время, а сам POST можно
         // отправить и в обход страницы.
-        if (!AnnouncementPermissions.CanModify(User, announcement, _adOptions.AdminGroup))
+        await _tree.LoadAsync(cancellationToken);
+
+        if (!AnnouncementPermissions.CanModify(User, announcement, _tree, _adOptions.AdminGroup))
         {
             return Forbid();
         }
+
+        FolderId = announcement.FolderId;
 
         announcement.Title = Input.Title.Trim();
         announcement.Body = Input.Body.Trim();
@@ -137,6 +150,8 @@ public class EditModel : PageModel
 
         TempData["StatusMessage"] = "Изменения сохранены.";
 
-        return RedirectToPage("Index");
+        return FolderId is { } folderId
+            ? RedirectToPage("/Files/Index", new { id = folderId })
+            : RedirectToPage("/Index");
     }
 }

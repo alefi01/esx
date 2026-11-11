@@ -50,6 +50,9 @@ public sealed class FolderTree
 
         var list = await _db.Folders
             .Include(f => f.Permissions)
+            // Начальники отдела читаются вместе с деревом: от них зависит
+            // уровень доступа, то есть вопрос возникает на каждой папке.
+            .Include(f => f.Heads)
             .ToListAsync(cancellationToken);
 
         _folders = list.ToDictionary(f => f.Id);
@@ -99,6 +102,17 @@ public sealed class FolderTree
     public FolderAccess AccessFor(ClaimsPrincipal user, StorageFolder folder)
     {
         if (user.IsInRole(_ad.AdminGroup))
+        {
+            return FolderAccess.Manage;
+        }
+
+        // Начальник отдела управляет своей папкой и всем, что в ней.
+        //
+        // Через обычные права это сделать нельзя: выдача права выключает
+        // наследование, и папка отдела из «открытой всем» молча стала бы
+        // закрытой. Поэтому начальство — отдельное правило, как и права
+        // администратора, а не строка в таблице прав.
+        if (IsHead(user, folder))
         {
             return FolderAccess.Manage;
         }
@@ -214,9 +228,10 @@ public sealed class FolderTree
     /// кто раздел завёл. Случайно утащить такой раздел в соседний нельзя,
     /// хотя работать внутри него может каждый.
     ///
-    /// Удаление файлов в ненастроенной папке разрешено всем, у кого есть
-    /// запись, — см. UsesDefaultAccess и проверку удаления на странице
-    /// файлов.
+    /// Удаление ЧУЖИХ файлов по умолчанию не даётся: свой файл человек
+    /// убирает сам, чужой — тот, кто управляет папкой (в отделе это
+    /// начальник). Иначе «Общая» часть отдела, открытая всему порталу,
+    /// стала бы местом, где любой может стереть чужой документ.
     /// </summary>
     public static FolderAccess DefaultAccess(StorageFolder folder) => FolderAccess.Write;
 
@@ -244,6 +259,82 @@ public sealed class FolderTree
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Папка верхнего уровня, в которой лежит эта. Для самой папки
+    /// верхнего уровня — она сама.
+    ///
+    /// Нужна часто: отдел, корзина раздела и начальство — всё считается
+    /// по верхнему уровню, а не по той папке, в которой человек стоит.
+    /// </summary>
+    public StorageFolder RootOf(StorageFolder folder)
+    {
+        var current = folder;
+        var guard = 0;
+
+        while (current.Parent is not null && guard++ < 64)
+        {
+            current = current.Parent;
+        }
+
+        return current;
+    }
+
+    /// <summary>Отдел, которому принадлежит папка. null — папка не в отделе.</summary>
+    public StorageFolder? DepartmentOf(StorageFolder folder)
+    {
+        var root = RootOf(folder);
+
+        return root.IsDepartment ? root : null;
+    }
+
+    /// <summary>Начальники отдела, в котором лежит папка.</summary>
+    public IReadOnlyList<FolderHead> HeadsOf(StorageFolder folder) =>
+        DepartmentOf(folder)?.Heads ?? [];
+
+    /// <summary>
+    /// Человек — начальник отдела, которому принадлежит эта папка.
+    ///
+    /// Проверяется по логину, а не по членству в группе: группа WebHeads
+    /// отвечает только на вопрос «кого вообще можно назначить», а кем он
+    /// назначен — решает администратор в настройках конкретной папки.
+    /// </summary>
+    public bool IsHead(ClaimsPrincipal user, StorageFolder folder)
+    {
+        var userName = user.Identity?.Name;
+
+        if (string.IsNullOrEmpty(userName))
+        {
+            return false;
+        }
+
+        return HeadsOf(folder)
+            .Any(head => string.Equals(head.UserName, userName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Папка лежит в «Общей» части отдела (или сама ею является).
+    ///
+    /// По ней отличается общая часть от внутренней: в общей работают все
+    /// сотрудники портала, и удаление чужих файлов там ограничено.
+    /// </summary>
+    public bool IsInPublicPart(StorageFolder folder)
+    {
+        var current = folder;
+        var guard = 0;
+
+        while (current is not null && guard++ < 64)
+        {
+            if (current.DepartmentRole == DepartmentRoles.Public)
+            {
+                return true;
+            }
+
+            current = current.Parent;
+        }
+
+        return false;
     }
 
     public bool CanRead(ClaimsPrincipal user, StorageFolder folder) =>

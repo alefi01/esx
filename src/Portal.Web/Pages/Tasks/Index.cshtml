@@ -1,7 +1,7 @@
 @page
 @model Portal.Web.Pages.Tasks.IndexModel
 @{
-    ViewData["Title"] = "Мои задачи";
+    ViewData["Title"] = "Задачи";
 }
 
 <section class="view active tasks-page">
@@ -16,7 +16,7 @@
     }
 
     <div class="view-head">
-        <h2>Мои задачи</h2>
+        <h2>Задачи</h2>
 
         @* Три списка — тремя ссылками, каждый со своим адресом: «в работе»
            открывают каждый день, и он должен открываться сразу, без
@@ -37,6 +37,117 @@
             </a>
         </nav>
     </div>
+
+    @* ---------- От начальника ----------
+
+       Стоит ВЫШЕ своих заметок и выше формы добавления: это то, о чём
+       спросят, и человек должен увидеть это первым, не прокручивая.
+
+       Карточки намеренно другие: у поручения нет галочки «выполнено»
+       (его сдают), нет кнопки «удалить» (его снимает тот, кто поставил)
+       и есть состояние — сдано, возвращено, принято. *@
+    @if (Model.FromHead.Count > 0)
+    {
+        <h3 class="side-head">
+            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>
+            От начальника
+            @if (Model.HeadCount > 0 && Model.ViewMode == "active")
+            {
+                <span class="side-count">@Model.HeadCount</span>
+            }
+        </h3>
+
+        <div class="task-list head-tasks">
+            @foreach (var card in Model.FromHead)
+            {
+                var item = card.Instance;
+                var task = card.Task;
+
+                var urgency = card.Urgency switch
+                {
+                    Portal.Web.Services.Tasks.TaskUrgency.Now => " urgent-now",
+                    Portal.Web.Services.Tasks.TaskUrgency.Close => " urgent-close",
+                    Portal.Web.Services.Tasks.TaskUrgency.Soon => " urgent-soon",
+                    _ => ""
+                };
+
+                <div class="task-card from-head@(item.IsClosed ? " done" : "")@(card.Overdue ? " overdue" : "")@urgency@(task.Important ? " important" : "")">
+
+                    <div class="task-body">
+                        <div class="task-title-row">
+                            @if (task.Important)
+                            {
+                                <span class="chip imp">
+                                    <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>Важно
+                                </span>
+                            }
+
+                            <b>@task.Title</b>
+
+                            <span class="task-due-chip@(card.Overdue ? " late" : "")@urgency">
+                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(item.DueAt, task.DueMinutes is not null)
+                            </span>
+
+                            <span class="task-owner">
+                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>@task.AuthorDisplayName
+                            </span>
+
+                            <span class="task-state state-@item.State.ToString().ToLowerInvariant()">
+                                @Portal.Web.Pages.Tasks.AssignedTaskText.StateFor(item.State)
+                            </span>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(task.Notes))
+                        {
+                            <p class="task-notes-text">@task.Notes</p>
+                        }
+
+                        @if (item.State == Portal.Web.Data.TaskState.Returned && item.ReturnReason is { } reason)
+                        {
+                            <p class="task-return">
+                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-restore" /></svg>
+                                Возвращено: @reason
+                            </p>
+                        }
+
+                        @* Файлы: сначала то, что приложил автор (бланк,
+                           образец), потом сданное. Разделять их подписями
+                           незачем — автор задачи и так знает, что приложил. *@
+                        @if (task.Files.Count > 0 || item.Files.Count > 0)
+                        {
+                            <div class="task-files">
+                                @foreach (var file in task.Files.Concat(item.Files))
+                                {
+                                    <a class="chip" asp-page-handler="File" asp-route-fileId="@file.Id">
+                                        @file.OriginalName
+                                    </a>
+                                }
+                            </div>
+                        }
+
+                        @if (!item.IsClosed && item.State != Portal.Web.Data.TaskState.Submitted)
+                        {
+                            <form method="post" asp-page-handler="Submit" asp-route-instanceId="@item.Id"
+                                  asp-route-view="@Model.View" enctype="multipart/form-data" class="task-submit">
+
+                                <input type="file" name="attachments" multiple
+                                       aria-label="Файл к задаче" />
+
+                                <button class="btn primary sm" type="submit">
+                                    <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>@(task.NeedCheck ? "Сдать на проверку" : "Выполнено")
+                                </button>
+
+                                @if (task.NeedFile)
+                                {
+                                    <span class="hint">Нужен файл</span>
+                                }
+                            </form>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
 
     @* Форма добавления стоит вверху и всегда раскрыта: задачу записывают
        на ходу, и лишнее нажатие «создать» перед каждой записью — это ровно
@@ -64,7 +175,15 @@
         </form>
     }
 
-    @if (Model.Items.Count == 0)
+    @if (Model.FromHead.Count > 0 && Model.Items.Count > 0)
+    {
+        <h3 class="side-head">
+            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check-square" /></svg>
+            Мои
+        </h3>
+    }
+
+    @if (Model.Items.Count == 0 && Model.FromHead.Count == 0)
     {
         <div class="empty">
             <svg class="ic" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check-square" /></svg>
@@ -84,7 +203,7 @@
             }
         </div>
     }
-    else
+    else if (Model.Items.Count > 0)
     {
         <div class="task-list">
             @foreach (var card in Model.Items)

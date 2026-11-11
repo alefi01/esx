@@ -51,6 +51,9 @@ namespace Portal.Web.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("FolderId")
+                        .HasColumnType("integer");
+
                     b.Property<Guid>("GlobalId")
                         .HasColumnType("uuid");
 
@@ -78,6 +81,8 @@ namespace Portal.Web.Data.Migrations
                     b.HasIndex("AuthorUserName");
 
                     b.HasIndex("CreatedAt");
+
+                    b.HasIndex("FolderId");
 
                     b.HasIndex("GlobalId")
                         .IsUnique();
@@ -128,6 +133,179 @@ namespace Portal.Web.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("AnnouncementFiles");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.AssignedTask", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AssigneeDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("AssigneeUserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("AuthorDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("AuthorUserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("DueMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Important")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MonthDay")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("NeedCheck")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("NeedFile")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<int>("RemindMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Repeat")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Stopped")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int>("WeekDays")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssigneeUserName");
+
+                    b.HasIndex("AuthorUserName");
+
+                    b.ToTable("AssignedTasks");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.AssignedTaskFile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("InstanceId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("OriginalName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StorageName")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int?>("TaskId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UploadedByUserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InstanceId");
+
+                    b.HasIndex("TaskId");
+
+                    b.ToTable("AssignedTaskFiles");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.AssignedTaskInstance", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Alerted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DueAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Reminded")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ReturnReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("Returns")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("TaskId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DueAt");
+
+                    b.HasIndex("TaskId", "State");
+
+                    b.ToTable("AssignedTaskInstances");
                 });
 
             modelBuilder.Entity("Portal.Web.Data.AuditEntry", b =>
@@ -315,6 +493,45 @@ namespace Portal.Web.Data.Migrations
                     b.ToTable("Favorites");
                 });
 
+            modelBuilder.Entity("Portal.Web.Data.FolderHead", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("AssignedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AssignedByUserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("FolderId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserName");
+
+                    b.HasIndex("FolderId", "UserName")
+                        .IsUnique();
+
+                    b.ToTable("FolderHeads");
+                });
+
             modelBuilder.Entity("Portal.Web.Data.FolderPermission", b =>
                 {
                     b.Property<int>("Id")
@@ -343,6 +560,38 @@ namespace Portal.Web.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("FolderPermissions");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.FolderSeenState", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("FolderId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("LastSeenAnnouncementId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FolderId");
+
+                    b.HasIndex("UserName", "FolderId")
+                        .IsUnique();
+
+                    b.ToTable("FolderSeenStates");
                 });
 
             modelBuilder.Entity("Portal.Web.Data.GameScore", b =>
@@ -593,10 +842,17 @@ namespace Portal.Web.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<string>("DepartmentRole")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<Guid>("GlobalId")
                         .HasColumnType("uuid");
 
                     b.Property<bool>("InheritPermissions")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDepartment")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsPinned")
@@ -845,6 +1101,9 @@ namespace Portal.Web.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<bool>("IsHead")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime?>("LastActiveAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -949,6 +1208,16 @@ namespace Portal.Web.Data.Migrations
                     b.ToTable("TaskShares");
                 });
 
+            modelBuilder.Entity("Portal.Web.Data.Announcement", b =>
+                {
+                    b.HasOne("Portal.Web.Data.StorageFolder", "Folder")
+                        .WithMany()
+                        .HasForeignKey("FolderId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Folder");
+                });
+
             modelBuilder.Entity("Portal.Web.Data.AnnouncementFile", b =>
                 {
                     b.HasOne("Portal.Web.Data.Announcement", "Announcement")
@@ -958,6 +1227,34 @@ namespace Portal.Web.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Announcement");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.AssignedTaskFile", b =>
+                {
+                    b.HasOne("Portal.Web.Data.AssignedTaskInstance", "Instance")
+                        .WithMany("Files")
+                        .HasForeignKey("InstanceId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Portal.Web.Data.AssignedTask", "Task")
+                        .WithMany("Files")
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Instance");
+
+                    b.Navigation("Task");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.AssignedTaskInstance", b =>
+                {
+                    b.HasOne("Portal.Web.Data.AssignedTask", "Task")
+                        .WithMany("Instances")
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Task");
                 });
 
             modelBuilder.Entity("Portal.Web.Data.ConversationParticipant", b =>
@@ -988,10 +1285,32 @@ namespace Portal.Web.Data.Migrations
                     b.Navigation("Folder");
                 });
 
+            modelBuilder.Entity("Portal.Web.Data.FolderHead", b =>
+                {
+                    b.HasOne("Portal.Web.Data.StorageFolder", "Folder")
+                        .WithMany("Heads")
+                        .HasForeignKey("FolderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Folder");
+                });
+
             modelBuilder.Entity("Portal.Web.Data.FolderPermission", b =>
                 {
                     b.HasOne("Portal.Web.Data.StorageFolder", "Folder")
                         .WithMany("Permissions")
+                        .HasForeignKey("FolderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Folder");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.FolderSeenState", b =>
+                {
+                    b.HasOne("Portal.Web.Data.StorageFolder", "Folder")
+                        .WithMany()
                         .HasForeignKey("FolderId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -1069,6 +1388,18 @@ namespace Portal.Web.Data.Migrations
                     b.Navigation("Files");
                 });
 
+            modelBuilder.Entity("Portal.Web.Data.AssignedTask", b =>
+                {
+                    b.Navigation("Files");
+
+                    b.Navigation("Instances");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.AssignedTaskInstance", b =>
+                {
+                    b.Navigation("Files");
+                });
+
             modelBuilder.Entity("Portal.Web.Data.Conversation", b =>
                 {
                     b.Navigation("Messages");
@@ -1088,6 +1419,8 @@ namespace Portal.Web.Data.Migrations
                     b.Navigation("Children");
 
                     b.Navigation("Files");
+
+                    b.Navigation("Heads");
 
                     b.Navigation("Permissions");
                 });

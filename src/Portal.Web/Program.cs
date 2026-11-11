@@ -268,6 +268,10 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy(PortalPolicies.PublishAnnouncements, policy => policy
         .RequireAuthenticatedUser()
         .RequireRole(adOptions.PublisherGroup, adOptions.AdminGroup))
+    // Ставить задачи другим — начальники и администраторы.
+    .AddPolicy(PortalPolicies.AssignTasks, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireRole(adOptions.HeadGroup, adOptions.AdminGroup))
     // Политика по умолчанию для всех страниц, где явно не сказано иное.
     // Так безопаснее: забыть закрыть новую страницу нельзя — она закрыта сама,
     // открывать надо осознанно, атрибутом AllowAnonymous.
@@ -302,6 +306,12 @@ builder.Services.AddSingleton<UploadValidator>();
 // Дерево папок читается из базы один раз за запрос, поэтому Scoped.
 builder.Services.AddScoped<FolderTree>();
 builder.Services.AddScoped<AuditLog>();
+
+// Отделы: папка верхнего уровня с начальниками и двумя подпапками.
+builder.Services.AddScoped<Departments>();
+
+// Объявления, разложенные по папкам: что видно и что не читано.
+builder.Services.AddScoped<Portal.Web.Services.Announcements.AnnouncementFeed>();
 builder.Services.AddScoped<NotificationService>();
 
 // Шина «у вас что-то новое». Одна на весь процесс: она держит открытые
@@ -311,6 +321,13 @@ builder.Services.AddSingleton<NotificationHub>();
 // Личные настройки (звук уведомлений) и задачи.
 builder.Services.AddScoped<Portal.Web.Services.Tasks.UserPreferences>();
 builder.Services.AddScoped<Portal.Web.Services.Tasks.TaskService>();
+
+// Задачи, поставленные человеку начальником: своя служба, свои файлы
+// и фоновый обход, который заводит очередные сроки повторяющихся задач
+// и рассылает напоминания.
+builder.Services.AddScoped<Portal.Web.Services.Tasks.AssignedTaskService>();
+builder.Services.AddSingleton<Portal.Web.Services.Tasks.TaskFileStorage>();
+builder.Services.AddHostedService<Portal.Web.Services.Tasks.TaskSchedulerService>();
 
 // Рейтинг игры-пасхалки. К работе портала отношения не имеет, но живёт
 // по тем же правилам, что и всё остальное: база, права, свой запрос.
@@ -344,6 +361,7 @@ builder.Services.AddScoped<FavoriteService>();
 builder.Services.AddSingleton<MessageStorage>();
 builder.Services.AddSingleton<Portal.Web.Services.Announcements.AnnouncementStorage>();
 builder.Services.AddScoped<IUserDirectory, UserDirectory>();
+
 
 // Обзор дерева домена для окна прав на папку. К базе не обращается,
 // ответы держит в памяти минуту — Singleton.
@@ -446,12 +464,11 @@ builder.Services.AddRazorPages(options =>
     // либо уже вошедшему администратору. Всем прочим отвечает «404».
     options.Conventions.AllowAnonymousToPage("/Admin/LoginTest");
 
-    // Ленту объявлений читают все, у кого есть доступ к порталу (политика по умолчанию).
-    // А вот писать, править и удалять — только публикаторы и администраторы.
-    // Внутри страниц правки есть ещё одна проверка: своё объявление или чужое.
-    options.Conventions.AuthorizePage("/Announcements/Create", PortalPolicies.PublishAnnouncements);
-    options.Conventions.AuthorizePage("/Announcements/Edit", PortalPolicies.PublishAnnouncements);
-    options.Conventions.AuthorizePage("/Announcements/Delete", PortalPolicies.PublishAnnouncements);
+    // Объявления живут в папках отделов, и право на них даёт не группа,
+    // а назначение начальником конкретного отдела. Политикой тут ничего
+    // не закроешь: она не знает, о какой папке речь. Поэтому страницы
+    // объявлений проверяют право сами, по папке (AnnouncementPermissions),
+    // а сюда попадают по общей политике доступа к порталу.
 });
 
 // ---------------------------------------------------------------------------
@@ -687,6 +704,7 @@ app.MapRazorPages();
 app.MapGet("/api/notifications", async (
     NotificationService notifications,
     Portal.Web.Services.Tasks.TaskService tasks,
+    Portal.Web.Services.Tasks.AssignedTaskService assigned,
     HttpContext http,
     CancellationToken cancellationToken) =>
 {
@@ -704,13 +722,28 @@ app.MapGet("/api/notifications", async (
     // пропадает при прочтении».
     http.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
 
-    var summary = await notifications.GetAsync(user, cancellationToken);
+    var summary = await notifications.GetAsync(http.User, cancellationToken);
 
-    // Число задач в работе берётся здесь, а не внутри службы уведомлений:
+    // Числа по задачам берутся здесь, а не внутри службы уведомлений:
     // задачи к уведомлениям отношения не имеют, им просто по дороге —
     // страница и так спрашивает этот адрес раз в несколько секунд,
-    // и отдельный запрос ради одного числа был бы лишним.
-    var active = await tasks.ActiveCountAsync(user, cancellationToken);
+    // и отдельный запрос ради пары чисел был бы лишним.
+    //
+    // У пункта «Задачи» число означает «требует внимания»: новые
+    // от начальника, возвращённые на доработку и просроченные — свои
+    // в том числе. Сданное и ждущее проверки не считается: от человека
+    // там больше ничего не нужно, а число, которое не убрать,
+    // перестают замечать.
+    var needsAttention = await assigned.NeedsAttentionCountAsync(user, cancellationToken);
+
+    var overdueOwn = (await tasks.UrgentAsync(user, cancellationToken))
+        .Count(t => t.DueOn!.Value.Date < DateTime.Now.Date);
+
+    var active = needsAttention + overdueOwn;
+
+    // У пункта «Задачи подчинённым» — сколько ждёт проверки: это и есть
+    // работа начальника на этой странице.
+    var waitingCheck = await assigned.WaitingCheckCountAsync(user, cancellationToken);
 
     // Задачи, у которых срок завтра или уже прошёл, — о них портал
     // напоминает один раз за день, когда человек открывает его.
@@ -730,6 +763,7 @@ app.MapGet("/api/notifications", async (
         summary.Conversations,
 
         Tasks = active,
+        AssignedWaiting = waitingCheck,
         UrgentTasks = urgent.Select(t => new
         {
             t.Id,
@@ -840,7 +874,7 @@ app.MapPost("/api/notifications/seen", async (
         return Results.Unauthorized();
     }
 
-    await notifications.MarkAllSeenAsync(user, cancellationToken);
+    await notifications.MarkAllSeenAsync(http.User, cancellationToken);
 
     return Results.NoContent();
 });

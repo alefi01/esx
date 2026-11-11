@@ -193,8 +193,14 @@ public class LoginModel : PageModel
         // в портал — файлы и раздел диагностики работают и без неё.
         try
         {
+            // Заодно запоминаем, начальник ли он: по этому признаку
+            // администратор потом выбирает начальников отделов, и выбор
+            // должен работать и тогда, когда домен недоступен.
+            var isHead = user.Groups.Any(g =>
+                string.Equals(g, _adOptions.HeadGroup, StringComparison.OrdinalIgnoreCase));
+
             await _notifications.RememberUserAsync(
-                user.SamAccountName, user.DisplayName, cancellationToken);
+                user.SamAccountName, user.DisplayName, isHead, cancellationToken);
         }
         catch (Exception ex)
         {

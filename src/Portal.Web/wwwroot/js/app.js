@@ -689,9 +689,9 @@
         openPreview({
             name: link.dataset.name || 'Вложение',
             kind: link.dataset.kind,
-            href: '/Announcements?handler=Attachment&fileId=' + id,
-            src: '/Announcements?handler=AttachmentPreview&fileId=' + id,
-            doc: '/Announcements?handler=AttachmentDocument&fileId=' + id
+            href: '/Files?handler=AnnFile&fileId=' + id,
+            src: '/Files?handler=AnnPreview&fileId=' + id,
+            doc: '/Files?handler=AnnDocument&fileId=' + id
         }, link);
     });
 
@@ -921,6 +921,7 @@
             setCount('#chatBadge', data.messages || 0);
             setCount('#annBadge', data.announcements || 0);
             setCount('#taskBadge', data.tasks || 0);
+            setCount('#assignedBadge', data.assignedWaiting || 0);
 
             paintConvoBadges(data.conversations || []);
 
@@ -1229,6 +1230,7 @@
         const folderId = settings.folderId || '';
         const canWrite = settings.canWrite === 'true';
         const canCreateFolder = settings.canCreateFolder === 'true';
+        const canCreateDepartment = settings.canCreateDepartment === 'true';
 
         let selected = null;
 
@@ -1967,13 +1969,123 @@
         }
 
         function newFolder() {
-            promptDlg('Создать папку', 'Название папки', 'Новая папка', 'Создать', value => {
-                const url = folderId
-                    ? '/Files?handler=CreateFolder&parentId=' + folderId
-                    : '/Files?handler=CreateFolder';
+            const url = folderId
+                ? '/Files?handler=CreateFolder&parentId=' + folderId
+                : '/Files?handler=CreateFolder';
 
-                submit(url, { NewFolderName: value });
+            // Внутри папки — обычное окно с одним полем: подпапка это
+            // подпапка, спрашивать о ней нечего.
+            if (!canCreateDepartment) {
+                promptDlg('Создать папку', 'Название папки', 'Новая папка', 'Создать', value => {
+                    submit(url, { NewFolderName: value });
+                });
+
+                return;
+            }
+
+            // В корне спрашиваем, отдел это или просто папка. Разница
+            // существенная: у отдела есть начальники, объявления и две
+            // заготовленные подпапки. Переделать потом можно, но возни
+            // больше, чем ответить на один вопрос сейчас.
+            const m = openModal({
+                title: 'Создать папку верхнего уровня',
+                body:
+                    '<div class="field"><label for="nfName">Название</label>' +
+                    '<input type="text" id="nfName" maxlength="100" value="Новая папка"></div>' +
+                    '<label class="fs-check"><input type="checkbox" id="nfDept">' +
+                    '<span>Это отдел</span></label>' +
+                    '<p class="hint">У отдела есть начальник, свои объявления и две папки внутри: ' +
+                    '«Общая» — для всего портала, «Внутренняя работа» — по правам, которые ' +
+                    'расставит начальник.</p>' +
+                    '<div id="nfHeads" hidden><div class="field"><label>Начальники отдела</label>' +
+                    '<div class="people" id="nfHeadList"><p class="hint">Загружается…</p></div></div>' +
+                    '<p class="hint">В списке те, кто состоит в группе начальников и хотя бы раз ' +
+                    'входил в портал.</p></div>',
+                foot: '<button class="btn" type="button" data-mclose>Отмена</button>' +
+                    '<button class="btn primary" type="button" id="nfOk">Создать</button>'
             });
+
+            const nameField = $('#nfName', m);
+            const asDept = $('#nfDept', m);
+            const headsBox = $('#nfHeads', m);
+            const headList = $('#nfHeadList', m);
+            const chosen = new Set();
+            let loaded = false;
+
+            setTimeout(() => { nameField.focus(); nameField.select(); }, 60);
+
+            const loadHeads = () => {
+                if (loaded) { return; }
+
+                loaded = true;
+
+                fetch('/Files?handler=Heads', {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                    .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                    .then(people => {
+                        if (people.length === 0) {
+                            headList.innerHTML = '<p class="hint">Никого нет. Начальник должен ' +
+                                'состоять в группе безопасности и хотя бы раз войти в портал — ' +
+                                'после этого он появится здесь.</p>';
+                            return;
+                        }
+
+                        headList.innerHTML = people.map(p =>
+                            '<button class="member-row" type="button" data-login="' + esc(p.userName) + '">' +
+                            '<div class="avatar" data-av="' + avatarIndex(p.displayName) + '">' +
+                            esc(initials(p.displayName)) + '</div>' +
+                            '<div><b>' + esc(p.displayName) + '</b><span>' + esc(p.userName) + '</span></div>' +
+                            '<span class="member-mark"></span></button>').join('');
+
+                        $$('.member-row', headList).forEach(row => {
+                            row.onclick = () => {
+                                const login = row.dataset.login;
+
+                                if (chosen.has(login)) {
+                                    chosen.delete(login);
+                                    row.classList.remove('on');
+                                } else {
+                                    chosen.add(login);
+                                    row.classList.add('on');
+                                }
+                            };
+                        });
+                    })
+                    .catch(() => {
+                        headList.innerHTML = '<p class="hint">Не удалось получить список.</p>';
+                    });
+            };
+
+            asDept.onchange = () => {
+                headsBox.hidden = !asDept.checked;
+
+                if (asDept.checked) { loadHeads(); }
+            };
+
+            $('#nfOk', m).onclick = () => {
+                const value = nameField.value.trim();
+
+                if (!value) { nameField.focus(); return; }
+
+                if (asDept.checked && chosen.size === 0) {
+                    toast('У отдела должен быть начальник', 'warn');
+                    return;
+                }
+
+                closeModal();
+
+                submit(url, {
+                    NewFolderName: value,
+                    NewFolderIsDepartment: asDept.checked ? 'true' : 'false',
+                    NewFolderHeads: Array.from(chosen)
+                });
+            };
+
+            nameField.onkeydown = e => {
+                if (e.key === 'Enter' && !asDept.checked) { $('#nfOk', m).click(); }
+            };
         }
 
         function remove(item) {
@@ -2803,7 +2915,12 @@
         };
 
         const load = () => {
-            fetch('/Messages?handler=People&q=' + encodeURIComponent(search.value.trim()), {
+            // Адрес справочника можно подменить: один и тот же список
+            // людей нужен и переписке, и задачам, а отвечают на него
+            // разные страницы.
+            const url = options.url || '/Messages?handler=People';
+
+            fetch(url + '&q=' + encodeURIComponent(search.value.trim()), {
                 credentials: 'same-origin',
                 headers: { 'X-Requested-With': 'XMLHttpRequest' }
             })
@@ -4035,6 +4152,105 @@
             // беседой горит число непрочитанных. Спрашиваем сразу.
             if (window.portalNotify) { window.portalNotify.refresh(); }
         }
+    }
+
+    // ======================================================================
+    // 10. Задачи подчинённым
+    //
+    // Страница серверная; здесь только то, без чего форма неудобна:
+    // выбор исполнителя из справочника, показ полей повторения
+    // и окно возврата на доработку.
+    // ======================================================================
+
+    const assignedPage = $('[data-assigned-tasks]');
+
+    if (assignedPage) {
+        // ---------- Раскрытие формы ----------
+        const openBtn = $('#newAssignedBtn');
+        const form = $('#newAssignedForm');
+
+        if (openBtn && form) {
+            openBtn.onclick = () => {
+                form.hidden = false;
+                openBtn.hidden = true;
+
+                const title = $('#Input_Title');
+
+                if (title) { title.focus(); }
+            };
+
+            const cancel = $('#cancelAssigned');
+
+            if (cancel) {
+                cancel.onclick = () => { form.hidden = true; openBtn.hidden = false; };
+            }
+
+            // Форма не прошла проверку на сервере — значит её уже
+            // заполняли, и прятать набранное нельзя.
+            if ($('.alert.err', form) || ($('#assigneeLogin') || {}).value) {
+                form.hidden = false;
+                openBtn.hidden = true;
+            }
+        }
+
+        // ---------- Поля повторения ----------
+        //
+        // Дни недели нужны не всякому повторению, а число месяца — только
+        // месячному. Показывать всё сразу значит заставлять человека
+        // разбираться, какие поля к нему относятся.
+        const repeat = $('#repeatSel');
+        const weekDays = $('#weekDaysField');
+        const monthDay = $('#monthDayField');
+
+        const paintRepeat = () => {
+            if (!repeat) { return; }
+
+            const mode = repeat.value;
+
+            // Значения совпадают с TaskRepeat на сервере: 2 — по дням
+            // недели, 3 — раз в неделю, 4 — раз в месяц.
+            if (weekDays) { weekDays.hidden = !(mode === '2' || mode === '3'); }
+            if (monthDay) { monthDay.hidden = mode !== '4'; }
+        };
+
+        if (repeat) {
+            repeat.addEventListener('change', paintRepeat);
+            paintRepeat();
+        }
+
+        // ---------- Выбор исполнителя ----------
+        const pick = $('#pickAssignee');
+
+        if (pick) {
+            pick.onclick = () => peoplePicker({
+                title: 'Кому поставить задачу',
+                label: 'Сотрудник',
+                url: '/Tasks/Assigned?handler=People',
+                onPick: (login, name) => {
+                    $('#assigneeLogin').value = login;
+                    $('#assigneeName').value = name;
+                }
+            });
+        }
+
+        // ---------- Возврат на доработку ----------
+        //
+        // Замечание обязательно: возврат без объяснения — это «переделай»
+        // без «что именно», и человек идёт выяснять в переписке.
+        assignedPage.addEventListener('click', e => {
+            const button = e.target.closest('[data-return-task]');
+
+            if (!button) { return; }
+
+            promptDlg(
+                'Вернуть на доработку',
+                'Что не так с задачей «' + (button.dataset.taskTitle || '') + '»',
+                '',
+                'Вернуть',
+                reason => submit(
+                    '/Tasks/Assigned?handler=Return&instanceId=' + button.dataset.returnTask,
+                    { reason }));
+        });
     }
 
     /** Сколько ждём ответа, прежде чем признать, что связи нет. */

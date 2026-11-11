@@ -1,8 +1,8 @@
-@page
+@page "{id:int}"
 @using Portal.Web.Pages.Shared
 @model Portal.Web.Pages.Files.TrashModel
 @{
-    ViewData["Title"] = "Корзина";
+    ViewData["Title"] = $"Корзина раздела «{Model.Root?.Name}»";
 }
 
 <section class="view active">
@@ -16,8 +16,18 @@
         <span data-flash="@Model.ErrorMessage" data-flash-kind="danger" hidden></span>
     }
 
+    <nav class="crumbs" aria-label="Путь">
+        <a class="crumb" asp-page="Index">
+            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-home" /></svg>Файлы
+        </a>
+        <span class="crumb-sep"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-chev-r" /></svg></span>
+        <a class="crumb" asp-page="Index" asp-route-id="@Model.Root?.Id">@Model.Root?.Name</a>
+        <span class="crumb-sep"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-chev-r" /></svg></span>
+        <span class="crumb last">Корзина</span>
+    </nav>
+
     <div class="view-head">
-        <h2>Корзина</h2>
+        <h2>Корзина раздела «@Model.Root?.Name»</h2>
         <span class="sub">Файлы хранятся @Model.RetentionDays дн., потом стираются с диска безвозвратно</span>
 
         @if (Model.Items.Count > 0)
@@ -38,7 +48,7 @@
         <div class="empty">
             <svg class="ic" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash" /></svg>
             <b>Корзина пуста</b>
-            <p>Удалённые файлы будут появляться здесь</p>
+            <p>Здесь будет появляться удалённое из этого раздела</p>
         </div>
     }
     else
@@ -56,7 +66,7 @@
                 <div class="fname" title="@item.File.OriginalName">@item.File.OriginalName</div>
 
                 <div class="muted hide-s">@item.FolderPath</div>
-                <div class="muted hide-s">удалил @item.File.DeletedByUserName</div>
+                <div class="muted hide-s">удалил @item.DeletedBy</div>
                 <div class="muted">до @item.PurgeAt.ToLocalTime().ToString("dd.MM.yyyy")</div>
 
                 @if (item.CanRestore)
@@ -68,14 +78,20 @@
                     </form>
                 }
 
-                <form method="post" asp-page-handler="Purge" asp-route-fileId="@item.File.Id" class="head-form">
-                    <button class="btn sm danger" type="submit" title="Стереть окончательно"
-                            data-confirm="«@item.File.OriginalName» будет стёрт безвозвратно."
-                            data-confirm-title="Удалить навсегда?"
-                            data-confirm-ok="Удалить">
-                        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-x" /></svg>
-                    </button>
-                </form>
+                @* Стереть насовсем может тот, кто управляет папкой,
+                   и тот, кто сам это удалил: отменить такое нельзя,
+                   и право здесь строже, чем на восстановление. *@
+                @if (item.CanPurge)
+                {
+                    <form method="post" asp-page-handler="Purge" asp-route-fileId="@item.File.Id" class="head-form">
+                        <button class="btn sm danger" type="submit" title="Стереть окончательно"
+                                data-confirm="«@item.File.OriginalName» будет стёрт безвозвратно."
+                                data-confirm-title="Удалить навсегда?"
+                                data-confirm-ok="Удалить">
+                            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-x" /></svg>
+                        </button>
+                    </form>
+                }
             </div>
         }
     }

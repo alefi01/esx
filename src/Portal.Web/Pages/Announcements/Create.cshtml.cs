@@ -7,15 +7,22 @@ using Portal.Web.Data;
 namespace Portal.Web.Pages.Announcements;
 
 /// <summary>
-/// Создание объявления. Доступ ограничен политикой PublishAnnouncements —
-/// она навешана на страницу в Program.cs, отдельной проверки здесь не нужно.
+/// Создание объявления В ПАПКЕ ОТДЕЛА.
+///
+/// Отдельной ленты объявлений больше нет: объявление висит на папке,
+/// и видят его те, кто видит папку. Поэтому страница всегда открывается
+/// с номером папки, а право проверяется по ней же — начальник этого
+/// отдела либо администратор. Политики на странице нет: «издатель
+/// вообще» больше не существует как роль.
 /// </summary>
 public class CreateModel : PageModel
 {
     private readonly PortalDbContext _db;
     private readonly Portal.Web.Services.Announcements.AnnouncementStorage _storage;
     private readonly Portal.Web.Services.Storage.UploadValidator _validator;
+    private readonly Portal.Web.Services.Storage.FolderTree _tree;
     private readonly Portal.Web.Services.Notifications.NotificationHub _hub;
+    private readonly Portal.Web.Configuration.ActiveDirectoryOptions _ad;
     private readonly TimeProvider _time;
     private readonly ILogger<CreateModel> _logger;
 
@@ -23,17 +30,27 @@ public class CreateModel : PageModel
         PortalDbContext db,
         Portal.Web.Services.Announcements.AnnouncementStorage storage,
         Portal.Web.Services.Storage.UploadValidator validator,
+        Portal.Web.Services.Storage.FolderTree tree,
         Portal.Web.Services.Notifications.NotificationHub hub,
+        Microsoft.Extensions.Options.IOptions<Portal.Web.Configuration.ActiveDirectoryOptions> ad,
         TimeProvider time,
         ILogger<CreateModel> logger)
     {
         _db = db;
         _storage = storage;
         _validator = validator;
+        _tree = tree;
         _hub = hub;
+        _ad = ad.Value;
         _time = time;
         _logger = logger;
     }
+
+    /// <summary>Папка, на которой появится объявление.</summary>
+    public StorageFolder? Folder { get; private set; }
+
+    [BindProperty(SupportsGet = true)]
+    public int FolderId { get; set; }
 
     [BindProperty]
     public InputModel Input { get; set; } = new();
@@ -62,13 +79,45 @@ public class CreateModel : PageModel
         public string Body { get; set; } = "";
     }
 
-    public void OnGet()
+    public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
+        var denied = await LoadFolderAsync(cancellationToken);
+
+        return denied ?? Page();
+    }
+
+    /// <summary>
+    /// Читает папку и проверяет право вешать на неё объявления.
+    /// Возвращает ответ-отказ или null, если всё в порядке.
+    /// </summary>
+    private async Task<IActionResult?> LoadFolderAsync(CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        Folder = _tree.Get(FolderId);
+
+        if (Folder is null || !_tree.CanRead(User, Folder))
+        {
+            // Не «запрещено», а «не найдено»: существование чужой папки —
+            // тоже сведения.
+            return NotFound();
+        }
+
+        return Portal.Web.Security.AnnouncementPermissions.CanPublishIn(User, Folder, _tree, _ad.AdminGroup)
+            ? null
+            : Forbid();
     }
 
     public async Task<IActionResult> OnPostAsync(
         List<IFormFile> attachments, CancellationToken cancellationToken)
     {
+        var denied = await LoadFolderAsync(cancellationToken);
+
+        if (denied is not null)
+        {
+            return denied;
+        }
+
         if (!ModelState.IsValid)
         {
             return Page();
@@ -80,7 +129,8 @@ public class CreateModel : PageModel
             Body = Input.Body.Trim(),
             AuthorUserName = User.Identity?.Name ?? "",
             AuthorDisplayName = User.FindFirstValue(ClaimTypes.GivenName) ?? User.Identity?.Name ?? "",
-            CreatedAt = _time.GetUtcNow().UtcDateTime
+            CreatedAt = _time.GetUtcNow().UtcDateTime,
+            FolderId = FolderId
         };
 
         try
@@ -88,9 +138,10 @@ public class CreateModel : PageModel
             _db.Announcements.Add(announcement);
             await _db.SaveChangesAsync(cancellationToken);
 
-            // Объявление касается всех, поэтому будим все открытые страницы:
-            // кому оно новое, тот и услышит — остальным сервер в ответ
-            // на проверку скажет, что нового для них нет.
+            // Будим все открытые страницы: кому объявление видно и ново,
+            // тот и услышит — остальным сервер в ответ на проверку скажет,
+            // что нового для них нет. Разбирать здесь, кто допущен в папку,
+            // незачем: это та же проверка, только дважды.
             _hub.NotifyAll();
 
             // Вложения сохраняем ПОСЛЕ объявления: до сохранения у него
@@ -121,7 +172,9 @@ public class CreateModel : PageModel
         // ровно то, что нужно для сообщения «готово».
         TempData["StatusMessage"] = "Объявление опубликовано.";
 
-        return RedirectToPage("Index");
+        // Возвращаемся в папку: ленты, куда можно было бы вернуться,
+        // больше нет, а объявление живёт именно здесь.
+        return RedirectToPage("/Files/Index", new { id = FolderId });
     }
 
     /// <summary>

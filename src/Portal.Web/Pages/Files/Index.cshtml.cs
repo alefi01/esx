@@ -27,6 +27,9 @@ public class IndexModel : PageModel
     private readonly Portal.Web.Services.ActiveDirectory.DirectoryBrowser _browser;
     private readonly AuditLog _audit;
     private readonly FavoriteService _favorites;
+    private readonly Departments _departments;
+    private readonly Portal.Web.Services.Announcements.AnnouncementStorage _announcementStorage;
+    private readonly Portal.Web.Services.Announcements.AnnouncementFeed _feed;
     private readonly ActiveDirectoryOptions _ad;
     private readonly TimeProvider _time;
     private readonly ILogger<IndexModel> _logger;
@@ -40,6 +43,9 @@ public class IndexModel : PageModel
         Portal.Web.Services.ActiveDirectory.DirectoryBrowser browser,
         AuditLog audit,
         FavoriteService favorites,
+        Departments departments,
+        Portal.Web.Services.Announcements.AnnouncementStorage announcementStorage,
+        Portal.Web.Services.Announcements.AnnouncementFeed feed,
         IOptions<ActiveDirectoryOptions> ad,
         TimeProvider time,
         ILogger<IndexModel> logger)
@@ -52,6 +58,9 @@ public class IndexModel : PageModel
         _browser = browser;
         _audit = audit;
         _favorites = favorites;
+        _departments = departments;
+        _announcementStorage = announcementStorage;
+        _feed = feed;
         _ad = ad.Value;
         _time = time;
         _logger = logger;
@@ -66,6 +75,22 @@ public class IndexModel : PageModel
 
     public FolderAccess Access { get; private set; } = FolderAccess.None;
     public bool IsAdmin => User.IsInRole(_ad.AdminGroup);
+
+    /// <summary>
+    /// Раздел, в котором лежит текущая папка, — папка верхнего уровня.
+    /// По нему открывается корзина: она у каждого раздела своя.
+    /// </summary>
+    public int? RootFolderId => Current is null ? null : _tree.RootOf(Current).Id;
+
+    /// <summary>Объявления этой папки — врезкой над списком файлов.</summary>
+    public IReadOnlyList<Announcement> Announcements { get; private set; } = [];
+
+    /// <summary>Можно ли вешать объявления на текущую папку.</summary>
+    public bool CanPublishHere { get; private set; }
+
+    /// <summary>Правка конкретного объявления — та же проверка, что на сервере.</summary>
+    public bool CanModifyAnnouncement(Announcement announcement) =>
+        Portal.Web.Security.AnnouncementPermissions.CanModify(User, announcement, _tree, _ad.AdminGroup);
 
     public long MaxFileSizeBytes { get; private set; }
 
@@ -277,6 +302,18 @@ public class IndexModel : PageModel
     [Required(ErrorMessage = "Введите название папки")]
     [MaxLength(100, ErrorMessage = "Название не длиннее 100 символов")]
     public string NewFolderName { get; set; } = "";
+
+    /// <summary>
+    /// Создаваемая папка верхнего уровня — отдел. Спрашивается только
+    /// у администратора и только в корне: у отдела есть начальники,
+    /// объявления и две заготовленные подпапки.
+    /// </summary>
+    [BindProperty]
+    public bool NewFolderIsDepartment { get; set; }
+
+    /// <summary>Логины начальников нового отдела. Без них отдел не создаётся.</summary>
+    [BindProperty]
+    public string[] NewFolderHeads { get; set; } = [];
 
     public async Task<IActionResult> OnGetAsync(int? id, CancellationToken cancellationToken)
     {
@@ -1424,6 +1461,16 @@ public class IndexModel : PageModel
             return RedirectToPage(new { id = parentId });
         }
 
+        // Отдел — только в корне и только у администратора: подпапки,
+        // начальники и объявления к обычной подпапке отношения не имеют.
+        var asDepartment = NewFolderIsDepartment && Current is null && IsAdmin;
+
+        if (asDepartment && NewFolderHeads.Length == 0)
+        {
+            ErrorMessage = "У отдела должен быть начальник — выберите хотя бы одного.";
+            return RedirectToPage(new { id = parentId });
+        }
+
         var folder = new StorageFolder
         {
             Name = name,
@@ -1440,9 +1487,234 @@ public class IndexModel : PageModel
 
         await _db.SaveChangesAsync(cancellationToken);
 
+        if (asDepartment)
+        {
+            await _departments.MakeDepartmentAsync(
+                folder, NewFolderHeads, User.Identity?.Name ?? "", cancellationToken);
+
+            _audit.Add(AuditAction.ChangeFolderSettings, name,
+                "создан отдел, начальники: " + string.Join(", ", NewFolderHeads));
+
+            await _db.SaveChangesAsync(cancellationToken);
+
+            StatusMessage = $"Отдел «{name}» создан: внутри заведены «{Departments.PublicFolderName}» "
+                            + $"и «{Departments.InternalFolderName}».";
+
+            return RedirectToPage(new { id = folder.Id });
+        }
+
         StatusMessage = $"Папка «{name}» создана.";
 
         return RedirectToPage(new { id = parentId });
+    }
+
+    // ==================================================================
+    // Объявления папки
+    //
+    // Отдельной ленты объявлений больше нет, и её обработчики переехали
+    // сюда: объявление висит на папке, значит и всё, что с ним делают,
+    // живёт на странице папки.
+    // ==================================================================
+
+    /// <summary>
+    /// Проверяет, что объявление существует и человеку видно, —
+    /// по правам на его папку. Возвращает его или null.
+    /// </summary>
+    private async Task<Announcement?> VisibleAnnouncementAsync(
+        int announcementId, CancellationToken cancellationToken)
+    {
+        var announcement = await _db.Announcements
+            .FirstOrDefaultAsync(a => a.Id == announcementId, cancellationToken);
+
+        if (announcement is null)
+        {
+            return null;
+        }
+
+        if (announcement.FolderId is not { } folderId)
+        {
+            // Объявление без папки осталось от прежней общей ленты —
+            // оно видно всем, у кого есть доступ к порталу.
+            return announcement;
+        }
+
+        await _tree.LoadAsync(cancellationToken);
+
+        var folder = _tree.Get(folderId);
+
+        return folder is not null && _tree.CanRead(User, folder) ? announcement : null;
+    }
+
+    private async Task<AnnouncementFile?> VisibleAttachmentAsync(
+        int fileId, CancellationToken cancellationToken)
+    {
+        var file = await _db.AnnouncementFiles
+            .FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken);
+
+        if (file is null)
+        {
+            return null;
+        }
+
+        // Вложение видно ровно настолько, насколько видно само объявление:
+        // иначе закрытый отчёт отдела скачивался бы по номеру файла.
+        var announcement = await VisibleAnnouncementAsync(file.AnnouncementId, cancellationToken);
+
+        return announcement is null ? null : file;
+    }
+
+    /// <summary>Вложение объявления: картинку показываем, остальное отдаём на сохранение.</summary>
+    public async Task<IActionResult> OnGetAnnFileAsync(int fileId, CancellationToken cancellationToken)
+    {
+        var file = await VisibleAttachmentAsync(fileId, cancellationToken);
+
+        if (file is null || !_announcementStorage.Exists(file.AnnouncementId, file.StorageName))
+        {
+            return NotFound();
+        }
+
+        var stream = _announcementStorage.OpenRead(file.AnnouncementId, file.StorageName);
+
+        if (file.IsImage)
+        {
+            return new FileStreamResult(stream, file.ContentType) { EnableRangeProcessing = true };
+        }
+
+        return new FileStreamResult(stream, file.ContentType)
+        {
+            FileDownloadName = file.OriginalName,
+            EnableRangeProcessing = true
+        };
+    }
+
+    /// <summary>
+    /// Вложение «на просмотр»: тип содержимого строго из белого списка.
+    ///
+    /// Отдельно от OnGetAnnFile намеренно: тот берёт тип из базы, то есть
+    /// из того, что прислал браузер при загрузке. Для показа В СТРАНИЦЕ
+    /// этого мало — файл, назвавшийся картинкой, выполнился бы как разметка
+    /// в адресе портала.
+    /// </summary>
+    public async Task<IActionResult> OnGetAnnPreviewAsync(int fileId, CancellationToken cancellationToken)
+    {
+        var file = await VisibleAttachmentAsync(fileId, cancellationToken);
+
+        if (file is null || !_announcementStorage.Exists(file.AnnouncementId, file.StorageName))
+        {
+            return NotFound();
+        }
+
+        var contentType = PreviewSupport.ContentTypeFor(file.OriginalName);
+
+        if (contentType is null)
+        {
+            return NotFound();
+        }
+
+        var stream = _announcementStorage.OpenRead(file.AnnouncementId, file.StorageName);
+
+        return new FileStreamResult(stream, contentType) { EnableRangeProcessing = true };
+    }
+
+    /// <summary>Документ Office или архив во вложении — разбираем в разметку, как в хранилище.</summary>
+    public async Task<IActionResult> OnGetAnnDocumentAsync(int fileId, CancellationToken cancellationToken)
+    {
+        var file = await VisibleAttachmentAsync(fileId, cancellationToken);
+
+        if (file is null || !_announcementStorage.Exists(file.AnnouncementId, file.StorageName))
+        {
+            return NotFound();
+        }
+
+        var kind = PreviewSupport.KindOf(file.OriginalName);
+
+        if (kind is not (PreviewKind.Office or PreviewKind.Archive))
+        {
+            return NotFound();
+        }
+
+        try
+        {
+            await using var stream = _announcementStorage.OpenRead(file.AnnouncementId, file.StorageName);
+
+            var html = kind == PreviewKind.Archive
+                ? OfficeDocuments.ArchiveToHtml(stream)
+                : OfficeDocuments.ToHtml(stream, file.OriginalName);
+
+            return Content(html, "text/html; charset=utf-8");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Не удалось разобрать вложение {File} объявления.", file.OriginalName);
+
+            return Content(
+                "<div class=\"doc\"><p class=\"doc__note\">Не удалось разобрать вложение. " +
+                "Скачайте файл и откройте его в своей программе.</p></div>",
+                "text/html; charset=utf-8");
+        }
+    }
+
+    /// <summary>Закрепить объявление наверху папки или открепить.</summary>
+    public Task<IActionResult> OnPostAnnPinAsync(int announcementId, CancellationToken cancellationToken) =>
+        SwitchAnnouncementAsync(announcementId, a => a.IsPinned = !a.IsPinned, cancellationToken);
+
+    /// <summary>Пометить объявление важным или снять пометку.</summary>
+    public Task<IActionResult> OnPostAnnImportantAsync(int announcementId, CancellationToken cancellationToken) =>
+        SwitchAnnouncementAsync(announcementId, a => a.IsImportant = !a.IsImportant, cancellationToken);
+
+    /// <summary>
+    /// Общая часть обоих переключателей: найти, проверить право, поменять.
+    ///
+    /// Права проверяются ЗДЕСЬ, по данным из базы, а не по тому, показали ли
+    /// мы кнопку: скрытая кнопка — это удобство интерфейса, а не защита.
+    /// </summary>
+    private async Task<IActionResult> SwitchAnnouncementAsync(
+        int announcementId, Action<Announcement> change, CancellationToken cancellationToken)
+    {
+        var announcement = await _db.Announcements.AsTracking()
+            .FirstOrDefaultAsync(a => a.Id == announcementId, cancellationToken);
+
+        if (announcement is null)
+        {
+            return NotFound();
+        }
+
+        await _tree.LoadAsync(cancellationToken);
+
+        if (!Portal.Web.Security.AnnouncementPermissions.CanModify(
+                User, announcement, _tree, _ad.AdminGroup))
+        {
+            return Forbid();
+        }
+
+        change(announcement);
+
+        // Дату правки НЕ трогаем: закрепление не меняет текст объявления,
+        // и подпись «изменено» после него сбивала бы с толку.
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return RedirectToPage(new { id = announcement.FolderId });
+    }
+
+    /// <summary>
+    /// Кого можно назначить начальником отдела — для окна создания папки.
+    /// Отвечает только администратору: список начальников организации
+    /// не то, что показывают всем подряд.
+    /// </summary>
+    public async Task<IActionResult> OnGetHeadsAsync(CancellationToken cancellationToken)
+    {
+        if (!IsAdmin)
+        {
+            return NotFound();
+        }
+
+        var candidates = await _departments.CandidatesAsync(cancellationToken);
+
+        return new JsonResult(candidates.Select(c => new
+        {
+            userName = c.UserName,
+            displayName = c.DisplayName
+        }));
     }
 
     /// <summary>Удаление файла — в корзину, а не с диска.</summary>
@@ -1625,6 +1897,26 @@ public class IndexModel : PageModel
                 .Where(f => f.FolderId == folder.Id && f.DeletedAt == null)
                 .ToListAsync(cancellationToken))
             : [];
+
+        // ---------- Объявления папки ----------
+        //
+        // Читаются только тем, кому видно её содержимое: объявление — такая
+        // же часть папки, как файлы, и круг читателей у него тот же.
+        if (Access >= FolderAccess.Read)
+        {
+            Announcements = await _feed.OfFolderAsync(folder.Id, cancellationToken);
+
+            CanPublishHere = Portal.Web.Security.AnnouncementPermissions
+                .CanPublishIn(User, folder, _tree, _ad.AdminGroup);
+
+            // Открыл папку — значит её объявления увидел. Это заменило
+            // прежнюю ленту: она отмечала прочитанным ровно так же.
+            if (Announcements.Count > 0)
+            {
+                await _feed.MarkFolderSeenAsync(
+                    User.Identity?.Name ?? "", folder.Id, cancellationToken);
+            }
+        }
 
         // Объёмы считаются ДО сортировки: по ним сортируют «по размеру».
         await LoadFolderFactsAsync(cancellationToken);
@@ -2679,7 +2971,13 @@ public class IndexModel : PageModel
             return false;
         }
 
-        return string.Equals(file.UploadedByUserName, User.Identity?.Name, StringComparison.OrdinalIgnoreCase)
-               || (Current is not null && _tree.UsesDefaultAccess(Current));
+        // Чужой файл удаляет только тот, кто управляет папкой, — а в отделе
+        // это начальник. Раньше здесь было послабление: в ненастроенной
+        // папке удалять чужое мог всякий, у кого есть запись. Для «Общей»
+        // части отдела, открытой всему порталу, это означало двадцать папок,
+        // где любой может стереть чужой документ, — и однажды это случилось
+        // бы. Заодно ушло расхождение: сервер такое удаление и так отклонял,
+        // а кнопка показывалась.
+        return string.Equals(file.UploadedByUserName, User.Identity?.Name, StringComparison.OrdinalIgnoreCase);
     }
 }

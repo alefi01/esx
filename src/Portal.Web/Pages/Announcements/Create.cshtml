@@ -10,6 +10,10 @@
 <div class="card">
     <h1>Новое объявление</h1>
 
+    <p class="hint">
+        Папка: <b>@Model.Folder?.Name</b>. Объявление увидят те, кому видна эта папка.
+    </p>
+
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
         <div class="alert err" role="alert">@Model.ErrorMessage</div>
@@ -17,6 +21,11 @@
 
     <form method="post" enctype="multipart/form-data">
         <div asp-validation-summary="ModelOnly" class="alert err"></div>
+
+        @* Номер папки едет скрытым полем: страница открывается с ним
+           в адресе, и при отправке он должен вернуться — право на публикацию
+           проверяется именно по папке. *@
+        <input type="hidden" asp-for="FolderId" />
 
         <div class="field">
             <label asp-for="Input.Title">Заголовок</label>
@@ -59,7 +68,7 @@
 
         <div class="form-actions">
             <button type="submit" class="btn primary">Опубликовать</button>
-            <a class="btn" asp-page="Index">Отмена</a>
+            <a class="btn" asp-page="/Files/Index" asp-route-id="@Model.FolderId">Отмена</a>
         </div>
     </form>
 </div>

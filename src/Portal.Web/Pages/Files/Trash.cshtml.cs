@@ -9,10 +9,20 @@ using Portal.Web.Services.Storage;
 namespace Portal.Web.Pages.Files;
 
 /// <summary>
-/// Корзина: файлы, удалённые из хранилища, но ещё не стёртые с диска.
+/// Корзина РАЗДЕЛА: файлы, удалённые из этой папки верхнего уровня
+/// и всего, что в ней лежит, но ещё не стёртые с диска.
 ///
-/// Человек видит здесь то, что удалил сам, а также всё удалённое в папках,
-/// которыми он управляет. Администратор портала видит всё.
+/// КТО ВИДИТ
+///
+/// Все, кому видна сама папка, откуда файл удалён, — вместе с именем того,
+/// кто удалил. Раньше правило было другим: человек видел только своё
+/// удалённое. Причина у него была (корзина показывает, кто чем занимался
+/// и что решил выбросить), но довод против оказался сильнее: в открытой
+/// рабочей папке удаляет кто угодно, и если он в отпуске, восстановить
+/// мог только администратор — то есть ровно тогда, когда нужнее всего.
+///
+/// Общего списка «что удалено по всему порталу» больше нет и пункта
+/// в меню тоже: корзина живёт внутри раздела, рядом с его файлами.
 /// </summary>
 public class TrashModel : PageModel
 {
@@ -41,18 +51,34 @@ public class TrashModel : PageModel
 
     private bool IsAdmin => User.IsInRole(_ad.AdminGroup);
 
-    public sealed record TrashItem(StoredFile File, string FolderPath, bool CanRestore, DateTime PurgeAt);
+    public sealed record TrashItem(
+        StoredFile File,
+        string FolderPath,
+        string DeletedBy,
+        bool CanRestore,
+        bool CanPurge,
+        DateTime PurgeAt);
 
     public IReadOnlyList<TrashItem> Items { get; private set; } = [];
+
+    /// <summary>Раздел, чью корзину смотрим. null — такого раздела нет.</summary>
+    public StorageFolder? Root { get; private set; }
+
+    /// <summary>Номер раздела из адреса страницы.</summary>
+    [BindProperty(SupportsGet = true)]
+    public int Id { get; set; }
 
     public int RetentionDays => _options.TrashRetentionDays;
 
     [TempData] public string? StatusMessage { get; set; }
     [TempData] public string? ErrorMessage { get; set; }
 
-    public async Task OnGetAsync(CancellationToken cancellationToken)
+    public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
         await LoadAsync(cancellationToken);
+
+        // Раздела нет или он человеку не виден — страницы для него не существует.
+        return Root is null ? NotFound() : Page();
     }
 
     public async Task<IActionResult> OnPostRestoreAsync(int fileId, CancellationToken cancellationToken)
@@ -68,7 +94,7 @@ public class TrashModel : PageModel
 
         var folder = _tree.Get(file.FolderId);
 
-        if (folder is null || !CanAct(file, folder))
+        if (folder is null || !CanSee(folder) || !CanRestore(folder))
         {
             return Forbid();
         }
@@ -79,7 +105,7 @@ public class TrashModel : PageModel
         if (!_storage.Exists(file.FolderId, file.StorageName))
         {
             ErrorMessage = $"Файл «{file.OriginalName}» отсутствует на диске, восстановить нечего.";
-            return RedirectToPage();
+            return RedirectToPage(new { id = Id });
         }
 
         file.DeletedAt = null;
@@ -91,7 +117,7 @@ public class TrashModel : PageModel
 
         StatusMessage = $"Файл «{file.OriginalName}» восстановлен.";
 
-        return RedirectToPage();
+        return RedirectToPage(new { id = Id });
     }
 
     /// <summary>Стереть немедленно, не дожидаясь срока.</summary>
@@ -108,7 +134,7 @@ public class TrashModel : PageModel
 
         var folder = _tree.Get(file.FolderId);
 
-        if (folder is null || !CanAct(file, folder))
+        if (folder is null || !CanSee(folder) || !CanPurge(file, folder))
         {
             return Forbid();
         }
@@ -123,16 +149,16 @@ public class TrashModel : PageModel
 
         StatusMessage = $"Файл «{file.OriginalName}» стёрт окончательно.";
 
-        return RedirectToPage();
+        return RedirectToPage(new { id = Id });
     }
 
     /// <summary>
     /// Стереть всё, что человек видит в корзине, одним действием.
     ///
-    /// Именно «что видит»: обычный сотрудник вычистит только то, что удалил
-    /// сам, а администратор — всё. Проверку прав делает тот же CanAct,
-    /// что и при удалении по одному, поэтому кнопка не может стать
-    /// способом обойти разграничение доступа.
+    /// Именно «что видит» и «что вправе стереть»: проверка та же, что
+    /// и при стирании по одному, поэтому кнопка не может стать способом
+    /// обойти разграничение доступа. Чужое удалённое она не трогает —
+    /// его сотрёт срок хранения либо начальник отдела.
     /// </summary>
     public async Task<IActionResult> OnPostPurgeAllAsync(CancellationToken cancellationToken)
     {
@@ -140,7 +166,7 @@ public class TrashModel : PageModel
 
         if (Items.Count == 0)
         {
-            return RedirectToPage();
+            return RedirectToPage(new { id = Id });
         }
 
         var ids = Items.Select(item => item.File.Id).ToList();
@@ -158,7 +184,8 @@ public class TrashModel : PageModel
             var folder = _tree.Get(file.FolderId);
 
             // Файл мог быть восстановлен или стёрт, пока страница была открыта.
-            if (folder is null || file.DeletedAt is null || !CanAct(file, folder))
+            if (folder is null || file.DeletedAt is null
+                || !CanSee(folder) || !CanPurge(file, folder))
             {
                 continue;
             }
@@ -178,7 +205,7 @@ public class TrashModel : PageModel
             ? "Корзина уже пуста."
             : $"Корзина очищена: стёрто файлов — {files.Count}, освобождено {UploadValidator.Format(freed)}.";
 
-        return RedirectToPage();
+        return RedirectToPage(new { id = Id });
     }
 
     /// <summary>Сколько всего занимают файлы, видимые в корзине.</summary>
@@ -187,6 +214,21 @@ public class TrashModel : PageModel
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
         await _tree.LoadAsync(cancellationToken);
+
+        var root = _tree.Get(Id);
+
+        // Корзина бывает только у раздела — папки верхнего уровня.
+        // Файл из подпапки попадает в корзину своего раздела, и там же
+        // восстанавливается: туда, откуда его убрали.
+        if (root is null || root.ParentId is not null || !_tree.IsVisible(User, root))
+        {
+            Root = null;
+            Items = [];
+
+            return;
+        }
+
+        Root = root;
 
         var deleted = await _db.Files
             .Where(f => f.DeletedAt != null)
@@ -199,7 +241,7 @@ public class TrashModel : PageModel
         {
             var folder = _tree.Get(file.FolderId);
 
-            if (folder is null || !CanAct(file, folder))
+            if (folder is null || _tree.RootOf(folder).Id != root.Id || !CanSee(folder))
             {
                 continue;
             }
@@ -207,7 +249,11 @@ public class TrashModel : PageModel
             items.Add(new TrashItem(
                 file,
                 _tree.DisplayPath(folder),
-                CanRestore: _tree.CanWrite(User, folder),
+                // Имя удалившего видно всем, кому видна папка: иначе
+                // «кто это выбросил» выясняется только у администратора.
+                string.IsNullOrWhiteSpace(file.DeletedByUserName) ? "—" : file.DeletedByUserName,
+                CanRestore: CanRestore(folder),
+                CanPurge: CanPurge(file, folder),
                 PurgeAt: file.DeletedAt!.Value.AddDays(_options.TrashRetentionDays)));
         }
 
@@ -215,29 +261,30 @@ public class TrashModel : PageModel
     }
 
     /// <summary>
-    /// Видеть и трогать запись в корзине может ТОТ, КТО ЕЁ ТУДА ПОЛОЖИЛ,
-    /// и администратор портала.
-    ///
-    /// Раньше сюда попадал ещё и всякий, кто управляет папкой. Разница
-    /// оказалась существенной: корзина — это список того, что человек
-    /// счёл ненужным, с именами файлов и временем. По ней видно, кто чем
-    /// занимался и что решил убрать, — а общая рабочая папка теперь
-    /// открыта многим, и её содержимое удаляет кто угодно.
-    ///
-    /// Управляющий папкой при этом не остаётся без выхода: файл, убранный
-    /// по ошибке, восстанавливает тот, кто его убрал, а если он недоступен —
-    /// администратор портала, у которого корзина видна целиком.
+    /// Видеть запись в корзине может всякий, кому видна папка, откуда файл
+    /// удалён. Проверяем по САМОЙ папке файла, а не по разделу: файл мог
+    /// лежать в закрытой подпапке, и показывать его всему отделу нельзя.
     /// </summary>
-    private bool CanAct(StoredFile file, StorageFolder folder)
-    {
-        if (IsAdmin)
-        {
-            return true;
-        }
+    private bool CanSee(StorageFolder folder) => IsAdmin || _tree.CanRead(User, folder);
 
-        return string.Equals(file.DeletedByUserName, User.Identity?.Name, StringComparison.OrdinalIgnoreCase)
-               && _tree.CanRead(User, folder);
-    }
+    /// <summary>
+    /// Восстановить может тот, кто вправе класть файлы в эту папку.
+    /// Именно в этом и был смысл переноса корзины в раздел: убравший файл
+    /// человек может быть в отпуске, а работа стоит.
+    /// </summary>
+    private bool CanRestore(StorageFolder folder) => IsAdmin || _tree.CanWrite(User, folder);
+
+    /// <summary>
+    /// Стереть насовсем — тот, кто управляет папкой (начальник отдела
+    /// получает это право на всю свою ветку), и тот, кто сам это удалил.
+    ///
+    /// Разница с восстановлением не формальная: восстановление возвращает
+    /// всё как было, а окончательное стирание отменить нельзя.
+    /// </summary>
+    private bool CanPurge(StoredFile file, StorageFolder folder) =>
+        IsAdmin
+        || _tree.CanManage(User, folder)
+        || string.Equals(file.DeletedByUserName, User.Identity?.Name, StringComparison.OrdinalIgnoreCase);
 
     public static string FormatSize(long bytes) => UploadValidator.Format(bytes);
 }

@@ -85,9 +85,12 @@
 
                     @if (Model.HasMore)
                     {
+                        @* Ссылки «вся лента» больше нет: ленты нет тоже.
+                           Остальное непрочитанное лежит в папках отделов,
+                           и путь к нему — через «Файлы». *@
                         <p class="feed-more">
-                            <a asp-page="/Announcements/Index">
-                                Ещё @(Model.UnreadCount - Model.Items.Count) непрочитанных →
+                            <a asp-page="/Files/Index">
+                                Ещё @(Model.UnreadCount - Model.Items.Count) непрочитанных — в папках →
                             </a>
                         </p>
                     }

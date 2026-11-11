@@ -1,7 +1,7 @@
 @using Portal.Web.Data
 @using Portal.Web.Services.Text
 @inject PlainTextFormatter TextFormatter
-@model Portal.Web.Data.Announcement
+@model Portal.Web.Services.Announcements.FeedItem
 
 @*
     Карточка объявления НА ГЛАВНОЙ — одна и та же в обоих столбцах.
@@ -19,9 +19,25 @@
     Полный текст с рабочими ссылками и вложениями — в ленте объявлений,
     куда карточка и ведёт.
 *@
-<a class="pin-card@(Model.IsImportant ? " important" : "")"
-   asp-page="/Announcements/Index" asp-fragment="a@Model.Id">
-    <b>@Model.Title</b>
-    <span class="pin-body">@TextFormatter.ToMarkedText(Model.Body)</span>
-    <span class="pin-foot">@Model.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy") · @Model.AuthorDisplayName</span>
+@{
+    var item = Model.Item;
+    var folder = Model.Folder;
+}
+
+@* Карточка ведёт В ПАПКУ, на которой висит объявление: отдельной ленты
+   больше нет, и полный текст с вложениями живёт там. Заодно переход
+   отмечает объявления папки прочитанными — поэтому карточка с главной
+   пропадает ровно тогда, когда человек её прочитал, а не когда
+   заглянул на главную. *@
+<a class="pin-card@(item.IsImportant ? " important" : "")"
+   asp-page="/Files/Index" asp-route-id="@folder?.Id" asp-fragment="@($"a{item.Id}")">
+    <b>@item.Title</b>
+    <span class="pin-body">@TextFormatter.ToMarkedText(item.Body)</span>
+    <span class="pin-foot">
+        @item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy") · @item.AuthorDisplayName
+        @if (folder is not null)
+        {
+            <text> · @folder.Name</text>
+        }
+    </span>
 </a>

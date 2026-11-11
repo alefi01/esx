@@ -29,6 +29,99 @@
     <div class="alert err" role="alert">@Model.ErrorMessage</div>
 }
 
+@* ---------- Отдел ----------
+
+   Раздел виден только на папке верхнего уровня: отделом может быть
+   только она. Начальников назначает администратор — это делегирование
+   прав на целую ветку хранилища, и делать это мимоходом нельзя.
+
+   Начальник свою папку тут видит, но список начальников менять
+   не может: иначе через полгода никто не скажет, кто кем назначен. *@
+@if (Model.IsTopLevel)
+{
+    <div class="card">
+        <h2>Отдел</h2>
+
+        @if (!Model.IsAdmin)
+        {
+            @if (Model.Folder!.IsDepartment)
+            {
+                <p class="hint">
+                    Это папка отдела.
+                    @if (Model.Heads.Count > 0)
+                    {
+                        <text>Начальники: @string.Join(", ", Model.Heads.Select(h => h.DisplayName)).</text>
+                    }
+                    else
+                    {
+                        <text>Начальник не назначен — папкой управляет администратор портала.</text>
+                    }
+                </p>
+            }
+            else
+            {
+                <p class="hint">Обычная папка: без начальника и без объявлений.</p>
+            }
+        }
+        else
+        {
+            <form method="post" asp-page-handler="Department" asp-route-id="@Model.Folder?.Id">
+                <label class="fs-check">
+                    <input type="checkbox" name="isDepartment" value="true"
+                           @(Model.Folder!.IsDepartment ? "checked" : "") />
+                    <span>Это папка отдела</span>
+                </label>
+
+                <p class="hint">
+                    У отдела есть начальники, свои объявления и две папки внутри:
+                    «@Portal.Web.Services.Storage.Departments.PublicFolderName» — для всего портала,
+                    «@Portal.Web.Services.Storage.Departments.InternalFolderName» — по правам,
+                    которые расставит начальник. Недостающие подпапки будут созданы.
+                </p>
+
+                @if (Model.Folder!.IsDepartment && Model.Heads.Count == 0)
+                {
+                    <div class="alert warn" role="alert">
+                        <strong>Начальник не назначен.</strong>
+                        Папкой управляет только администратор портала, объявления отдела вешать некому.
+                    </div>
+                }
+
+                <div class="field">
+                    <label>Начальники отдела</label>
+
+                    @if (Model.HeadCandidates.Count == 0)
+                    {
+                        <p class="hint">
+                            Назначать некого. Начальник должен состоять в группе
+                            <code>@Model.HeadGroup</code> и хотя бы раз войти в портал —
+                            после этого он появится в списке.
+                        </p>
+                    }
+                    else
+                    {
+                        <div class="people">
+                            @foreach (var candidate in Model.HeadCandidates)
+                            {
+                                var chosen = Model.Heads.Any(h =>
+                                    string.Equals(h.UserName, candidate.UserName, StringComparison.OrdinalIgnoreCase));
+
+                                <label class="member-row member-row--static">
+                                    <input type="checkbox" name="heads" value="@candidate.UserName"
+                                           @(chosen ? "checked" : "") />
+                                    <div><b>@candidate.DisplayName</b><span>@candidate.UserName</span></div>
+                                </label>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <button class="btn primary" type="submit">Сохранить отдел</button>
+            </form>
+        }
+    </div>
+}
+
 <div class="card">
     <h2>Ограничения и хранение</h2>
 

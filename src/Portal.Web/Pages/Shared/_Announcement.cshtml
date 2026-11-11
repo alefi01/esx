@@ -7,9 +7,10 @@
 @*
     Одно объявление — карточка из макета.
 
-    Вынесено в отдельный файл, потому что показывается в двух местах:
-    на главной и в ленте объявлений. Две копии разметки разошлись бы
-    при первой же правке.
+    Показывается во врезке на странице папки. Отдельной ленты объявлений
+    больше нет: объявление висит на папке, и читается там же, где лежат
+    документы отдела. Поэтому и все ссылки ведут на страницу «Файлы» —
+    обработчики переехали туда вместе с объявлениями.
 *@
 <div class="ann-card@(Model.Item.IsPinned ? " pinned" : "")@(Model.Item.IsImportant ? " important" : "")">
 
@@ -68,19 +69,19 @@
             @foreach (var file in Model.Item.Files.Where(f => f.IsImage))
             {
                 <a class="ann-image"
-                   asp-page="/Announcements/Index" asp-page-handler="Attachment" asp-route-fileId="@file.Id"
+                   asp-page="/Files/Index" asp-page-handler="AnnFile" asp-route-fileId="@file.Id"
                    target="_blank" rel="noopener" title="@file.OriginalName"
                    data-att="@file.Id"
                    data-kind="@Portal.Web.Services.Storage.PreviewSupport.KindName(file.OriginalName)"
                    data-name="@file.OriginalName">
-                    <img src="/Announcements?handler=Attachment&amp;fileId=@file.Id" alt="@file.OriginalName" loading="lazy" />
+                    <img src="/Files?handler=AnnFile&amp;fileId=@file.Id" alt="@file.OriginalName" loading="lazy" />
                 </a>
             }
 
             @foreach (var file in Model.Item.Files.Where(f => !f.IsImage))
             {
                 <a class="zip-row"
-                   asp-page="/Announcements/Index" asp-page-handler="Attachment" asp-route-fileId="@file.Id"
+                   asp-page="/Files/Index" asp-page-handler="AnnFile" asp-route-fileId="@file.Id"
                    data-att="@file.Id"
                    data-kind="@Portal.Web.Services.Storage.PreviewSupport.KindName(file.OriginalName)"
                    data-name="@file.OriginalName">
@@ -106,16 +107,16 @@
                 @* Закрепление и пометка «важное» — обычные формы, а не кнопки
                    с кодом: так они работают всегда, и на них действует
                    та же проверка прав, что и на правку объявления. *@
-                <form method="post" asp-page="/Announcements/Index" asp-page-handler="Pin"
-                      asp-route-id="@Model.Item.Id" class="head-form">
+                <form method="post" asp-page="/Files/Index" asp-page-handler="AnnPin"
+                      asp-route-announcementId="@Model.Item.Id" class="head-form">
                     <button class="icon-btn@(Model.Item.IsPinned ? " on" : "")" type="submit"
                             title="@(Model.Item.IsPinned ? "Открепить" : "Закрепить наверху")">
                         <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pin" /></svg>
                     </button>
                 </form>
 
-                <form method="post" asp-page="/Announcements/Index" asp-page-handler="Important"
-                      asp-route-id="@Model.Item.Id" class="head-form">
+                <form method="post" asp-page="/Files/Index" asp-page-handler="AnnImportant"
+                      asp-route-announcementId="@Model.Item.Id" class="head-form">
                     <button class="icon-btn@(Model.Item.IsImportant ? " on-danger" : "")" type="submit"
                             title="@(Model.Item.IsImportant ? "Снять пометку «важное»" : "Пометить как важное")">
                         <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>

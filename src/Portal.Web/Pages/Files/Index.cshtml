@@ -76,6 +76,25 @@
             </button>
         }
 
+        @if (Model.CanPublishHere)
+        {
+            <a class="btn" asp-page="/Announcements/Create" asp-route-folderId="@Model.Current!.Id">
+                <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><use href="#i-mega" /></svg>Объявление
+            </a>
+        }
+
+        @* Корзина у каждого раздела своя и живёт внутри него: общего
+           списка «что удалено по всему порталу» в меню больше нет.
+           Ведёт она всегда в раздел — файл из подпапки попадает
+           в корзину своего раздела. *@
+        @if (Model.Current is not null)
+        {
+            <a class="icon-btn back-btn" title="Корзина раздела" aria-label="Корзина раздела"
+               asp-page="Trash" asp-route-id="@Model.RootFolderId">
+                <svg class="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash" /></svg>
+            </a>
+        }
+
         @if (canManageCurrent)
         {
             <a class="icon-btn back-btn" title="Управление папкой" aria-label="Управление папкой"
@@ -129,6 +148,26 @@
         </p>
     }
 
+    @* ---------- Объявления папки ----------
+
+       Отдельной ленты объявлений в портале нет: объявление висит на папке
+       и читается там же, где лежат документы отдела. Врезка стоит НАД
+       списком файлов, потому что новость устаревает, а файлы — нет:
+       то, что нужно прочитать один раз и сегодня, должно попадаться
+       на глаза раньше того, чем пользуются каждый день.
+
+       Открытие папки отмечает её объявления прочитанными — см. LoadAsync. *@
+    @if (Model.Announcements.Count > 0)
+    {
+        <div class="ann-list folder-ann">
+            @foreach (var item in Model.Announcements)
+            {
+                @await Html.PartialAsync("_Announcement",
+                    new AnnouncementCard(item, Model.CanModifyAnnouncement(item)))
+            }
+        </div>
+    }
+
     @* ---------- Содержимое ----------
        Данные для кода страницы передаются через data-атрибуты, а не через
        вставленный <script>: политика безопасности запрещает встроенные
@@ -141,6 +180,9 @@
          data-folder-id="@(Model.Current?.Id.ToString() ?? "")"
          data-can-write="@canWrite.ToString().ToLowerInvariant()"
          data-can-create-folder="@canCreateFolder.ToString().ToLowerInvariant()"
+         @* Отдел заводится только в корне и только администратором:
+            от этого зависит, какое окно показать при создании папки. *@
+         data-can-create-department="@((Model.Current is null && Model.IsAdmin).ToString().ToLowerInvariant())"
          data-max-file-size="@Model.MaxFileSizeBytes"
          data-quota="@(Model.QuotaBytes?.ToString() ?? "")"
          data-used="@Model.UsedBytes"

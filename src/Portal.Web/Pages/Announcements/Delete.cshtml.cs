@@ -20,12 +20,18 @@ namespace Portal.Web.Pages.Announcements;
 public class DeleteModel : PageModel
 {
     private readonly PortalDbContext _db;
+    private readonly Portal.Web.Services.Storage.FolderTree _tree;
     private readonly ActiveDirectoryOptions _adOptions;
     private readonly ILogger<DeleteModel> _logger;
 
-    public DeleteModel(PortalDbContext db, IOptions<ActiveDirectoryOptions> adOptions, ILogger<DeleteModel> logger)
+    public DeleteModel(
+        PortalDbContext db,
+        Portal.Web.Services.Storage.FolderTree tree,
+        IOptions<ActiveDirectoryOptions> adOptions,
+        ILogger<DeleteModel> logger)
     {
         _db = db;
+        _tree = tree;
         _adOptions = adOptions.Value;
         _logger = logger;
     }
@@ -43,7 +49,9 @@ public class DeleteModel : PageModel
             return NotFound();
         }
 
-        if (!AnnouncementPermissions.CanModify(User, announcement, _adOptions.AdminGroup))
+        await _tree.LoadAsync(cancellationToken);
+
+        if (!AnnouncementPermissions.CanModify(User, announcement, _tree, _adOptions.AdminGroup))
         {
             return Forbid();
         }
@@ -62,13 +70,17 @@ public class DeleteModel : PageModel
         if (announcement is null)
         {
             // Кто-то уже удалил — считаем, что цель достигнута.
-            return RedirectToPage("Index");
+            return RedirectToPage("/Index");
         }
 
-        if (!AnnouncementPermissions.CanModify(User, announcement, _adOptions.AdminGroup))
+        await _tree.LoadAsync(cancellationToken);
+
+        if (!AnnouncementPermissions.CanModify(User, announcement, _tree, _adOptions.AdminGroup))
         {
             return Forbid();
         }
+
+        var folderId = announcement.FolderId;
 
         try
         {
@@ -91,6 +103,8 @@ public class DeleteModel : PageModel
 
         TempData["StatusMessage"] = "Объявление удалено.";
 
-        return RedirectToPage("Index");
+        return folderId is { } id2
+            ? RedirectToPage("/Files/Index", new { id = id2 })
+            : RedirectToPage("/Index");
     }
 }

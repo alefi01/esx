@@ -1,0 +1,309 @@
+@page
+@using Portal.Web.Data
+@model Portal.Web.Pages.Tasks.AssignedModel
+@{
+    ViewData["Title"] = "Задачи подчинённым";
+}
+
+@*
+    Страница того, кто ставит задачи: что он поручил, кто что сдал
+    и что ждёт его проверки.
+
+    Данные для кода страницы передаются data-атрибутами, а не вставленным
+    <script>: политика безопасности запрещает встроенные скрипты.
+*@
+<section class="view active tasks-page" data-assigned-tasks>
+
+    @if (!string.IsNullOrEmpty(Model.StatusMessage))
+    {
+        <span data-flash="@Model.StatusMessage" data-flash-kind="ok" hidden></span>
+    }
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <span data-flash="@Model.ErrorMessage" data-flash-kind="danger" hidden></span>
+    }
+
+    <div class="view-head">
+        <h2>Задачи подчинённым</h2>
+
+        <nav class="seg" aria-label="Какие задачи показывать">
+            <a class="seg-btn@(Model.ViewMode == "active" ? " on" : "")" asp-page="Assigned">
+                В работе
+                @if (Model.WaitingCount > 0)
+                {
+                    <span class="side-count">@Model.WaitingCount</span>
+                }
+            </a>
+            <a class="seg-btn@(Model.ViewMode == "done" ? " on" : "")" asp-page="Assigned" asp-route-view="done">
+                <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>Закрытые
+            </a>
+        </nav>
+    </div>
+
+    @* ---------- Новая задача ----------
+       Форма раскрывается кнопкой: полей у поручения много (срок, повторение,
+       признаки), и держать их всегда развёрнутыми — значит отодвинуть
+       вниз сам список, ради которого на страницу и заходят. *@
+    @if (Model.ViewMode == "active")
+    {
+        <div class="card task-new">
+            <button class="btn primary" type="button" id="newAssignedBtn">
+                <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus" /></svg>Новая задача
+            </button>
+
+            <form method="post" asp-page-handler="Create" enctype="multipart/form-data"
+                  id="newAssignedForm" class="assigned-form" hidden>
+
+                <div asp-validation-summary="ModelOnly" class="alert err"></div>
+
+                <div class="field">
+                    <label asp-for="Input.Assignee">Кому</label>
+
+                    @* Логин уходит скрытым полем, а человек выбирается
+                       в окне поиска по справочнику: набирать логин руками —
+                       верный способ поставить задачу не тому. *@
+                    <div class="inline-pair">
+                        <input type="text" id="assigneeName" readonly
+                               placeholder="Выберите сотрудника" value="" />
+                        <button class="btn" type="button" id="pickAssignee">Выбрать</button>
+                    </div>
+
+                    <input type="hidden" asp-for="Input.Assignee" id="assigneeLogin" />
+                    <span asp-validation-for="Input.Assignee" class="err"></span>
+                </div>
+
+                <div class="field">
+                    <label asp-for="Input.Title">Что нужно сделать</label>
+                    <input asp-for="Input.Title" maxlength="300" autocomplete="off" />
+                    <span asp-validation-for="Input.Title" class="err"></span>
+                </div>
+
+                <div class="field">
+                    <label asp-for="Input.Notes">Подробности</label>
+                    <textarea asp-for="Input.Notes" rows="2" maxlength="4000"></textarea>
+                </div>
+
+                <div class="row-form">
+                    <div class="field">
+                        <label asp-for="Input.DueOn">Срок</label>
+                        <input asp-for="Input.DueOn" type="date" />
+                        <span asp-validation-for="Input.DueOn" class="err"></span>
+                    </div>
+
+                    <div class="field">
+                        <label asp-for="Input.DueTime">Время</label>
+                        <input asp-for="Input.DueTime" type="time" />
+                        <span class="hint">Пусто — конец дня</span>
+                    </div>
+
+                    <div class="field">
+                        <label asp-for="Input.Repeat">Повторять</label>
+                        <select asp-for="Input.Repeat" id="repeatSel">
+                            <option value="@((int)TaskRepeat.Once)">не повторять</option>
+                            <option value="@((int)TaskRepeat.Daily)">каждый день</option>
+                            <option value="@((int)TaskRepeat.Weekdays)">по дням недели</option>
+                            <option value="@((int)TaskRepeat.Weekly)">раз в неделю</option>
+                            <option value="@((int)TaskRepeat.Monthly)">раз в месяц</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label asp-for="Input.RemindMinutes">Напомнить за, мин</label>
+                        <input asp-for="Input.RemindMinutes" type="number" min="0" max="10080" />
+                        <span class="hint">0 — не напоминать</span>
+                    </div>
+                </div>
+
+                <div class="field" id="weekDaysField" hidden>
+                    <label>Дни недели</label>
+                    <div class="row-form">
+                        @{
+                            var dayNames = new[] { "пн", "вт", "ср", "чт", "пт", "сб", "вс" };
+                        }
+                        @for (var i = 0; i < dayNames.Length; i++)
+                        {
+                            <label class="fs-check">
+                                <input type="checkbox" name="Input.WeekDays" value="@i" />
+                                <span>@dayNames[i]</span>
+                            </label>
+                        }
+                    </div>
+                </div>
+
+                <div class="field" id="monthDayField" hidden>
+                    <label asp-for="Input.MonthDay">Число месяца</label>
+                    <input asp-for="Input.MonthDay" type="number" min="1" max="31" />
+                    <span class="hint">29–31 в коротком месяце съезжают на последний день</span>
+                </div>
+
+                <div class="row-form">
+                    <label class="fs-check">
+                        <input asp-for="Input.NeedCheck" type="checkbox" />
+                        <span>Нужна проверка</span>
+                    </label>
+
+                    <label class="fs-check">
+                        <input asp-for="Input.NeedFile" type="checkbox" />
+                        <span>Сдать с файлом</span>
+                    </label>
+
+                    <label class="fs-check">
+                        <input asp-for="Input.Important" type="checkbox" />
+                        <span>Важно</span>
+                    </label>
+                </div>
+
+                <p class="hint">
+                    «Нужна проверка» снята — исполнитель закрывает задачу сам кнопкой «Выполнено».
+                    «Важно» — яркая пометка в списке, а на рабочем ПК с виджетом ещё и окно
+                    поверх всех программ со звуком.
+                </p>
+
+                <div class="field">
+                    <label for="taskFiles">Приложить файл</label>
+                    <input type="file" name="attachments" id="taskFiles" multiple />
+                    <span class="hint">Бланк, образец, шаблон — то, по чему делать</span>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn primary" type="submit">Поставить задачу</button>
+                    <button class="btn" type="button" id="cancelAssigned">Отмена</button>
+                </div>
+            </form>
+        </div>
+    }
+
+    @if (Model.Items.Count == 0)
+    {
+        <div class="empty">
+            <svg class="ic" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>
+            @if (Model.ViewMode == "done")
+            {
+                <b>Закрытых задач нет</b>
+                <p>Сюда попадают принятые, выполненные и снятые</p>
+            }
+            else
+            {
+                <b>Задач нет</b>
+                <p>Нажмите «Новая задача» — она появится у сотрудника сразу</p>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="task-list">
+            @foreach (var card in Model.Items)
+            {
+                var item = card.Instance;
+                var task = card.Task;
+
+                var urgency = card.Urgency switch
+                {
+                    Portal.Web.Services.Tasks.TaskUrgency.Now => " urgent-now",
+                    Portal.Web.Services.Tasks.TaskUrgency.Close => " urgent-close",
+                    Portal.Web.Services.Tasks.TaskUrgency.Soon => " urgent-soon",
+                    _ => ""
+                };
+
+                <div class="task-card@(item.IsClosed ? " done" : "")@(card.Overdue ? " overdue" : "")@urgency@(task.Important ? " important" : "")">
+                    <div class="task-body">
+                        <div class="task-title-row">
+                            @if (task.Important)
+                            {
+                                <span class="chip imp">
+                                    <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>Важно
+                                </span>
+                            }
+
+                            <b>@task.Title</b>
+
+                            <span class="task-owner">
+                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>@task.AssigneeDisplayName
+                            </span>
+
+                            <span class="task-due-chip@(card.Overdue ? " late" : "")@urgency">
+                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(item.DueAt, task.DueMinutes is not null)
+                            </span>
+
+                            <span class="task-state state-@item.State.ToString().ToLowerInvariant()">
+                                @Portal.Web.Pages.Tasks.AssignedTaskText.StateFor(item.State)
+                            </span>
+
+                            @if (task.Repeat != TaskRepeat.Once)
+                            {
+                                <span class="chip">@Portal.Web.Pages.Tasks.AssignedTaskText.RepeatFor(task)</span>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(task.Notes))
+                        {
+                            <p class="task-notes-text">@task.Notes</p>
+                        }
+
+                        @if (item.Returns > 0)
+                        {
+                            <p class="task-return">
+                                Возвращалась @item.Returns @Portal.Web.Pages.Shared.Plural.Of(item.Returns, "раз", "раза", "раз")
+                            </p>
+                        }
+
+                        @if (task.Files.Count > 0 || item.Files.Count > 0)
+                        {
+                            <div class="task-files">
+                                @foreach (var file in task.Files.Concat(item.Files))
+                                {
+                                    <a class="chip" asp-page-handler="File" asp-route-fileId="@file.Id">
+                                        @file.OriginalName
+                                    </a>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <div class="task-tools">
+                        @if (item.State == TaskState.Submitted)
+                        {
+                            <form method="post" asp-page-handler="Accept" asp-route-instanceId="@item.Id"
+                                  asp-route-view="@Model.View" class="head-form">
+                                <button class="btn primary sm" type="submit">Принять</button>
+                            </form>
+
+                            <button class="btn sm" type="button"
+                                    data-return-task="@item.Id" data-task-title="@task.Title">
+                                Вернуть
+                            </button>
+                        }
+
+                        @if (!item.IsClosed)
+                        {
+                            <form method="post" asp-page-handler="Cancel" asp-route-instanceId="@item.Id"
+                                  asp-route-view="@Model.View" class="head-form">
+                                <button class="btn sm" type="submit" data-confirm-action
+                                        data-confirm-text="Снять задачу «@task.Title» на этот раз? Повторение, если оно есть, продолжится."
+                                        data-confirm-ok="Снять">
+                                    Снять на этот раз
+                                </button>
+                            </form>
+
+                            @if (task.Repeat != TaskRepeat.Once && !task.Stopped)
+                            {
+                                <form method="post" asp-page-handler="Stop" asp-route-taskId="@task.Id"
+                                      asp-route-view="@Model.View" class="head-form">
+                                    <button class="btn sm danger" type="submit" data-confirm-action
+                                            data-confirm-text="Прекратить задачу «@task.Title»? Новых сроков больше не будет, история останется."
+                                            data-confirm-ok="Прекратить">
+                                        Прекратить
+                                    </button>
+                                </form>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @* Скрытая форма ради antiforgery-токена: из неё его берёт код страницы
+       для окна возврата на доработку. *@
+    <form method="post" asp-page-handler="Return" hidden></form>
+</section>

@@ -20,19 +20,22 @@ public class SettingsModel : PageModel
     private readonly AuditLog _audit;
     private readonly StorageOptions _storage;
     private readonly ActiveDirectoryOptions _ad;
+    private readonly Departments _departments;
 
     public SettingsModel(
         PortalDbContext db,
         FolderTree tree,
         AuditLog audit,
         IOptions<StorageOptions> storage,
-        IOptions<ActiveDirectoryOptions> ad)
+        IOptions<ActiveDirectoryOptions> ad,
+        Departments departments)
     {
         _db = db;
         _tree = tree;
         _audit = audit;
         _storage = storage.Value;
         _ad = ad.Value;
+        _departments = departments;
     }
 
     public StorageFolder? Folder { get; private set; }
@@ -43,6 +46,19 @@ public class SettingsModel : PageModel
     public long EffectiveMaxFileSize { get; private set; }
     public long? EffectiveQuota { get; private set; }
     public long UsedBytes { get; private set; }
+
+    /// <summary>Папка верхнего уровня: только у неё бывает признак отдела.</summary>
+    public bool IsTopLevel => Folder?.ParentId is null;
+
+    public bool IsAdmin => User.IsInRole(_ad.AdminGroup);
+
+    /// <summary>Начальники отдела. У обычной папки пусто.</summary>
+    public IReadOnlyList<FolderHead> Heads { get; private set; } = [];
+
+    /// <summary>Кого можно назначить. Читается только администратору.</summary>
+    public IReadOnlyList<HeadCandidate> HeadCandidates { get; private set; } = [];
+
+    public string HeadGroup => _ad.HeadGroup;
 
     public int AbsoluteMaxMb => _storage.AbsoluteMaxFileSizeMb;
     public int DefaultMaxMb => _storage.DefaultMaxFileSizeMb;
@@ -103,6 +119,13 @@ public class SettingsModel : PageModel
             return result;
         }
 
+        Heads = Folder!.Heads.OrderBy(head => head.DisplayName).ToList();
+
+        if (IsAdmin && IsTopLevel)
+        {
+            HeadCandidates = await _departments.CandidatesAsync(cancellationToken);
+        }
+
         Input = new SettingsInput
         {
             InheritPermissions = Folder!.InheritPermissions,
@@ -147,6 +170,83 @@ public class SettingsModel : PageModel
         return string.Equals(ReturnTo, "files", StringComparison.OrdinalIgnoreCase)
             ? RedirectToPage("Index", new { id })
             : RedirectToPage(new { id });
+    }
+
+    /// <summary>
+    /// Сделать папку отделом и задать список начальников.
+    ///
+    /// Только администратор и только для папки верхнего уровня: отдел —
+    /// часть устройства организации, а назначение начальника — делегирование
+    /// прав на целую ветку хранилища.
+    ///
+    /// Обратное действие (перестать быть отделом) разрешено, только пока
+    /// в папке нет объявлений: вместе с признаком отдела они стали бы
+    /// невидимы, а удалять чужие записи молча нельзя.
+    /// </summary>
+    public async Task<IActionResult> OnPostDepartmentAsync(
+        int id, bool isDepartment, string[] heads, CancellationToken cancellationToken)
+    {
+        var result = await LoadAsync(id, cancellationToken);
+
+        if (result is not null)
+        {
+            return result;
+        }
+
+        if (!IsAdmin || !IsTopLevel)
+        {
+            return Forbid();
+        }
+
+        var folder = await _db.Folders.AsTracking().FirstAsync(f => f.Id == id, cancellationToken);
+
+        if (!isDepartment)
+        {
+            var hasAnnouncements = await _db.Announcements
+                .AnyAsync(a => a.Folder != null && a.Folder.Id == id, cancellationToken);
+
+            if (hasAnnouncements)
+            {
+                ErrorMessage = "В отделе есть объявления — сначала уберите их.";
+                return Back(id);
+            }
+
+            folder.IsDepartment = false;
+
+            await _departments.SetHeadsAsync(id, [], User.Identity?.Name ?? "", cancellationToken);
+            await _db.SaveChangesAsync(cancellationToken);
+
+            _audit.Add(AuditAction.ChangeFolderSettings, folder.Name, "папка больше не отдел");
+            await _db.SaveChangesAsync(cancellationToken);
+
+            StatusMessage = "Папка больше не отдел.";
+
+            return Back(id);
+        }
+
+        if (heads.Length == 0)
+        {
+            ErrorMessage = "У отдела должен быть начальник — выберите хотя бы одного.";
+            return Back(id);
+        }
+
+        var before = folder.IsDepartment
+            ? string.Join(", ", Folder!.Heads.Select(h => h.UserName))
+            : "папка не была отделом";
+
+        await _departments.MakeDepartmentAsync(
+            folder, heads, User.Identity?.Name ?? "", cancellationToken);
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _audit.Add(AuditAction.ChangeFolderSettings, folder.Name,
+            $"начальники отдела: {before} → {string.Join(", ", heads)}");
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        StatusMessage = "Отдел и его начальники сохранены.";
+
+        return Back(id);
     }
 
     public async Task<IActionResult> OnPostSaveAsync(int id, CancellationToken cancellationToken)

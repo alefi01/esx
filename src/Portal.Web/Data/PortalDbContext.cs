@@ -24,9 +24,13 @@ public class PortalDbContext : DbContext
 
     public DbSet<StorageFolder> Folders => Set<StorageFolder>();
     public DbSet<FolderPermission> FolderPermissions => Set<FolderPermission>();
+    public DbSet<FolderHead> FolderHeads => Set<FolderHead>();
     public DbSet<StoredFile> Files => Set<StoredFile>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<UserSeenState> SeenStates => Set<UserSeenState>();
+
+    /// <summary>Докуда человек дочитал объявления в каждой папке.</summary>
+    public DbSet<FolderSeenState> FolderSeenStates => Set<FolderSeenState>();
 
     public DbSet<Favorite> Favorites => Set<Favorite>();
 
@@ -44,6 +48,12 @@ public class PortalDbContext : DbContext
     public DbSet<UserTask> Tasks => Set<UserTask>();
     public DbSet<UserTaskShare> TaskShares => Set<UserTaskShare>();
     public DbSet<UserPreference> Preferences => Set<UserPreference>();
+
+    // Задачи, поставленные человеку другим человеком. Личные задачи —
+    // это Tasks выше, и они живут своей таблицей: см. AssignedTask.
+    public DbSet<AssignedTask> AssignedTasks => Set<AssignedTask>();
+    public DbSet<AssignedTaskInstance> AssignedTaskInstances => Set<AssignedTaskInstance>();
+    public DbSet<AssignedTaskFile> AssignedTaskFiles => Set<AssignedTaskFile>();
 
     /// <summary>Очки в игре-пасхалке. К работе портала отношения не имеет.</summary>
     public DbSet<GameScore> GameScores => Set<GameScore>();
@@ -266,6 +276,84 @@ public class PortalDbContext : DbContext
             // приходит из браузера, и два одновременных нажатия
             // не должны превращаться в две одинаковые отметки.
             entity.HasIndex(r => new { r.MessageId, r.UserName, r.Kind }).IsUnique();
+        });
+
+        modelBuilder.Entity<FolderSeenState>(entity =>
+        {
+            entity.HasOne(state => state.Folder)
+                .WithMany()
+                .HasForeignKey(state => state.FolderId)
+                // Нет папки — нет и отметки о её прочтении.
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Один человек, одна папка — одна отметка.
+            entity.HasIndex(state => new { state.UserName, state.FolderId }).IsUnique();
+        });
+
+        modelBuilder.Entity<FolderHead>(entity =>
+        {
+            entity.HasOne(head => head.Folder)
+                .WithMany(folder => folder.Heads)
+                .HasForeignKey(head => head.FolderId)
+                // Начальник — свойство папки: нет папки, нет и начальника.
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Один человек начальником одной папки один раз.
+            entity.HasIndex(head => new { head.FolderId, head.UserName }).IsUnique();
+
+            // «Начальник ли я хоть где-нибудь» — запрос на каждой странице задач.
+            entity.HasIndex(head => head.UserName);
+        });
+
+        modelBuilder.Entity<AssignedTask>(entity =>
+        {
+            // Два главных запроса: «что мне поставили» и «что я поставил».
+            entity.HasIndex(task => task.AssigneeUserName);
+            entity.HasIndex(task => task.AuthorUserName);
+
+            entity.HasMany(task => task.Instances)
+                .WithOne(instance => instance.Task!)
+                .HasForeignKey(instance => instance.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AssignedTaskInstance>(entity =>
+        {
+            // Планировщик ищет по сроку среди незакрытых, страницы — по задаче.
+            entity.HasIndex(instance => instance.DueAt);
+            entity.HasIndex(instance => new { instance.TaskId, instance.State });
+
+            entity.Ignore(instance => instance.IsClosed);
+        });
+
+        modelBuilder.Entity<AssignedTaskFile>(entity =>
+        {
+            entity.HasOne(file => file.Task)
+                .WithMany(task => task.Files)
+                .HasForeignKey(file => file.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(file => file.Instance)
+                .WithMany(instance => instance.Files)
+                .HasForeignKey(file => file.InstanceId)
+                // Файл сдачи уходит вместе с экземпляром. Каскад тут один,
+                // через задачу: два каскадных пути к одной таблице база
+                // не разрешит, а экземпляры и так удаляются вместе с задачей.
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<Announcement>(entity =>
+        {
+            entity.HasOne(a => a.Folder)
+                .WithMany()
+                .HasForeignKey(a => a.FolderId)
+                // Папку с объявлениями удалить нельзя — объявления придётся
+                // убрать руками. Это не придирка: вместе с папкой тихо
+                // пропала бы вся переписка отдела с сотрудниками.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Лента главной строится по папкам, куда человек допущен.
+            entity.HasIndex(a => a.FolderId);
         });
 
         modelBuilder.Entity<GameScore>(entity =>

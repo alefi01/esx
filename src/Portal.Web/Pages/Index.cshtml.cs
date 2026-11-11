@@ -18,18 +18,17 @@ namespace Portal.Web.Pages;
 /// Сотруднику эти сведения не нужны и только пугают, поэтому они переехали
 /// на страницу «Диагностика», где им и место.
 ///
-/// ЧЕМ ОНА ОТЛИЧАЕТСЯ ОТ РАЗДЕЛА «ОБЪЯВЛЕНИЯ»
+/// ГЛАВНАЯ И ЕСТЬ ЛЕНТА
 ///
-/// Раньше главная была той же лентой объявлений, только короче, и потому
-/// не отвечала ни на один вопрос, на который не отвечал бы раздел.
-/// Теперь она отвечает на один: «что появилось, пока меня не было».
-/// Поэтому здесь ТОЛЬКО НЕПРОЧИТАННОЕ, а вся история с листанием
-/// осталась в разделе «Объявления».
+/// Отдельного раздела «Объявления» больше нет: объявление висит на папке
+/// и читается там же, где лежат документы отдела. Но место, где видно
+/// «что нового вообще», всё равно нужно — им и стала главная. Она
+/// показывает непрочитанные объявления ИЗ ВСЕХ ПАПОК, куда человек
+/// допущен, а карточка ведёт в папку.
 ///
-/// Отметка «прочитано» здесь НЕ ставится сама. Раньше ставилась — и это
-/// было безобидно, пока главная показывала всё подряд. Теперь молчаливая
-/// отметка означала бы, что список исчезает от одного захода на страницу,
-/// в том числе случайного. Отмечает человек, кнопкой.
+/// Отметка «прочитано» здесь НЕ ставится: иначе список исчезал бы
+/// от одного захода на страницу, в том числе случайного. Прочитанным
+/// объявление становится, когда человек открывает папку с ним.
 /// </summary>
 public class IndexModel : PageModel
 {
@@ -41,18 +40,18 @@ public class IndexModel : PageModel
 
     private readonly ActiveDirectoryOptions _adOptions;
     private readonly PortalDbContext _db;
-    private readonly NotificationService _notifications;
+    private readonly Portal.Web.Services.Announcements.AnnouncementFeed _feed;
     private readonly ILogger<IndexModel> _logger;
 
     public IndexModel(
         IOptions<ActiveDirectoryOptions> adOptions,
         PortalDbContext db,
-        NotificationService notifications,
+        Portal.Web.Services.Announcements.AnnouncementFeed feed,
         ILogger<IndexModel> logger)
     {
         _adOptions = adOptions.Value;
         _db = db;
-        _notifications = notifications;
+        _feed = feed;
         _logger = logger;
     }
 
@@ -69,13 +68,13 @@ public class IndexModel : PageModel
     public bool CanPublish =>
         User.IsInRole(_adOptions.PublisherGroup) || IsAdmin;
 
-    /// <summary>Непрочитанные объявления, свежие сверху.</summary>
-    public IReadOnlyList<Announcement> Items { get; private set; } = [];
+    /// <summary>Непрочитанные объявления вместе с папками, свежие сверху.</summary>
+    public IReadOnlyList<Portal.Web.Services.Announcements.FeedItem> Items { get; private set; } = [];
 
     /// <summary>Сколько всего непрочитанных — их может быть больше, чем показано.</summary>
     public int UnreadCount { get; private set; }
 
-    /// <summary>Сколько всего объявлений в портале — для ссылки «вся лента».</summary>
+    /// <summary>Сколько всего объявлений человеку видно.</summary>
     public int TotalCount { get; private set; }
 
     /// <summary>
@@ -86,7 +85,7 @@ public class IndexModel : PageModel
     /// телефон охраны, порядок в праздники. Такое читают один раз, а нужно
     /// оно потом месяцами.
     /// </summary>
-    public IReadOnlyList<Announcement> Pinned { get; private set; } = [];
+    public IReadOnlyList<Portal.Web.Services.Announcements.FeedItem> Pinned { get; private set; } = [];
 
     /// <summary>
     /// Совсем пусто: ни закреплённого, ни непрочитанного. Тогда на странице
@@ -115,41 +114,27 @@ public class IndexModel : PageModel
     {
         try
         {
-            TotalCount = await _db.Announcements.CountAsync(cancellationToken);
+            var readable = await _feed.ReadableFolderIdsAsync(User, cancellationToken);
 
-            var userName = User.Identity?.Name;
+            TotalCount = await _db.Announcements
+                .CountAsync(a => a.FolderId == null || readable.Contains(a.FolderId.Value), cancellationToken);
 
-            // Граница «прочитанного» — номер последнего объявления, которое
-            // человек отметил. Он же используется колокольчиком, поэтому
-            // число на главной и число на колокольчике не разъезжаются.
-            var lastSeen = string.IsNullOrEmpty(userName)
-                ? 0
-                : await _notifications.LastSeenAnnouncementIdAsync(userName, cancellationToken);
+            // Непрочитанное считает та же служба, что и колокольчик, —
+            // иначе число в шапке и список на странице разъехались бы.
+            var unread = await _feed.UnreadAsync(User, FeedSize + 1, cancellationToken);
 
             // Закреплённое из «нового» исключено: оно и так стоит в правом
             // столбце, и одна и та же карточка в обоих столбцах выглядела
             // как ошибка вёрстки — да и была бесполезна.
-            var unread = _db.Announcements.Where(a => a.Id > lastSeen && !a.IsPinned);
+            var fresh = unread.Where(entry => !entry.Item.IsPinned).ToList();
 
-            UnreadCount = await unread.CountAsync(cancellationToken);
+            Items = fresh.Take(FeedSize).ToList();
+            UnreadCount = fresh.Count;
+            HasMore = fresh.Count > Items.Count;
 
-            Items = await unread
-                .Include(a => a.Files)
-                .OrderByDescending(a => a.CreatedAt)
-                .ThenByDescending(a => a.Id)
-                .Take(FeedSize)
-                .ToListAsync(cancellationToken);
-
-            HasMore = UnreadCount > Items.Count;
-
-            // Закреплённые берутся отдельным запросом, а не выбираются
-            // из непрочитанных: закреплённое показывается и прочитанным.
-            Pinned = await _db.Announcements
-                .Where(a => a.IsPinned)
-                .OrderByDescending(a => a.CreatedAt)
-                .ThenByDescending(a => a.Id)
-                .Take(PinnedSize)
-                .ToListAsync(cancellationToken);
+            // Закреплённые берутся отдельно: закреплённое показывается
+            // и прочитанным — на то его и закрепляли.
+            Pinned = await _feed.PinnedAsync(User, PinnedSize, cancellationToken);
         }
         catch (Exception ex)
         {
