@@ -79,27 +79,33 @@
                 <div class="task-card from-head@(item.IsClosed ? " done" : "")@(card.Overdue ? " overdue" : "")@urgency@(task.Important ? " important" : "")">
 
                     <div class="task-body">
+                        @* Две строки вместо одной: название крупно,
+                           всё остальное — подписью под ним. В одну строку
+                           название терялось среди четырёх чипов, и глазу
+                           не за что было зацепиться при беглом просмотре. *@
                         <div class="task-title-row">
                             @if (task.Important)
                             {
-                                <span class="chip imp">
-                                    <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>Важно
+                                <span class="t-imp" title="Важная задача">
+                                    <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>
                                 </span>
                             }
 
                             <b>@task.Title</b>
 
-                            <span class="task-due-chip@(card.Overdue ? " late" : "")@urgency">
-                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(item.DueAt, task.DueMinutes is not null)
-                            </span>
-
-                            <span class="task-owner">
-                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>@task.AuthorDisplayName
-                            </span>
-
                             <span class="task-state state-@item.State.ToString().ToLowerInvariant()">
                                 @Portal.Web.Pages.Tasks.AssignedTaskText.StateFor(item.State)
                             </span>
+                        </div>
+
+                        <div class="task-meta-row">
+                            <span class="t-when@(card.Overdue ? " late" : "")@urgency">
+                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(item.DueAt, task.DueMinutes is not null)
+                            </span>
+
+                            <span class="t-dot-sep"></span>
+
+                            <span class="t-from">@task.AuthorDisplayName</span>
                         </div>
 
                         @if (!string.IsNullOrWhiteSpace(task.Notes))
@@ -258,23 +264,31 @@
                     <div class="task-body">
                         <div class="task-title-row">
                             <b>@task.Title</b>
-
-                            @if (task.DueOn is { } due)
-                            {
-                                <span class="task-due-chip@(card.Overdue ? " late" : "")@urgency">
-                                    <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(due)
-                                </span>
-                            }
-
-                            @if (!card.Mine)
-                            {
-                                @* Чужая задача: сразу видно, чья она, иначе
-                                   список превращается в кашу из своих и чужих дел. *@
-                                <span class="task-owner">
-                                    <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>@task.OwnerDisplayName
-                                </span>
-                            }
                         </div>
+
+                        @if (task.DueOn is not null || !card.Mine)
+                        {
+                            <div class="task-meta-row">
+                                @if (task.DueOn is { } due)
+                                {
+                                    <span class="t-when@(card.Overdue ? " late" : "")@urgency">
+                                        <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(due)
+                                    </span>
+                                }
+
+                                @if (!card.Mine)
+                                {
+                                    @* Чужая задача: сразу видно, чья она, иначе
+                                       список превращается в кашу из своих и чужих дел. *@
+                                    @if (task.DueOn is not null)
+                                    {
+                                        <span class="t-dot-sep"></span>
+                                    }
+
+                                    <span class="t-from">@task.OwnerDisplayName</span>
+                                }
+                            </div>
+                        }
 
                         @if (!string.IsNullOrWhiteSpace(task.Notes))
                         {

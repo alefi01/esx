@@ -110,67 +110,100 @@ body {
     text-align: center;
 }
 
+/* Кнопки в шапке: 28 точек вместо 22 и значками, а не символами
+   из текста. В виджет тычут мышью мимоходом, не целясь, — попасть
+   должно получаться с первого раза. */
 .wg-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
+    flex: none;
     padding: 0;
     border: 0;
-    border-radius: 6px;
+    border-radius: 8px;
     background: none;
     color: var(--wg-dim);
-    font: inherit;
-    font-size: 15px;
-    line-height: 1;
-    text-decoration: none;
     cursor: pointer;
+    transition: .14s;
 }
+
+.wg-btn svg { width: 15px; height: 15px; }
 
 .wg-btn:hover {
     background: var(--wg-line);
     color: var(--wg-text);
 }
 
+.wg-btn:active { transform: scale(.94); }
+
 /* ---------- Полоска с числами ---------- */
 
+/* ---------- Полоска действий ----------
+
+   Раньше это были мелкие чипы в строку. Теперь — кнопки во всю ширину
+   окна, одна под другой: промахнуться мимо такой нельзя, а места
+   они занимают не больше, потому что показываются только те,
+   у которых есть что показать. */
 .wg-bar {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 8px 10px 0;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 8px 0;
 }
 
-.wg-bar:empty { display: none; }
-
-.wg-chip {
-    padding: 3px 9px;
+.wg-act {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 34px;
+    padding: 0 11px;
     border: 1px solid var(--wg-line);
-    border-radius: 999px;
-    background: none;
+    border-radius: 9px;
+    background: var(--wg-head);
     color: var(--wg-text);
     font: inherit;
-    font-size: 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-align: left;
     text-decoration: none;
     cursor: pointer;
+    transition: .14s;
 }
 
-.wg-chip:hover { border-color: var(--wg-accent); color: var(--wg-accent); }
+/* Спрятанная кнопка должна исчезать: display у неё свой, а он
+   сильнее встроенного в браузер правила для hidden. Без этой строки
+   «На проверку» висела пустой у всех, кому проверять нечего. */
+.wg-act[hidden] { display: none; }
 
-.wg-chip--plain { color: var(--wg-dim); }
-.wg-chip--plain:hover { color: var(--wg-text); border-color: var(--wg-dim); }
+.wg-act svg { width: 15px; height: 15px; flex: none; color: var(--wg-accent); }
 
-/* Число в чипе — отдельной подложкой, иначе «Задачи: 3» читается
-   как одно слово и цифра теряется. */
-.wg-chip b {
-    margin-left: 5px;
-    padding: 0 5px;
-    border-radius: 999px;
+.wg-act span { flex: 1; }
+
+.wg-act:hover {
+    border-color: var(--wg-accent);
     background: var(--wg-soft);
-    color: var(--wg-accent);
-    font-size: 11px;
 }
+
+.wg-act:active { transform: scale(.99); }
+
+/* Число справа: его ищут глазами у края, а не в середине подписи. */
+.wg-act b {
+    min-width: 19px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--wg-accent);
+    color: #fff;
+    font-size: 11px;
+    text-align: center;
+}
+
+/* «Прочитано» — действие спокойное: оно ничего не открывает
+   и не требует внимания. */
+.wg-act--quiet { color: var(--wg-dim); font-weight: 500; }
+.wg-act--quiet svg { color: var(--wg-dim); }
+.wg-act--quiet:hover { color: var(--wg-text); }
 
 /* ---------- Список ---------- */
 
@@ -219,12 +252,17 @@ body {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    font-weight: 600;
+    font-size: 12.5px;
+    font-weight: 700;
+    line-height: 1.4;
 }
 
 .wg-prev {
     display: block;
     overflow: hidden;
+    margin-top: 1px;
+    font-size: 11.5px;
+    line-height: 1.45;
     color: var(--wg-dim);
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -233,9 +271,9 @@ body {
 
 .wg-meta {
     display: block;
-    margin-top: 2px;
+    margin-top: 3px;
     color: var(--wg-dim);
-    font-size: 11px;
+    font-size: 10.5px;
 }
 
 .wg-item--loud .wg-title { color: var(--wg-alert); }

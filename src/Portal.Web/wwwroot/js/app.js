@@ -2801,53 +2801,18 @@
         });
     });
 
-    // Личные настройки: звук, уведомления системы, облегчённый режим.
+    // Личные настройки: пока здесь одна — облегчённый режим.
+    //
+    // Карточки «Уведомления Windows» больше нет. Разрешение спрашивал
+    // браузер, и по открытому соединению он отказывал молча — кнопка
+    // существовала, чтобы объяснить, почему она не работает. На рабочих
+    // ПК уведомления показывает виджет, которому разрешение не нужно,
+    // и карточка осталась рассказом о несделанном.
     (function () {
         const page = $('[data-personal-settings]');
 
         if (!page) { return; }
 
-        // ---------- Уведомления системы ----------
-        const state = $('#notifyState', page);
-        const ask = $('#notifyAsk', page);
-
-        const paintNotify = () => {
-            const status = window.portalSound.state();
-
-            state.textContent = status === 'granted' ? 'разрешены'
-                : status === 'denied' ? 'запрещены в браузере'
-                    : status === 'unsupported' ? 'браузер не умеет'
-                        : status === 'insecure' ? 'недоступны по открытому соединению'
-                            : 'не спрашивали';
-
-            ask.disabled = status !== 'default';
-
-            // По открытому соединению кнопка бесполезна: браузер откажет,
-            // не показав человеку вопроса. Вместо неё — объяснение, почему
-            // так и что при этом всё равно работает. Без него человек идёт
-            // искать, где он запретил уведомления, хотя запрещал не он.
-            const note = $('#notifyNote', page);
-
-            if (note) { note.hidden = status !== 'insecure'; }
-        };
-
-        paintNotify();
-
-        ask.onclick = () => {
-            window.portalSound.ask().then(result => {
-                paintNotify();
-
-                if (result === 'granted') {
-                    // Сразу показываем, как это выглядит: иначе непонятно,
-                    // сработало разрешение или нет.
-                    toast('Готово — Windows будет сообщать о новом', 'ok');
-                } else if (result === 'denied') {
-                    toast('Браузер запретил. Разрешить можно вручную: замок в адресной строке → «Уведомления».', 'warn');
-                }
-            });
-        };
-
-        // ---------- Облегчённый режим ----------
         const lite = $('#liteMode', page);
 
         if (lite && window.portalTheme) {
@@ -4198,37 +4163,64 @@
     const assignedPage = $('[data-assigned-tasks]');
 
     if (assignedPage) {
-        // ---------- Раскрытие формы ----------
+        // ---------- Окно «Новая задача» ----------
         //
-        // Кнопка живёт в заголовке страницы, а разворачивается карточка
-        // с формой под ним: держать десяток полей всегда открытыми —
-        // значит отодвинуть вниз список, ради которого сюда заходят.
+        // Форма лежит на странице спрятанной, а окно её ПЕРЕНОСИТ
+        // к себе, а не пересобирает кодом. Так в окне оказывается
+        // настоящая форма: с проверкой на сервере, загрузкой файла
+        // и защитой от подделки запроса — всё это пришлось бы
+        // повторять заново, рисуй мы поля разметкой в коде.
         const openBtn = $('#newAssignedBtn');
-        const card = $('#newAssignedCard');
+        const holder = $('#newAssignedHolder');
         const form = $('#newAssignedForm');
 
-        if (openBtn && card && form) {
-            const open = () => {
-                card.hidden = false;
-                openBtn.hidden = true;
+        if (openBtn && holder && form) {
+            const openTaskWindow = () => {
+                const m = openModal({
+                    title: 'Новая задача',
+                    body: '<div id="newTaskSlot"></div>'
+                });
 
-                const title = $('#Input_Title');
+                // Окно под форму шире обычного: иначе срок, время
+                // и повторение не встают в строку и уходят лесенкой.
+                $('.modal', m).classList.add('modal--form');
+
+                $('#newTaskSlot', m).appendChild(form);
+
+                const title = $('#Input_Title', m);
 
                 if (title) { title.focus(); }
+
+                // Закрыли окно — форма возвращается на страницу.
+                // Иначе со следующим открытием переносить было бы нечего.
+                const back = () => {
+                    if (form.parentElement !== holder) { holder.appendChild(form); }
+                };
+
+                m.addEventListener('animationend', e => {
+                    if (m.classList.contains('closing')) { back(); }
+                });
+
+                // На случай, если движение выключено настройками системы
+                // и событие анимации не придёт.
+                const watch = new MutationObserver(() => {
+                    if (!document.body.contains(m)) { back(); watch.disconnect(); }
+                });
+
+                watch.observe($('#modalRoot'), { childList: true });
             };
 
-            openBtn.onclick = open;
+            openBtn.onclick = openTaskWindow;
 
             const cancel = $('#cancelAssigned');
 
-            if (cancel) {
-                cancel.onclick = () => { card.hidden = true; openBtn.hidden = false; };
-            }
+            if (cancel) { cancel.onclick = closeModal; }
 
             // Форма не прошла проверку на сервере — значит её уже
-            // заполняли, и прятать набранное нельзя.
+            // заполняли, и человек должен увидеть, что именно не так,
+            // а не пустую страницу со своим пропавшим текстом.
             if ($('.alert.err', form) || ($('#assigneeLogin') || {}).value) {
-                open();
+                openTaskWindow();
             }
         }
 

@@ -55,12 +55,19 @@
     </div>
 
     @* ---------- Новая задача ----------
-       Форма раскрывается кнопкой: полей у поручения много (срок, повторение,
-       признаки), и держать их всегда развёрнутыми — значит отодвинуть
-       вниз сам список, ради которого на страницу и заходят. *@
+
+       Форма лежит здесь спрятанной, а показывается в окне поверх
+       страницы: полей у поручения много (срок, повторение, признаки),
+       и развёрнутыми в списке они отодвигали вниз сам список, ради
+       которого на страницу и заходят.
+
+       Форма при этом настоящая и остаётся на странице: окно её
+       переносит, а не пересобирает. Поэтому работают и проверка
+       на сервере, и загрузка файла, и защита от подделки запроса —
+       всё то, что пришлось бы повторять, рисуй мы окно кодом. *@
     @if (Model.ViewMode == "active")
     {
-        <div class="card task-new" id="newAssignedCard" hidden>
+        <div id="newAssignedHolder" hidden>
             <form method="post" asp-page-handler="Create" enctype="multipart/form-data"
                   id="newAssignedForm" class="assigned-form">
 
@@ -225,34 +232,43 @@
 
                 <div class="task-card@(item.IsClosed ? " done" : "")@(card.Overdue ? " overdue" : "")@urgency@(task.Important ? " important" : "")">
                     <div class="task-body">
+                        @* Кому поручено — кружком слева от названия:
+                           этот список читают по людям, а не по названиям
+                           задач, и человек должен находиться взглядом
+                           до того, как прочитано хоть одно слово. *@
                         <div class="task-title-row">
+                            <span class="task-who-ava" title="@task.AssigneeDisplayName">@Portal.Web.Pages.Shared.Avatars.Initials(task.AssigneeDisplayName)</span>
+
                             @if (task.Important)
                             {
-                                <span class="chip imp">
-                                    <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>Важно
+                                <span class="t-imp" title="Важная задача">
+                                    <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>
                                 </span>
                             }
 
                             <b>@task.Title</b>
 
-                            @* Кому поручено — первое, что ищут глазами
-                               на этой странице, поэтому с кружком-инициалом,
-                               а не бледной подписью в ряду прочих. *@
-                            <span class="task-who">
-                                <span class="task-who-ava">@Portal.Web.Pages.Shared.Avatars.Initials(task.AssigneeDisplayName)</span>@task.AssigneeDisplayName
-                            </span>
-
-                            <span class="task-due-chip@(card.Overdue ? " late" : "")@urgency">
-                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(item.DueAt, task.DueMinutes is not null)
-                            </span>
-
                             <span class="task-state state-@item.State.ToString().ToLowerInvariant()">
                                 @Portal.Web.Pages.Tasks.AssignedTaskText.StateFor(item.State)
+                            </span>
+                        </div>
+
+                        <div class="task-meta-row">
+                            <span class="t-from">@task.AssigneeDisplayName</span>
+
+                            <span class="t-dot-sep"></span>
+
+                            <span class="t-when@(card.Overdue ? " late" : "")@urgency">
+                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(item.DueAt, task.DueMinutes is not null)
                             </span>
 
                             @if (task.Repeat != TaskRepeat.Once)
                             {
-                                <span class="chip">@Portal.Web.Pages.Tasks.AssignedTaskText.RepeatFor(task)</span>
+                                <span class="t-dot-sep"></span>
+
+                                <span class="t-rep">
+                                    <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-restore" /></svg>@Portal.Web.Pages.Tasks.AssignedTaskText.RepeatFor(task)
+                                </span>
                             }
                         </div>
 

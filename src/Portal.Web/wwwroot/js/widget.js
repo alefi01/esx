@@ -138,8 +138,8 @@
 
         // Числа по задачам: отдельной строкой, потому что к «новому»
         // они не относятся — это работа, которая ждёт.
-        chip(tasks, data.tasks, 'Задачи');
-        chip(check, data.assignedWaiting, 'На проверку');
+        chip(tasks, data.tasks);
+        chip(check, data.assignedWaiting);
 
         seen.hidden = (data.unread || 0) === 0;
         count.hidden = (data.unread || 0) === 0;
@@ -148,23 +148,19 @@
         tell(data);
     }
 
-    /** Чип вида «Задачи 3»: число отдельной подложкой, иначе теряется. */
-    function chip(element, value, caption) {
+    /**
+     * Кнопка с числом справа. Подпись и значок уже лежат в разметке —
+     * меняется только число, поэтому кнопка не пересобирается: иначе
+     * при каждом обновлении пропадал бы наведённый вид и фокус.
+     */
+    function chip(element, value) {
         var n = value || 0;
 
         element.hidden = n === 0;
 
-        if (n === 0) {
-            return;
+        if (n > 0) {
+            element.querySelector('b').textContent = String(n);
         }
-
-        element.textContent = caption;
-
-        var number = document.createElement('b');
-
-        number.textContent = String(n);
-
-        element.appendChild(number);
     }
 
     // ------------------------------------------------------------------

@@ -220,6 +220,10 @@ select.sel{appearance:none;border:1px solid var(--border);background:var(--surfa
 @keyframes fade{from{opacity:0}}
 .modal{background:var(--surface);border-radius:18px;box-shadow:var(--shadow-lg);width:min(520px,94vw);max-height:90vh;display:flex;flex-direction:column;animation:mpop .28s cubic-bezier(.2,.9,.3,1.2)}
 .modal.wide{width:min(1020px,95vw);height:min(700px,90vh)}
+
+/* Окно под форму шире обычного: иначе срок, время и повторение
+   не встают в строку и уходят лесенкой. */
+.modal--form{width:min(680px,94vw)}
 @keyframes mpop{from{opacity:0;transform:scale(.92) translateY(14px)}to{opacity:1;transform:none}}
 .modal-head{display:flex;align-items:center;gap:10px;padding:18px 20px 0}
 .modal-head h3{font-size:16px;font-weight:800;flex:1}
@@ -1688,8 +1692,12 @@ mark{background:color-mix(in srgb,var(--warn) 42%,transparent);color:inherit;
 
 /* Состояние — словом, а не цветом: цвет здесь уже занят сроком,
    и два смысла на одном признаке читаются как один. */
-.task-state{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;
-  background:var(--surface2);color:var(--muted);white-space:nowrap}
+/* Состояние — единственный чип, который в карточке остался: это
+   не сведение о задаче, а то, что с ней сейчас происходит, и оно
+   должно читаться отдельно от названия. */
+.task-state{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;
+  background:var(--surface2);color:var(--muted);white-space:nowrap;
+  text-transform:lowercase;letter-spacing:.2px;margin-left:auto}
 .task-state.state-submitted{background:var(--accent-soft);color:var(--accent)}
 .task-state.state-returned{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)}
 .task-state.state-accepted,.task-state.state-done{background:color-mix(in srgb,var(--ok) 20%,transparent);color:var(--ok)}
@@ -1737,15 +1745,48 @@ mark{background:color-mix(in srgb,var(--warn) 42%,transparent);color:inherit;
    и по нижнему краю подписи разъезжали сами заголовки полей. */
 .assigned-form .row-form{align-items:flex-start}
 
+/* ---------- Карточка задачи: название и подпись под ним ----------
+
+   Раньше всё жило одной строкой: название, срок, автор, состояние,
+   повторение — пять разных рамок подряд. Рамки спорили между собой,
+   и при беглом просмотре взгляду было не за что зацепиться.
+
+   Теперь строк две. Сверху — название и состояние: то, что читают.
+   Снизу — подпись из тех же сведений, но без рамок, мельче и бледнее,
+   через точки. Цветом в ней отмечено только одно — просроченный срок:
+   на то он и исключение. */
+.task-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.task-title-row b{font-size:13.5px;font-weight:700;line-height:1.35}
+
+.task-meta-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:3px;
+  font-size:11.5px;color:var(--muted)}
+.task-meta-row .ic{flex:none;opacity:.75}
+
+/* Точка-разделитель вместо рамки у каждого куска: она не делит строку
+   на коробочки и не требует ни цвета, ни фона. */
+.t-dot-sep{width:3px;height:3px;border-radius:50%;background:currentColor;opacity:.45}
+
+.t-when{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.t-from,.t-rep{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+
+/* Срок, который горит, — единственное цветное в подписи. */
+.t-when.urgent-soon{color:var(--warn)}
+.t-when.urgent-close,.t-when.urgent-now,.t-when.late{color:var(--danger);font-weight:700}
+
+/* «Важно» было чипом со словом — самым ярким пятном в строке,
+   хотя важных задач в списке бывает половина. Теперь это значок
+   перед названием: заметно, но не кричит. */
+.t-imp{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;
+  flex:none;border-radius:6px;background:color-mix(in srgb,var(--danger) 14%,transparent);
+  color:var(--danger)}
+
 /* ---------- Кому поручено ----------
 
    На странице «Подчинённым» это первое, что ищут глазами: список
-   читают не по названиям задач, а по людям. Поэтому кружок
-   с инициалами, а не бледная подпись в ряду прочих чипов. */
-.task-who{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
-  color:var(--text);white-space:nowrap}
-.task-who-ava{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
-  border-radius:50%;background:var(--accent-soft);color:var(--accent);
+   читают не по названиям задач, а по людям. Кружок с инициалами стоит
+   перед названием, а полное имя — первым в подписи под ним. */
+.task-who-ava{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+  flex:none;border-radius:50%;background:var(--accent-soft);color:var(--accent);
   font-size:9.5px;font-weight:800;letter-spacing:.2px}
 
 /* ---------- Действия начальника ----------
@@ -1877,7 +1918,7 @@ html.lite .brand-logo{background:var(--accent) !important}
 
 .task-list{display:flex;flex-direction:column;gap:8px;max-width:980px}
 
-.task-card{display:flex;align-items:flex-start;gap:12px;background:var(--surface);
+.task-card{display:flex;align-items:flex-start;gap:11px;background:var(--surface);
   border:1px solid var(--border);border-radius:13px;padding:13px 15px;transition:.15s}
 .task-card:hover{box-shadow:var(--shadow)}
 
@@ -1903,11 +1944,6 @@ html.lite .brand-logo{background:var(--accent) !important}
    жирным и «через три дня», жирным станет весь список. */
 .task-card.urgent-now .task-title-row b{font-weight:800}
 
-.task-due-chip.urgent-soon{background:rgba(224,168,0,.14);color:var(--warn)}
-.task-due-chip.urgent-close,
-.task-due-chip.urgent-now{background:rgba(229,72,77,.12);color:var(--danger)}
-.task-due-chip.urgent-now{font-weight:700}
-
 /* Выполненная не горит: сделана — значит сделана, и красная полоса
    на ней только мешает. */
 .task-card.done::before{background:transparent}
@@ -1929,14 +1965,7 @@ html.lite .brand-logo{background:var(--accent) !important}
 .task-check.locked.on:hover{color:#fff}
 
 .task-body{flex:1;min-width:0}
-.task-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.task-title-row b{font-size:14px;overflow-wrap:anywhere}
-
-.task-due-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;
-  padding:2px 8px;border-radius:7px;background:var(--surface2);color:var(--muted)}
-.task-due-chip.late{background:rgba(229,72,77,.12);color:var(--danger)}
-
-.task-owner{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)}
+.task-title-row b{overflow-wrap:anywhere}
 
 .task-notes-text{font-size:12.5px;color:var(--muted);line-height:1.55;margin-top:4px;
   white-space:pre-line;overflow-wrap:anywhere}

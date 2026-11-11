@@ -44,15 +44,52 @@
 
     <span class="wg-count" id="wgCount" hidden></span>
 
-    <a class="wg-btn" href="/" target="_blank" title="Открыть портал">&#9634;</a>
+    @* Кнопки крупнее подписей рядом: в виджет тычут мышью мимоходом,
+       не целясь, а раньше это были значки в 22 точки со значками
+       из текста — попасть можно было только внимательно. *@
+    <a class="wg-btn" href="/" target="_blank" title="Открыть портал целиком">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 4h6v6" /><path d="M20 4l-9 9" />
+            <path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" />
+        </svg>
+    </a>
 
-    <button class="wg-btn" type="button" id="wgHide" title="Свернуть">&#215;</button>
+    <button class="wg-btn" type="button" id="wgHide" title="Свернуть к часам">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14" />
+        </svg>
+    </button>
 </header>
 
+@*
+    Полоска действий. Это и есть кнопки виджета: крупные, во всю
+    ширину окна, с числом справа — промахнуться мимо них нельзя.
+*@
 <div class="wg-bar">
-    <a class="wg-chip" href="/Tasks" target="_blank" id="wgTasks" hidden></a>
-    <a class="wg-chip" href="/Tasks/Assigned" target="_blank" id="wgCheck" hidden></a>
-    <button class="wg-chip wg-chip--plain" type="button" id="wgSeen" hidden>Прочитано</button>
+    <a class="wg-act" href="/Tasks" target="_blank" id="wgTasks" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 11l3 3L22 4" />
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+        </svg>
+        <span>Задачи</span>
+        <b></b>
+    </a>
+
+    <a class="wg-act" href="/Tasks/Assigned" target="_blank" id="wgCheck" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" /><path d="M23 11l-3 3-2-2" />
+        </svg>
+        <span>На проверку</span>
+        <b></b>
+    </a>
+
+    <button class="wg-act wg-act--quiet" type="button" id="wgSeen" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" />
+        </svg>
+        <span>Прочитано</span>
+    </button>
 </div>
 
 <main class="wg-list" id="wgList"></main>
