@@ -51,4 +51,32 @@
         </div>
     </div>
 
+    @*
+        Настольный виджет. Карточка показывается только если
+        администратор выложил файл: предлагать скачать то, чего нет,
+        значит отправить человека на ошибку 404.
+    *@
+    @if (Model.WidgetReady)
+    {
+        <div class="card set-card">
+            <div class="set-head">
+                <h2>Виджет на рабочий стол</h2>
+                <span class="set-now">для Windows</span>
+            </div>
+
+            <div class="set-row">
+                <a class="btn" href="/client/setup.exe" download>
+                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-download" /></svg>Скачать виджет
+                </a>
+
+                <p class="hint set-note">
+                    Один файл: скачайте и запустите. Права администратора не нужны,
+                    адрес портала вводить не придётся. Виджет лежит на рабочем столе
+                    и показывает новое, по двойному щелчку открывается полное окно
+                    портала. Обновляется сам.
+                </p>
+            </div>
+        </div>
+    }
+
 </section>

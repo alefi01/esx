@@ -1,0 +1,60 @@
+@page
+@model Portal.Web.Pages.WidgetModel
+@{
+    Layout = null;
+}
+
+@*
+    Страница для настольного виджета.
+
+    ЗАЧЕМ ОТДЕЛЬНАЯ СТРАНИЦА
+
+    Виджет — окно шириной в треть экрана, лежащее на рабочем столе.
+    Каркас портала в него не помещается: меню, поиск, заголовки заняли бы
+    всё место, а показать надо одно — что нового. Поэтому здесь своя
+    разметка без общего каркаса и свой маленький стиль.
+
+    Открывается и в браузере: тогда просто нет window.portalWidget,
+    и страница ведёт себя как обычная — это удобно для проверки.
+*@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Портал</title>
+    <meta name="color-scheme" content="light dark" />
+    <link rel="stylesheet" href="~/css/widget.css" asp-append-version="true" />
+</head>
+<body>
+
+@* Токен нужен кнопке «Прочитано»: она отправляет POST. *@
+<form id="wgForm" method="post"></form>
+
+@*
+    Заголовок — он же место, за которое виджет двигают мышью:
+    своей рамки у окна нет, иначе его было бы не сдвинуть.
+*@
+<header class="wg-head" data-drag>
+    <strong class="wg-name">@Model.Title</strong>
+
+    <span class="wg-count" id="wgCount" hidden></span>
+
+    <a class="wg-btn" href="/" target="_blank" title="Открыть портал">&#9634;</a>
+
+    <button class="wg-btn" type="button" id="wgHide" title="Свернуть">&#215;</button>
+</header>
+
+<div class="wg-bar">
+    <a class="wg-chip" href="/Tasks" target="_blank" id="wgTasks" hidden></a>
+    <a class="wg-chip" href="/Tasks/Assigned" target="_blank" id="wgCheck" hidden></a>
+    <button class="wg-chip wg-chip--plain" type="button" id="wgSeen" hidden>Прочитано</button>
+</div>
+
+<main class="wg-list" id="wgList">
+    <p class="wg-empty">Загружаем…</p>
+</main>
+
+<script src="~/js/widget.js" asp-append-version="true"></script>
+</body>
+</html>

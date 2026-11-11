@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Оконное приложение Windows: WinForms даёт окно, значок у часов
+         и меню, а страницу портала рисует WebView2. -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Portal.Client</RootNamespace>
+    <AssemblyName>portal-widget</AssemblyName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Один файл без установленного .NET на рабочих ПК: ставить рантайм
+         на два десятка машин ради одной программы никто не станет. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <!-- Сборка идёт и на машине разработчика без Windows: targeting pack
+         для WinForms подтягивается пакетом. На самой программе это никак
+         не сказывается — она всё равно только для Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- Масштаб экрана: на мониторе со 150% без этого виджет размыт.
+         Задаётся свойством проекта, а не манифестом — так требует
+         современный WinForms. -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+    <!-- Пакет WebView2 тянет за собой сборку для WPF, которой мы
+         не пользуемся: без этого сборка ругается на конфликт версий
+         WindowsBase. -->
+    <UseWPF>false</UseWPF>
+    <Version>1.0.0</Version>
+
+    <!-- Пакет WebView2 несёт и элемент для WPF, которым мы не пользуемся
+         (UseWPF отключён). Из-за него сборка ругается на две версии
+         WindowsBase — на деле безобидно: ни одна строка кода к WPF
+         не обращается. Понижаем до сообщения, чтобы предупреждение
+         не прятало настоящие. -->
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
+  </ItemGroup>
+
+</Project>

@@ -16,6 +16,7 @@ using Portal.Web.Services.Notifications;
 using Portal.Web.Services.Offices;
 using Portal.Web.Services.Storage;
 using Portal.Web.Services.Text;
+using Portal.Web.Services.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -998,6 +999,10 @@ app.MapGet("/favicon.svg", (Microsoft.Extensions.Options.IOptions<BrandingOption
 
     return Results.Text(svg, "image/svg+xml");
 }).AllowAnonymous();
+
+// Раздача настольного виджета: установка, обновление и недостающий
+// компонент WebView2. Подробности — в ClientDownloads.
+app.MapClientDownloads();
 
 app.Run();
 
