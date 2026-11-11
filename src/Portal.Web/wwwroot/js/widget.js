@@ -36,6 +36,8 @@
     var check = document.getElementById('wgCheck');
     var seen = document.getElementById('wgSeen');
     var hide = document.getElementById('wgHide');
+    var empty = document.getElementById('wgEmpty');
+    var emptyText = document.getElementById('wgEmptyText');
 
     // Что человек уже видел в этом окне: по этому списку решаем,
     // о чём сообщать окошком Windows. Иначе при каждом опросе виджет
@@ -92,24 +94,10 @@
 
         list.textContent = '';
 
-        if (items.length === 0) {
-            var empty = document.createElement('p');
-
-            empty.className = 'wg-empty';
-            empty.textContent = 'Нового нет';
-
-            var open = document.createElement('a');
-
-            open.className = 'wg-link';
-            open.href = '/';
-            open.target = '_blank';
-            open.textContent = 'Открыть портал';
-
-            empty.appendChild(document.createElement('br'));
-            empty.appendChild(open);
-
-            list.appendChild(empty);
-        }
+        // «Нового нет» лежит готовым в разметке — его только
+        // показывают и прячут.
+        empty.hidden = items.length > 0;
+        emptyText.textContent = 'Нового нет';
 
         items.forEach(function (item) {
             // Ссылка, а не кнопка: щелчок открывает «новое окно»,
@@ -150,13 +138,8 @@
 
         // Числа по задачам: отдельной строкой, потому что к «новому»
         // они не относятся — это работа, которая ждёт.
-        chip(tasks, data.tasks, function (n) {
-            return 'Задачи: ' + n;
-        });
-
-        chip(check, data.assignedWaiting, function (n) {
-            return 'На проверку: ' + n;
-        });
+        chip(tasks, data.tasks, 'Задачи');
+        chip(check, data.assignedWaiting, 'На проверку');
 
         seen.hidden = (data.unread || 0) === 0;
         count.hidden = (data.unread || 0) === 0;
@@ -165,14 +148,23 @@
         tell(data);
     }
 
+    /** Чип вида «Задачи 3»: число отдельной подложкой, иначе теряется. */
     function chip(element, value, caption) {
         var n = value || 0;
 
         element.hidden = n === 0;
 
-        if (n > 0) {
-            element.textContent = caption(n);
+        if (n === 0) {
+            return;
         }
+
+        element.textContent = caption;
+
+        var number = document.createElement('b');
+
+        number.textContent = String(n);
+
+        element.appendChild(number);
     }
 
     // ------------------------------------------------------------------
@@ -259,14 +251,8 @@
             // Молчим о единичной осечке: сеть в офисе мигает, и менять
             // из-за этого список на сообщение об ошибке не стоит.
             if (failures >= 3 && list.childElementCount === 0) {
-                list.textContent = '';
-
-                var problem = document.createElement('p');
-
-                problem.className = 'wg-empty';
-                problem.textContent = 'Портал не отвечает. Пробуем снова…';
-
-                list.appendChild(problem);
+                empty.hidden = false;
+                emptyText.textContent = 'Портал не отвечает. Пробуем снова…';
             }
         });
     }

@@ -12,11 +12,19 @@ using Portal.Web.Services.Tasks;
 namespace Portal.Web.Pages.Tasks;
 
 /// <summary>
-/// «Задачи подчинённым» — страница того, кто ставит задачи.
+/// «Задачи подчинённым» — вторая половина раздела «Задачи»: что человек
+/// поручил другим, кто что сдал и что ждёт его проверки.
 ///
-/// Отдельно от «Задач» намеренно: там человек смотрит, что должен сделать
-/// он, здесь — что должны сделать другие. Смешать эти два списка значит
-/// получить страницу, на которой непонятно, от кого чего ждут.
+/// В МЕНЮ ОТДЕЛЬНОГО ПУНКТА НЕТ: для человека это один раздел с двумя
+/// вкладками, «Мои» и «Подчинённым». Два пункта меню про задачи
+/// заставляли обходить оба, чтобы понять, не ждёт ли чего-нибудь.
+/// Теперь на одном пункте одно число — всё, что ждёт этого человека.
+///
+/// СТРАНИЦА при этом осталась отдельной, и намеренно: списки живут
+/// по разным правилам (здесь принимают и возвращают, там сдают),
+/// у страницы своё право доступа и десяток своих обработчиков.
+/// Склеить их в один файл значило бы получить полторы тысячи строк,
+/// где половина кода недоступна тому, кто открыл страницу.
 ///
 /// Право на страницу даёт членство в группе начальников (политика
 /// AssignTasks). Назначение начальником папки тут ни при чём: задачи
@@ -26,6 +34,7 @@ namespace Portal.Web.Pages.Tasks;
 public class AssignedModel : PageModel
 {
     private readonly AssignedTaskService _assigned;
+    private readonly TaskService _tasks;
     private readonly TaskFileStorage _files;
     private readonly PortalDbContext _db;
     private readonly IUserDirectory _directory;
@@ -36,6 +45,7 @@ public class AssignedModel : PageModel
 
     public AssignedModel(
         AssignedTaskService assigned,
+        TaskService tasks,
         TaskFileStorage files,
         PortalDbContext db,
         IUserDirectory directory,
@@ -45,6 +55,7 @@ public class AssignedModel : PageModel
         ILogger<AssignedModel> logger)
     {
         _assigned = assigned;
+        _tasks = tasks;
         _files = files;
         _db = db;
         _directory = directory;
@@ -68,6 +79,13 @@ public class AssignedModel : PageModel
 
     /// <summary>Сколько ждёт проверки — это и есть работа начальника.</summary>
     public int WaitingCount { get; private set; }
+
+    /// <summary>
+    /// Число на вкладке «Мои»: начальник тоже чей-то подчинённый,
+    /// и своё, пока он проверяет чужое, теряться не должно. Формула
+    /// та же, что на пункте меню и на странице своих задач.
+    /// </summary>
+    public int MineAttention { get; private set; }
 
     [TempData] public string? StatusMessage { get; set; }
     [TempData] public string? ErrorMessage { get; set; }
@@ -124,6 +142,11 @@ public class AssignedModel : PageModel
     {
         Items = await _assigned.ForAuthorAsync(UserName, closed: ViewMode == "done", cancellationToken);
         WaitingCount = await _assigned.WaitingCheckCountAsync(UserName, cancellationToken);
+
+        var overdueOwn = (await _tasks.UrgentAsync(UserName, cancellationToken))
+            .Count(t => t.DueOn!.Value.Date < DateTime.Now.Date);
+
+        MineAttention = await _assigned.NeedsAttentionCountAsync(UserName, cancellationToken) + overdueOwn;
     }
 
     /// <summary>Поиск сотрудников для выбора исполнителя — тот же, что в переписке.</summary>

@@ -21,4 +21,7 @@ public class WidgetModel : PageModel
 
     /// <summary>Название портала в заголовке виджета.</summary>
     public string Title => string.IsNullOrWhiteSpace(_branding.Title) ? "Портал" : _branding.Title;
+
+    /// <summary>Первая буква названия — для значка в заголовке.</summary>
+    public string Letter => Title.TrimStart()[..1].ToUpperInvariant();
 }

@@ -36,6 +36,10 @@
     своей рамки у окна нет, иначе его было бы не сдвинуть.
 *@
 <header class="wg-head" data-drag>
+    @* Значок рисуется разметкой, а не картинкой: лишний запрос
+       в окне, которое должно открываться мгновенно, ни к чему. *@
+    <span class="wg-mark">@Model.Letter</span>
+
     <strong class="wg-name">@Model.Title</strong>
 
     <span class="wg-count" id="wgCount" hidden></span>
@@ -51,9 +55,25 @@
     <button class="wg-chip wg-chip--plain" type="button" id="wgSeen" hidden>Прочитано</button>
 </div>
 
-<main class="wg-list" id="wgList">
-    <p class="wg-empty">Загружаем…</p>
-</main>
+<main class="wg-list" id="wgList"></main>
+
+@*
+    «Нового нет» лежит готовым в разметке, а не собирается кодом:
+    пустой список — самое частое состояние виджета, и рисовать его
+    кодом при каждом обновлении незачем. Значок нарисован прямо здесь:
+    общий набор значков портала в виджет не тянем, он тяжелее всего,
+    что есть на этой странице.
+*@
+<div class="wg-empty" id="wgEmpty" hidden>
+    <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 11l3 3L22 4" />
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+    </svg>
+
+    <b id="wgEmptyText">Загружаем…</b>
+
+    <a class="wg-link" href="/" target="_blank">Открыть портал</a>
+</div>
 
 <script src="~/js/widget.js" asp-append-version="true"></script>
 </body>

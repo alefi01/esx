@@ -31,6 +31,7 @@ public class IndexModel : PageModel
     private readonly Portal.Web.Services.Notifications.NotificationHub _hub;
     private readonly IUserDirectory _directory;
     private readonly TimeProvider _time;
+    private readonly Microsoft.Extensions.Options.IOptions<Portal.Web.Configuration.ActiveDirectoryOptions> _ad;
     private readonly ILogger<IndexModel> _logger;
 
     public IndexModel(
@@ -42,6 +43,7 @@ public class IndexModel : PageModel
         Portal.Web.Services.Notifications.NotificationHub hub,
         IUserDirectory directory,
         TimeProvider time,
+        Microsoft.Extensions.Options.IOptions<Portal.Web.Configuration.ActiveDirectoryOptions> ad,
         ILogger<IndexModel> logger)
     {
         _tasks = tasks;
@@ -52,6 +54,7 @@ public class IndexModel : PageModel
         _hub = hub;
         _directory = directory;
         _time = time;
+        _ad = ad;
         _logger = logger;
     }
 
@@ -72,6 +75,21 @@ public class IndexModel : PageModel
 
     /// <summary>Сколько задач от начальника требует внимания — для подписи.</summary>
     public int HeadCount { get; private set; }
+
+    /// <summary>
+    /// Число на вкладке «Мои» — то же, что на пункте меню: новые
+    /// от начальника, возвращённые и просроченные, свои в том числе.
+    /// Считается по той же формуле, что и в /api/notifications: два
+    /// разных числа в двух местах про одно и то же — верный способ
+    /// перестать им верить.
+    /// </summary>
+    public int MineAttention { get; private set; }
+
+    /// <summary>Сколько подчинённые сдали на проверку — число на второй вкладке.</summary>
+    public int WaitingCount { get; private set; }
+
+    /// <summary>Вправе ли человек ставить задачи — от этого зависят вкладки.</summary>
+    public bool CanAssign => User.IsInRole(_ad.Value.AdminGroup) || User.IsInRole(_ad.Value.HeadGroup);
 
     [TempData] public string? StatusMessage { get; set; }
     [TempData] public string? ErrorMessage { get; set; }
@@ -114,6 +132,17 @@ public class IndexModel : PageModel
             : await _assigned.ForAssigneeAsync(UserName, closed: ViewMode == "done", cancellationToken);
 
         HeadCount = await _assigned.NeedsAttentionCountAsync(UserName, cancellationToken);
+
+        var overdueOwn = (await _tasks.UrgentAsync(UserName, cancellationToken))
+            .Count(t => t.DueOn!.Value.Date < DateTime.Now.Date);
+
+        MineAttention = HeadCount + overdueOwn;
+
+        // Второе число нужно только начальнику — лишний запрос
+        // для остальных не делаем.
+        WaitingCount = CanAssign
+            ? await _assigned.WaitingCheckCountAsync(UserName, cancellationToken)
+            : 0;
     }
 
     // ==================================================================

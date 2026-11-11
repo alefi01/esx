@@ -24,9 +24,13 @@
     }
 
     <div class="view-head">
-        <h2>Задачи подчинённым</h2>
+        @* Заголовок тот же, что и у своих задач: это один раздел.
+           Какая половина открыта — видно по вкладке. *@
+        <h2>Задачи</h2>
 
-        <nav class="seg" aria-label="Какие задачи показывать">
+        <partial name="_TasksTabs" model="new Portal.Web.Pages.Shared.TasksTabs(false, Model.MineAttention, Model.WaitingCount)" />
+
+        <nav class="seg seg--sub" aria-label="Какие задачи показывать">
             <a class="seg-btn@(Model.ViewMode == "active" ? " on" : "")" asp-page="Assigned">
                 В работе
                 @if (Model.WaitingCount > 0)
@@ -38,6 +42,16 @@
                 <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>Закрытые
             </a>
         </nav>
+
+        @* Кнопка стоит в заголовке, а не отдельной карточкой над списком:
+           карточка ради одной кнопки занимала целую полосу экрана
+           и отодвигала вниз то, ради чего на страницу заходят. *@
+        @if (Model.ViewMode == "active")
+        {
+            <button class="btn primary" type="button" id="newAssignedBtn">
+                <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus" /></svg>Новая задача
+            </button>
+        }
     </div>
 
     @* ---------- Новая задача ----------
@@ -46,13 +60,9 @@
        вниз сам список, ради которого на страницу и заходят. *@
     @if (Model.ViewMode == "active")
     {
-        <div class="card task-new">
-            <button class="btn primary" type="button" id="newAssignedBtn">
-                <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus" /></svg>Новая задача
-            </button>
-
+        <div class="card task-new" id="newAssignedCard" hidden>
             <form method="post" asp-page-handler="Create" enctype="multipart/form-data"
-                  id="newAssignedForm" class="assigned-form" hidden>
+                  id="newAssignedForm" class="assigned-form">
 
                 <div asp-validation-summary="ModelOnly" class="alert err"></div>
 
@@ -161,7 +171,15 @@
 
                 <div class="field">
                     <label for="taskFiles">Приложить файл</label>
-                    <input type="file" name="attachments" id="taskFiles" multiple />
+
+                    <label class="file-pick">
+                        <input type="file" name="attachments" id="taskFiles" multiple data-file-pick />
+                        <span class="file-pick-btn">
+                            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload" /></svg>Выбрать файл
+                        </span>
+                        <span class="file-pick-name" data-file-name>не выбран</span>
+                    </label>
+
                     <span class="hint">Бланк, образец, шаблон — то, по чему делать</span>
                 </div>
 
@@ -217,8 +235,11 @@
 
                             <b>@task.Title</b>
 
-                            <span class="task-owner">
-                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>@task.AssigneeDisplayName
+                            @* Кому поручено — первое, что ищут глазами
+                               на этой странице, поэтому с кружком-инициалом,
+                               а не бледной подписью в ряду прочих. *@
+                            <span class="task-who">
+                                <span class="task-who-ava">@Portal.Web.Pages.Shared.Avatars.Initials(task.AssigneeDisplayName)</span>@task.AssigneeDisplayName
                             </span>
 
                             <span class="task-due-chip@(card.Overdue ? " late" : "")@urgency">

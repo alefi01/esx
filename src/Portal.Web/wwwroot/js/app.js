@@ -920,8 +920,11 @@
 
             setCount('#chatBadge', data.messages || 0);
             setCount('#annBadge', data.announcements || 0);
-            setCount('#taskBadge', data.tasks || 0);
-            setCount('#assignedBadge', data.assignedWaiting || 0);
+            // Одно число на «Задачах»: своё, что требует внимания, плюс
+            // сданное подчинёнными на проверку. Отдельного пункта меню
+            // для подчинённых больше нет — это вкладка внутри раздела,
+            // и число должно собирать всё, что ждёт человека.
+            setCount('#taskBadge', (data.tasks || 0) + (data.assignedWaiting || 0));
 
             paintConvoBadges(data.conversations || []);
 
@@ -4155,6 +4158,36 @@
     }
 
     // ======================================================================
+    // 9.9. Поля выбора файла со своим видом
+    //
+    // Системное поле выбора файла выглядит кнопкой чужого вида и подписью
+    // «файл не выбран» на языке браузера — на русской странице это
+    // заметно. Поле прячем, рядом показываем свою кнопку и имена
+    // выбранных файлов.
+    //
+    // Само поле остаётся настоящим: форма отправляется как раньше,
+    // и без этого кода страница продолжает работать — просто с видом
+    // по умолчанию.
+    // ======================================================================
+
+    $$('[data-file-pick]').forEach(input => {
+        const label = input.closest('.file-pick');
+        const shown = label ? $('[data-file-name]', label) : null;
+
+        if (!shown) { return; }
+
+        input.addEventListener('change', () => {
+            const picked = [...(input.files || [])];
+
+            shown.textContent = picked.length === 0
+                ? 'не выбран'
+                : (picked.length === 1 ? picked[0].name : picked.length + ' файлов');
+
+            label.classList.toggle('has-file', picked.length > 0);
+        });
+    });
+
+    // ======================================================================
     // 10. Задачи подчинённым
     //
     // Страница серверная; здесь только то, без чего форма неудобна:
@@ -4166,12 +4199,17 @@
 
     if (assignedPage) {
         // ---------- Раскрытие формы ----------
+        //
+        // Кнопка живёт в заголовке страницы, а разворачивается карточка
+        // с формой под ним: держать десяток полей всегда открытыми —
+        // значит отодвинуть вниз список, ради которого сюда заходят.
         const openBtn = $('#newAssignedBtn');
+        const card = $('#newAssignedCard');
         const form = $('#newAssignedForm');
 
-        if (openBtn && form) {
-            openBtn.onclick = () => {
-                form.hidden = false;
+        if (openBtn && card && form) {
+            const open = () => {
+                card.hidden = false;
                 openBtn.hidden = true;
 
                 const title = $('#Input_Title');
@@ -4179,17 +4217,18 @@
                 if (title) { title.focus(); }
             };
 
+            openBtn.onclick = open;
+
             const cancel = $('#cancelAssigned');
 
             if (cancel) {
-                cancel.onclick = () => { form.hidden = true; openBtn.hidden = false; };
+                cancel.onclick = () => { card.hidden = true; openBtn.hidden = false; };
             }
 
             // Форма не прошла проверку на сервере — значит её уже
             // заполняли, и прятать набранное нельзя.
             if ($('.alert.err', form) || ($('#assigneeLogin') || {}).value) {
-                form.hidden = false;
-                openBtn.hidden = true;
+                open();
             }
         }
 

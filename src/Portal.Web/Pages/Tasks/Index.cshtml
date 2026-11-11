@@ -18,10 +18,15 @@
     <div class="view-head">
         <h2>Задачи</h2>
 
-        @* Три списка — тремя ссылками, каждый со своим адресом: «в работе»
-           открывают каждый день, и он должен открываться сразу, без
-           снятия галочек. *@
-        <nav class="seg" aria-label="Какие задачи показывать">
+        @* Первый переключатель — чьи задачи: свои или поставленные
+           подчинённым. Половины раздела живут на разных страницах
+           (разные права и обработчики), но для человека это один
+           раздел с двумя вкладками, а не два пункта меню про задачи. *@
+        <partial name="_TasksTabs" model="new Portal.Web.Pages.Shared.TasksTabs(true, Model.MineAttention, Model.WaitingCount)" />
+
+        @* Второй — какой список: «в работе» открывают каждый день,
+           и он должен открываться сразу, без снятия галочек. *@
+        <nav class="seg seg--sub" aria-label="Какие задачи показывать">
             <a class="seg-btn@(Model.ViewMode == "active" ? " on" : "")" asp-page="Index">
                 В работе
                 @if (Model.ActiveCount > 0)
@@ -130,8 +135,14 @@
                             <form method="post" asp-page-handler="Submit" asp-route-instanceId="@item.Id"
                                   asp-route-view="@Model.View" enctype="multipart/form-data" class="task-submit">
 
-                                <input type="file" name="attachments" multiple
-                                       aria-label="Файл к задаче" />
+                                <label class="file-pick">
+                                    <input type="file" name="attachments" multiple
+                                           aria-label="Файл к задаче" data-file-pick />
+                                    <span class="file-pick-btn">
+                                        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload" /></svg>Файл
+                                    </span>
+                                    <span class="file-pick-name" data-file-name>не выбран</span>
+                                </label>
 
                                 <button class="btn primary sm" type="submit">
                                     <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>@(task.NeedCheck ? "Сдать на проверку" : "Выполнено")

@@ -16,7 +16,10 @@
     --wg-line: #e7e4f0;
     --wg-head: #f6f5fa;
     --wg-accent: #0067c0;
+    --wg-soft: #eaf2fb;
     --wg-alert: #b42318;
+    --wg-ok: #1e8e5a;
+    --wg-shadow: 0 1px 2px rgba(23, 28, 38, .06);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -27,7 +30,10 @@
         --wg-line: #2e2c38;
         --wg-head: #23212c;
         --wg-accent: #5aa9f8;
+        --wg-soft: #23303f;
         --wg-alert: #ff9a90;
+        --wg-ok: #6dd5a4;
+        --wg-shadow: 0 1px 2px rgba(0, 0, 0, .35);
     }
 }
 
@@ -56,12 +62,33 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 10px;
+    padding: 9px 10px;
     background: var(--wg-head);
     border-bottom: 1px solid var(--wg-line);
 
+    /* Шапка не уезжает при прокрутке списка: за неё двигают окно,
+       и она же показывает число — обе вещи нужны всегда. */
+    position: sticky;
+    top: 0;
+    z-index: 2;
+
     /* Курсор подсказывает, что за эту полосу окно можно двигать. */
     cursor: move;
+}
+
+/* Квадратик с буквой вместо значка: рисуется разметкой, лишнего
+   запроса за картинкой нет — виджет должен открываться мгновенно. */
+.wg-mark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    background: var(--wg-accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
 }
 
 .wg-name {
@@ -129,9 +156,21 @@ body {
     cursor: pointer;
 }
 
-.wg-chip:hover { border-color: var(--wg-accent); }
+.wg-chip:hover { border-color: var(--wg-accent); color: var(--wg-accent); }
 
 .wg-chip--plain { color: var(--wg-dim); }
+.wg-chip--plain:hover { color: var(--wg-text); border-color: var(--wg-dim); }
+
+/* Число в чипе — отдельной подложкой, иначе «Задачи: 3» читается
+   как одно слово и цифра теряется. */
+.wg-chip b {
+    margin-left: 5px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--wg-soft);
+    color: var(--wg-accent);
+    font-size: 11px;
+}
 
 /* ---------- Список ---------- */
 
@@ -143,15 +182,37 @@ body {
 
 .wg-item {
     display: block;
-    padding: 8px 9px;
-    border-radius: 8px;
+    position: relative;
+    padding: 9px 10px 9px 12px;
+    border: 1px solid transparent;
+    border-radius: 9px;
     color: inherit;
     text-decoration: none;
+    transition: .14s;
 }
 
-.wg-item:hover { background: var(--wg-head); }
+.wg-item + .wg-item { margin-top: 3px; }
 
-.wg-item + .wg-item { border-top: 1px solid var(--wg-line); }
+.wg-item:hover {
+    background: var(--wg-bg);
+    border-color: var(--wg-line);
+    box-shadow: var(--wg-shadow);
+}
+
+/* Полоса слева — такая же, как у карточек в портале: виджет должен
+   выглядеть его частью, а не отдельной программой. */
+.wg-item::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 10px;
+    bottom: 10px;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--wg-line);
+}
+
+.wg-item:hover::before { background: var(--wg-accent); }
 
 .wg-title {
     display: block;
@@ -178,15 +239,50 @@ body {
 }
 
 .wg-item--loud .wg-title { color: var(--wg-alert); }
+.wg-item--loud::before { background: var(--wg-alert); }
 
+/* Пустой список занимает всё окно и держит надпись по центру.
+   Прижатая к низу надпись выглядела так, будто список просто
+   не догрузился. */
 .wg-empty {
-    margin: 18px 10px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 10px 16px 40px;
     color: var(--wg-dim);
     text-align: center;
 }
 
-.wg-link {
-    display: block;
-    margin-top: 10px;
-    color: var(--wg-accent);
+.wg-empty[hidden] { display: none; }
+
+/* Пока список пуст, он не должен отбирать место у надписи. */
+.wg-list:empty { flex: 0 0 auto; padding: 0; }
+
+/* Галочка над надписью «нового нет»: пустой список без картинки
+   выглядит как не загрузившийся. */
+.wg-empty svg {
+    margin-bottom: 8px;
+    color: var(--wg-line);
 }
+
+.wg-empty b { font-size: 13px; color: var(--wg-text); }
+
+/* Полоса прокрутки тонкая и своего цвета: системная в окне шириной
+   в треть экрана занимает заметную долю ширины. */
+.wg-list::-webkit-scrollbar { width: 8px; }
+.wg-list::-webkit-scrollbar-thumb {
+    background: var(--wg-line);
+    border-radius: 999px;
+}
+.wg-list::-webkit-scrollbar-thumb:hover { background: var(--wg-dim); }
+
+.wg-link {
+    color: var(--wg-accent);
+    font-size: 12px;
+    text-decoration: none;
+}
+
+.wg-link:hover { text-decoration: underline; }

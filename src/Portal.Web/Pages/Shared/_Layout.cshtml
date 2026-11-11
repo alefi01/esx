@@ -15,10 +15,6 @@
     var adminGroup = AdOptions.Value.AdminGroup;
     var isAdmin = User.IsInRole(adminGroup);
 
-    // Ставить задачи могут начальники (группа ActiveDirectory:HeadGroup)
-    // и администраторы. Назначение начальником папки тут ни при чём:
-    // задачи ставятся кому угодно в портале.
-    var canAssign = isAdmin || User.IsInRole(AdOptions.Value.HeadGroup);
     var signedIn = User.Identity?.IsAuthenticated == true;
 
     // Занятое место для карточки внизу меню. Считается только для
@@ -255,21 +251,16 @@
             <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><use href="#i-chat" /></svg>Чат<span class="cnt" id="chatBadge" hidden>0</span>
         </a>
 
-        @* Число у «Задач» — это «требует внимания»: новые от начальника,
-           возвращённые на доработку и просроченные. Сданное и ждущее
-           проверки не считается: от человека там больше ничего не нужно. *@
+        @* Одно число у «Задач» — всё, что ждёт этого человека: новые
+           задачи от начальника, возвращённые на доработку, просроченные
+           и — у начальника — сданное подчинёнными на проверку.
+
+           Пункта «Задачи подчинённым» в меню больше нет: это вкладка
+           внутри раздела. Два пункта про задачи заставляли открывать
+           оба, чтобы понять, не ждёт ли чего-нибудь. *@
         <a class="nav-item@(Nav("/Tasks"))" asp-page="/Tasks/Index">
             <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check-square" /></svg>Задачи<span class="cnt" id="taskBadge" hidden>0</span>
         </a>
-
-        @* Страница начальника. Видна тем, кто вправе ставить задачи;
-           число — сколько сдано на проверку, то есть ждёт его решения. *@
-        @if (canAssign)
-        {
-            <a class="nav-item@(Nav("/Tasks/Assigned"))" asp-page="/Tasks/Assigned">
-                <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>Задачи подчинённым<span class="cnt" id="assignedBadge" hidden>0</span>
-            </a>
-        }
 
         @* Разделов «Объявления» и «Корзина» в меню нет.
 
