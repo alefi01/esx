@@ -94,6 +94,10 @@ public class IndexModel : PageModel
     /// Поэтому в одном столбце лежат и задачи от начальника, и свои
     /// заметки: для того, кто их делает, это один список дел, а не два.
     /// </summary>
+    /// <summary>Задача горит: срок прошёл или истекает сегодня.</summary>
+    private static bool Burning(bool overdue, TaskUrgency urgency) =>
+        overdue || urgency == TaskUrgency.Now;
+
     public IReadOnlyList<Column> Columns => ViewMode == "done"
         ?
         [
@@ -108,13 +112,18 @@ public class IndexModel : PageModel
         ]
         :
         [
+            // «Горит» — это не только просроченное, но и то, что нужно
+            // сдать сегодня: к концу дня оно станет просроченным,
+            // и узнавать об этом завтра поздно.
             new("Горит", "late",
-                FromHead.Where(c => c.Overdue && c.Instance.State != Portal.Web.Data.TaskState.Submitted).ToList(),
-                Items.Where(c => c.Overdue).ToList()),
+                FromHead.Where(c => Burning(c.Overdue, c.Urgency)
+                                    && c.Instance.State != Portal.Web.Data.TaskState.Submitted).ToList(),
+                Items.Where(c => Burning(c.Overdue, c.Urgency)).ToList()),
 
             new("В работе", "open",
-                FromHead.Where(c => !c.Overdue && c.Instance.State != Portal.Web.Data.TaskState.Submitted).ToList(),
-                Items.Where(c => !c.Overdue).ToList()),
+                FromHead.Where(c => !Burning(c.Overdue, c.Urgency)
+                                    && c.Instance.State != Portal.Web.Data.TaskState.Submitted).ToList(),
+                Items.Where(c => !Burning(c.Overdue, c.Urgency)).ToList()),
 
             new("Сдано на проверку", "submitted",
                 FromHead.Where(c => c.Instance.State == Portal.Web.Data.TaskState.Submitted).ToList(),

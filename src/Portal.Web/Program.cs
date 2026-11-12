@@ -363,6 +363,11 @@ builder.Services.AddSingleton<MessageStorage>();
 builder.Services.AddSingleton<Portal.Web.Services.Announcements.AnnouncementStorage>();
 builder.Services.AddScoped<IUserDirectory, UserDirectory>();
 
+// Фотографии сотрудников — те, что они поставили себе сами.
+// Без состояния, читает файлы, ответы держит в памяти минуту.
+builder.Services.AddSingleton<Portal.Web.Services.Users.AvatarStore>();
+
+
 
 // Обзор дерева домена для окна прав на папку. К базе не обращается,
 // ответы держит в памяти минуту — Singleton.
@@ -1006,6 +1011,37 @@ app.MapClientDownloads();
 
 // Данные для вкладки «Задачи» в виджете — подробности в WidgetApi.
 app.MapWidgetApi();
+
+// ---------------------------------------------------------------------------
+// Фотография сотрудника.
+//
+// Отдаётся файлом по логину. Закрыто обычной политикой доступа: кто
+// в портал не вошёл, лиц сотрудников не видит.
+//
+// Ответ разрешено держать в кэше браузера пять минут: аватарка меняется
+// раз в год, а рисуется на странице десятки раз.
+// ---------------------------------------------------------------------------
+app.MapGet("/avatar/{login}", (
+    string login,
+    Portal.Web.Services.Users.AvatarStore avatars,
+    HttpContext http) =>
+{
+    var path = avatars.Find(login);
+
+    if (path is null)
+    {
+        return Results.NotFound();
+    }
+
+    http.Response.Headers.CacheControl = "private, max-age=300";
+
+    return Results.File(
+        path,
+        Portal.Web.Services.Users.AvatarStore.ContentTypeOf(path),
+        lastModified: File.GetLastWriteTimeUtc(path),
+        entityTag: null,
+        enableRangeProcessing: false);
+});
 
 app.Run();
 

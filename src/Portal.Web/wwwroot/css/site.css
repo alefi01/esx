@@ -133,6 +133,10 @@ input,textarea,select{font-family:inherit;color:var(--text)}
    в разделе 25 оставлено подстраховкой. */
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 .view-head{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+
+/* Заголовок под строкой пути: без отступа он прилипал к ней
+   и читался как её продолжение. */
+.crumbs + .view-head{margin-top:18px}
 .view-head h2{font-size:19px;font-weight:800;letter-spacing:-.3px}
 .view-head .sub{font-size:12.5px;color:var(--muted)}
 
@@ -170,7 +174,7 @@ select.sel{appearance:none;border:1px solid var(--border);background:var(--surfa
    ====================================================================== */
 .files-area{position:relative;min-height:300px;border-radius:14px}
 .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px}
-.tile{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:16px 10px 12px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:default;user-select:none;transition:transform .18s,box-shadow .18s,border-color .18s,background .18s}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:16px 10px 12px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;user-select:none;transition:transform .18s,box-shadow .18s,border-color .18s,background .18s}
 .tile:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:transparent}
 .tile.selected{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 1px var(--accent)}
 .tile-icon{height:62px;display:flex;align-items:center;justify-content:center;transition:transform .18s}
@@ -184,7 +188,10 @@ select.sel{appearance:none;border:1px solid var(--border);background:var(--surfa
 .flist{display:flex;flex-direction:column;gap:2px}
 .flist-head,.frow{display:grid;grid-template-columns:44px 1fr 150px 110px 90px 40px;align-items:center;gap:10px;padding:8px 14px;border-radius:10px;font-size:13px}
 .flist-head{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
-.frow{cursor:default;user-select:none;transition:.14s}
+/* Курсор-палец: по строке и плитке щёлкают, чтобы открыть папку
+   или файл, и курсор должен об этом говорить — как во всех списках,
+   где что-то открывается. */
+.frow{cursor:pointer;user-select:none;transition:.14s}
 .frow:hover{background:var(--surface)}
 .frow.selected{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
 .frow .fname{font-weight:600;display:flex;align-items:center;gap:4px;min-width:0}
@@ -1489,7 +1496,10 @@ button.pin-btn{position:absolute;top:8px;right:38px;margin:0;width:26px;height:2
 button.pin-btn:hover{background:var(--surface3)}
 button.pin-btn.on{opacity:1;color:var(--accent)}
 
-.pin-mark{position:absolute;top:8px;right:38px;color:var(--accent);display:flex}
+/* Та же коробка, что у кнопки-звёздочки: иначе значок в 13 точек
+   висит выше звезды, и на закреплённой папке это сразу видно. */
+.pin-mark{position:absolute;top:8px;right:38px;width:26px;height:26px;
+  display:flex;align-items:center;justify-content:center;color:var(--accent)}
 
 /* Закреплённая плитка: тонкая полоса сверху, а не заливка целиком.
    Заливка спорила бы с выделением, которое человек ставит мышью. */
@@ -2089,8 +2099,15 @@ html[data-file-view="list"] .flist[hidden]{display:block !important}
 .bcard-tools{justify-content:flex-end;gap:2px;opacity:0;transition:.14s}
 .bcard:hover .bcard-tools,.bcard-tools:focus-within{opacity:1}
 
-/* Поручение на доске отличается полосой слева — как в списке. */
-.bcard.from-head{border-left:3px solid var(--accent)}
+/* Поручение на доске отличается цветом полосы слева. Раньше рядом
+   стояли две: синяя рамка «это от начальника» и красная полоса
+   «горит» — вместе они читались как брак вёрстки. Полоса одна,
+   и цвет у неё один: синяя — поручение, жёлтая и красная — срок. */
+.bcard.from-head::before{background:var(--accent)}
+.bcard.from-head.urgent-soon::before{background:var(--warn)}
+.bcard.from-head.urgent-close::before,
+.bcard.from-head.urgent-now::before,
+.bcard.from-head.overdue::before{background:var(--danger)}
 
 /* Галочка своей заметки стоит в одной строке с названием. */
 .bcard .task-check-form{flex:none}

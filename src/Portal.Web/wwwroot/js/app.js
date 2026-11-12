@@ -4446,69 +4446,98 @@
     // и окно возврата на доработку.
     // ======================================================================
 
+    /**
+     * Форма, которая открывается окном поверх страницы.
+     *
+     * Форма лежит на странице спрятанной, а окно её ПЕРЕНОСИТ к себе,
+     * а не пересобирает кодом. Так в окне оказывается настоящая форма:
+     * с проверкой на сервере, загрузкой файла и защитой от подделки
+     * запроса — всё это пришлось бы повторять заново, рисуй мы поля
+     * разметкой в коде.
+     *
+     * Приём общий для постановки задачи подчинённому и для своей
+     * заметки: окна разные, а устройство одно.
+     */
+    function formInWindow(options) {
+        const openBtn = $(options.button);
+        const holder = $(options.holder);
+        const form = $(options.form);
+
+        if (!openBtn || !holder || !form) { return; }
+
+        const open = () => {
+            const m = openModal({
+                title: options.title,
+                body: '<div class="form-slot"></div>'
+            });
+
+            // Окно под форму шире обычного: иначе срок, время
+            // и повторение не встают в строку и уходят лесенкой.
+            $('.modal', m).classList.add('modal--form');
+
+            $('.form-slot', m).appendChild(form);
+
+            const first = options.focus ? $(options.focus, m) : null;
+
+            if (first) { first.focus(); }
+
+            // Закрыли окно — форма возвращается на страницу.
+            // Иначе со следующим открытием переносить было бы нечего.
+            const back = () => {
+                if (form.parentElement !== holder) { holder.appendChild(form); }
+            };
+
+            m.addEventListener('animationend', () => {
+                if (m.classList.contains('closing')) { back(); }
+            });
+
+            // На случай, если движение выключено настройками системы
+            // и событие анимации не придёт.
+            const watch = new MutationObserver(() => {
+                if (!document.body.contains(m)) { back(); watch.disconnect(); }
+            });
+
+            watch.observe($('#modalRoot'), { childList: true });
+        };
+
+        openBtn.onclick = open;
+
+        const cancel = options.cancel ? $(options.cancel) : null;
+
+        if (cancel) { cancel.onclick = closeModal; }
+
+        // Форма не прошла проверку на сервере — значит её уже заполняли,
+        // и человек должен увидеть, что именно не так, а не пустую
+        // страницу со своим пропавшим текстом.
+        if ($('.alert.err', form) || (options.filled && $(options.filled) && $(options.filled).value)) {
+            open();
+        }
+    }
+
+    // Своя заметка — тем же окном, что и задача подчинённому: раньше
+    // она записывалась строкой прямо в списке, и получалось, что на
+    // одной странице две разные формы для одного и того же действия.
+    formInWindow({
+        button: '#newOwnBtn',
+        holder: '#newOwnHolder',
+        form: '#newOwnForm',
+        title: 'Новая задача',
+        focus: '#Input_Title',
+        cancel: '#cancelOwn'
+    });
+
     const assignedPage = $('[data-assigned-tasks]');
 
     if (assignedPage) {
-        // ---------- Окно «Новая задача» ----------
-        //
-        // Форма лежит на странице спрятанной, а окно её ПЕРЕНОСИТ
-        // к себе, а не пересобирает кодом. Так в окне оказывается
-        // настоящая форма: с проверкой на сервере, загрузкой файла
-        // и защитой от подделки запроса — всё это пришлось бы
-        // повторять заново, рисуй мы поля разметкой в коде.
-        const openBtn = $('#newAssignedBtn');
-        const holder = $('#newAssignedHolder');
-        const form = $('#newAssignedForm');
-
-        if (openBtn && holder && form) {
-            const openTaskWindow = () => {
-                const m = openModal({
-                    title: 'Новая задача',
-                    body: '<div id="newTaskSlot"></div>'
-                });
-
-                // Окно под форму шире обычного: иначе срок, время
-                // и повторение не встают в строку и уходят лесенкой.
-                $('.modal', m).classList.add('modal--form');
-
-                $('#newTaskSlot', m).appendChild(form);
-
-                const title = $('#Input_Title', m);
-
-                if (title) { title.focus(); }
-
-                // Закрыли окно — форма возвращается на страницу.
-                // Иначе со следующим открытием переносить было бы нечего.
-                const back = () => {
-                    if (form.parentElement !== holder) { holder.appendChild(form); }
-                };
-
-                m.addEventListener('animationend', e => {
-                    if (m.classList.contains('closing')) { back(); }
-                });
-
-                // На случай, если движение выключено настройками системы
-                // и событие анимации не придёт.
-                const watch = new MutationObserver(() => {
-                    if (!document.body.contains(m)) { back(); watch.disconnect(); }
-                });
-
-                watch.observe($('#modalRoot'), { childList: true });
-            };
-
-            openBtn.onclick = openTaskWindow;
-
-            const cancel = $('#cancelAssigned');
-
-            if (cancel) { cancel.onclick = closeModal; }
-
-            // Форма не прошла проверку на сервере — значит её уже
-            // заполняли, и человек должен увидеть, что именно не так,
-            // а не пустую страницу со своим пропавшим текстом.
-            if ($('.alert.err', form) || ($('#assigneeLogin') || {}).value) {
-                openTaskWindow();
-            }
-        }
+        formInWindow({
+            button: '#newAssignedBtn',
+            holder: '#newAssignedHolder',
+            form: '#newAssignedForm',
+            title: 'Новая задача',
+            focus: '#Input_Title',
+            cancel: '#cancelAssigned',
+            filled: '#assigneeLogin'
+        });
 
         // ---------- Поля повторения ----------
         //

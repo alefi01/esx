@@ -48,32 +48,50 @@
                 <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>Выполненные
             </a>
         </nav>
+
+        @if (Model.ViewMode == "active")
+        {
+            <button class="btn primary" type="button" id="newOwnBtn">
+                <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus" /></svg>Новая задача
+            </button>
+        }
     </div>
 
-    @* Своя задача записывается одной строкой прямо здесь: это заметка
-       на ходу, и лишнее нажатие «создать» перед каждой записью — ровно
-       та мелочь, из-за которой список дел перестают вести. *@
+    @* Своя задача записывается в окне — тем же, что и задача
+       подчинённому. Раньше здесь висела форма строкой: на одной
+       странице получались две разные формы для одного и того же
+       действия, и та, что в списке, отодвигала вниз сам список. *@
     @if (Model.ViewMode == "active")
     {
-        <form method="post" asp-page-handler="Create" class="card task-new">
-            <div asp-validation-summary="ModelOnly" class="alert err"></div>
+        <div id="newOwnHolder" hidden>
+            <form method="post" asp-page-handler="Create" class="assigned-form" id="newOwnForm">
+                <div asp-validation-summary="ModelOnly" class="alert err"></div>
 
-            <div class="task-new-row">
-                <input asp-for="Input.Title" class="task-title" maxlength="300"
-                       placeholder="Что нужно сделать" autocomplete="off" />
+                <div class="field">
+                    <label asp-for="Input.Title">Что нужно сделать</label>
+                    <input asp-for="Input.Title" maxlength="300" autocomplete="off" />
+                    <span asp-validation-for="Input.Title" class="err"></span>
+                </div>
 
-                <input asp-for="Input.DueOn" type="date" class="task-due" title="Срок, необязательно" />
+                <div class="field">
+                    <label asp-for="Input.Notes">Подробности</label>
+                    <textarea asp-for="Input.Notes" rows="3" maxlength="4000"></textarea>
+                </div>
 
-                <button class="btn primary" type="submit">
-                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus" /></svg>Добавить
-                </button>
-            </div>
+                <div class="row-form">
+                    <div class="field">
+                        <label asp-for="Input.DueOn">Срок</label>
+                        <input asp-for="Input.DueOn" type="date" />
+                        <span class="hint">Необязательно</span>
+                    </div>
+                </div>
 
-            <span asp-validation-for="Input.Title" class="err"></span>
-
-            <textarea asp-for="Input.Notes" class="task-notes" rows="2" maxlength="4000"
-                      placeholder="Подробности — необязательно"></textarea>
-        </form>
+                <div class="form-actions">
+                    <button class="btn primary" type="submit">Добавить</button>
+                    <button class="btn" type="button" id="cancelOwn">Отмена</button>
+                </div>
+            </form>
+        </div>
     }
 
     @if (Model.Items.Count == 0 && Model.FromHead.Count == 0)
@@ -83,12 +101,10 @@
             @if (Model.ViewMode == "done")
             {
                 <b>Выполненных пока нет</b>
-                <p>Сюда попадают сделанные задачи — и свои, и принятые начальником</p>
             }
             else
             {
                 <b>Задач нет</b>
-                <p>Запишите своё дело строкой выше — или дождитесь задачи от начальника</p>
             }
         </div>
     }
