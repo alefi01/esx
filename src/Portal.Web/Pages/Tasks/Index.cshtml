@@ -4,6 +4,18 @@
     ViewData["Title"] = "Задачи";
 }
 
+@*
+    «Задачи» глазами того, кто их делает.
+
+    Доска, а не список, и такая же, как у начальника: столбцы по тому,
+    что с задачей делать — горит, в работе, сдано. В одном столбце лежат
+    и поручения начальника, и свои заметки: для того, кто их выполняет,
+    это один список дел, а не два.
+
+    Карточки при этом разные, и намеренно. У поручения нет галочки
+    «выполнено» — его сдают, и закрывает его тот, кто поставил. У своей
+    заметки нет состояния — она либо сделана, либо нет.
+*@
 <section class="view active tasks-page">
 
     @if (!string.IsNullOrEmpty(Model.StatusMessage))
@@ -18,14 +30,12 @@
     <div class="view-head">
         <h2>Задачи</h2>
 
-        @* Первый переключатель — чьи задачи: свои или поставленные
-           подчинённым. Половины раздела живут на разных страницах
-           (разные права и обработчики), но для человека это один
-           раздел с двумя вкладками, а не два пункта меню про задачи. *@
         <partial name="_TasksTabs" model="new Portal.Web.Pages.Shared.TasksTabs(true, Model.MineAttention, Model.WaitingCount)" />
 
-        @* Второй — какой список: «в работе» открывают каждый день,
-           и он должен открываться сразу, без снятия галочек. *@
+        @* Архива здесь больше нет. Он был третьим списком, куда убирали
+           «с глаз», и этим ничем не отличался от выполненного: открывали
+           его почти никогда, а объяснять разницу приходилось каждому.
+           Убранное туда раньше лежит теперь среди выполненного. *@
         <nav class="seg seg--sub" aria-label="Какие задачи показывать">
             <a class="seg-btn@(Model.ViewMode == "active" ? " on" : "")" asp-page="Index">
                 В работе
@@ -37,137 +47,11 @@
             <a class="seg-btn@(Model.ViewMode == "done" ? " on" : "")" asp-page="Index" asp-route-view="done">
                 <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>Выполненные
             </a>
-            <a class="seg-btn@(Model.ViewMode == "archive" ? " on" : "")" asp-page="Index" asp-route-view="archive">
-                <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-archive" /></svg>Архив
-            </a>
         </nav>
     </div>
 
-    @* ---------- От начальника ----------
-
-       Стоит ВЫШЕ своих заметок и выше формы добавления: это то, о чём
-       спросят, и человек должен увидеть это первым, не прокручивая.
-
-       Карточки намеренно другие: у поручения нет галочки «выполнено»
-       (его сдают), нет кнопки «удалить» (его снимает тот, кто поставил)
-       и есть состояние — сдано, возвращено, принято. *@
-    @if (Model.FromHead.Count > 0)
-    {
-        <h3 class="side-head">
-            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>
-            От начальника
-            @if (Model.HeadCount > 0 && Model.ViewMode == "active")
-            {
-                <span class="side-count">@Model.HeadCount</span>
-            }
-        </h3>
-
-        <div class="task-list head-tasks">
-            @foreach (var card in Model.FromHead)
-            {
-                var item = card.Instance;
-                var task = card.Task;
-
-                var urgency = card.Urgency switch
-                {
-                    Portal.Web.Services.Tasks.TaskUrgency.Now => " urgent-now",
-                    Portal.Web.Services.Tasks.TaskUrgency.Close => " urgent-close",
-                    Portal.Web.Services.Tasks.TaskUrgency.Soon => " urgent-soon",
-                    _ => ""
-                };
-
-                <div class="task-card from-head@(item.IsClosed ? " done" : "")@(card.Overdue ? " overdue" : "")@urgency@(task.Important ? " important" : "")">
-
-                    <div class="task-body">
-                        @* Две строки вместо одной: название крупно,
-                           всё остальное — подписью под ним. В одну строку
-                           название терялось среди четырёх чипов, и глазу
-                           не за что было зацепиться при беглом просмотре. *@
-                        <div class="task-title-row">
-                            @if (task.Important)
-                            {
-                                <span class="t-imp" title="Важная задача">
-                                    <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>
-                                </span>
-                            }
-
-                            <b>@task.Title</b>
-
-                            <span class="task-state state-@item.State.ToString().ToLowerInvariant()">
-                                @Portal.Web.Pages.Tasks.AssignedTaskText.StateFor(item.State)
-                            </span>
-                        </div>
-
-                        <div class="task-meta-row">
-                            <span class="t-when@(card.Overdue ? " late" : "")@urgency">
-                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(item.DueAt, task.DueMinutes is not null)
-                            </span>
-
-                            <span class="t-dot-sep"></span>
-
-                            <span class="t-from">@task.AuthorDisplayName</span>
-                        </div>
-
-                        @if (!string.IsNullOrWhiteSpace(task.Notes))
-                        {
-                            <p class="task-notes-text">@task.Notes</p>
-                        }
-
-                        @if (item.State == Portal.Web.Data.TaskState.Returned && item.ReturnReason is { } reason)
-                        {
-                            <p class="task-return">
-                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-restore" /></svg>
-                                Возвращено: @reason
-                            </p>
-                        }
-
-                        @* Файлы: сначала то, что приложил автор (бланк,
-                           образец), потом сданное. Разделять их подписями
-                           незачем — автор задачи и так знает, что приложил. *@
-                        @if (task.Files.Count > 0 || item.Files.Count > 0)
-                        {
-                            <div class="task-files">
-                                @foreach (var file in task.Files.Concat(item.Files))
-                                {
-                                    <a class="chip" asp-page-handler="File" asp-route-fileId="@file.Id">
-                                        @file.OriginalName
-                                    </a>
-                                }
-                            </div>
-                        }
-
-                        @if (!item.IsClosed && item.State != Portal.Web.Data.TaskState.Submitted)
-                        {
-                            <form method="post" asp-page-handler="Submit" asp-route-instanceId="@item.Id"
-                                  asp-route-view="@Model.View" enctype="multipart/form-data" class="task-submit">
-
-                                <label class="file-pick">
-                                    <input type="file" name="attachments" multiple
-                                           aria-label="Файл к задаче" data-file-pick />
-                                    <span class="file-pick-btn">
-                                        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload" /></svg>Файл
-                                    </span>
-                                    <span class="file-pick-name" data-file-name>не выбран</span>
-                                </label>
-
-                                <button class="btn primary sm" type="submit">
-                                    <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>@(task.NeedCheck ? "Сдать на проверку" : "Выполнено")
-                                </button>
-
-                                @if (task.NeedFile)
-                                {
-                                    <span class="hint">Нужен файл</span>
-                                }
-                            </form>
-                        }
-                    </div>
-                </div>
-            }
-        </div>
-    }
-
-    @* Форма добавления стоит вверху и всегда раскрыта: задачу записывают
-       на ходу, и лишнее нажатие «создать» перед каждой записью — это ровно
+    @* Своя задача записывается одной строкой прямо здесь: это заметка
+       на ходу, и лишнее нажатие «создать» перед каждой записью — ровно
        та мелочь, из-за которой список дел перестают вести. *@
     @if (Model.ViewMode == "active")
     {
@@ -192,14 +76,6 @@
         </form>
     }
 
-    @if (Model.FromHead.Count > 0 && Model.Items.Count > 0)
-    {
-        <h3 class="side-head">
-            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check-square" /></svg>
-            Мои
-        </h3>
-    }
-
     @if (Model.Items.Count == 0 && Model.FromHead.Count == 0)
     {
         <div class="empty">
@@ -207,151 +83,243 @@
             @if (Model.ViewMode == "done")
             {
                 <b>Выполненных пока нет</b>
-                <p>Сюда попадают задачи, которые вы отметили галочкой</p>
-            }
-            else if (Model.ViewMode == "archive")
-            {
-                <b>Архив пуст</b>
-                <p>В архив убирают задачи, которые больше не нужны на виду, но и удалять их жалко</p>
+                <p>Сюда попадают сделанные задачи — и свои, и принятые начальником</p>
             }
             else
             {
                 <b>Задач нет</b>
+                <p>Запишите своё дело строкой выше — или дождитесь задачи от начальника</p>
             }
         </div>
     }
-    else if (Model.Items.Count > 0)
+    else
     {
-        <div class="task-list">
-            @foreach (var card in Model.Items)
+        <div class="tboard">
+            @foreach (var column in Model.Columns)
             {
-                var task = card.Task;
+                <section class="tcol tcol--@column.Key">
+                    <header class="tcol-head">
+                        <span class="tcol-name">@column.Title</span>
+                        <span class="tcol-count">@column.Count</span>
+                    </header>
 
-                var urgency = card.Urgency switch
-                {
-                    Portal.Web.Services.Tasks.TaskUrgency.Now => " urgent-now",
-                    Portal.Web.Services.Tasks.TaskUrgency.Close => " urgent-close",
-                    Portal.Web.Services.Tasks.TaskUrgency.Soon => " urgent-soon",
-                    _ => ""
-                };
+                    <div class="tcol-body">
 
-                @* Цвет по сроку: за пять дней — жёлтая полоса, за три — красная,
-                   за день и позже — красная с жирным названием. Полосой и чипом,
-                   а не заливкой всей карточки: заливка делает список пёстрым,
-                   и когда горит половина задач, не видно уже ничего. *@
-                <div class="task-card@(task.IsDone ? " done" : "")@(card.Overdue ? " overdue" : "")@urgency">
-
-                    @* Галочка — это форма, а не кнопка с кодом: так она
-                       работает и без JavaScript, и права на неё проверяет
-                       сервер, а не разметка. *@
-                    @if (card.Mine)
-                    {
-                        <form method="post" asp-page-handler="Done" asp-route-id="@task.Id"
-                              asp-route-view="@Model.View" class="task-check-form">
-                            <button class="task-check@(task.IsDone ? " on" : "")" type="submit"
-                                    title="@(task.IsDone ? "Вернуть в работу" : "Отметить выполненной")">
-                                <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
-                            </button>
-                        </form>
-                    }
-                    else
-                    {
-                        <span class="task-check@(task.IsDone ? " on" : "") locked" title="Чужая задача — отмечает её хозяин">
-                            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
-                        </span>
-                    }
-
-                    <div class="task-body">
-                        <div class="task-title-row">
-                            <b>@task.Title</b>
-                        </div>
-
-                        @if (task.DueOn is not null || !card.Mine)
+                        @* ---------- Задачи от начальника ---------- *@
+                        @foreach (var card in column.Head)
                         {
-                            <div class="task-meta-row">
-                                @if (task.DueOn is { } due)
-                                {
-                                    <span class="t-when@(card.Overdue ? " late" : "")@urgency">
-                                        <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(due)
-                                    </span>
-                                }
+                            var item = card.Instance;
+                            var task = card.Task;
 
-                                @if (!card.Mine)
-                                {
-                                    @* Чужая задача: сразу видно, чья она, иначе
-                                       список превращается в кашу из своих и чужих дел. *@
-                                    @if (task.DueOn is not null)
+                            var urgency = card.Urgency switch
+                            {
+                                Portal.Web.Services.Tasks.TaskUrgency.Now => " urgent-now",
+                                Portal.Web.Services.Tasks.TaskUrgency.Close => " urgent-close",
+                                Portal.Web.Services.Tasks.TaskUrgency.Soon => " urgent-soon",
+                                _ => ""
+                            };
+
+                            <article class="bcard from-head@(card.Overdue ? " overdue" : "")@urgency">
+                                <div class="bcard-top">
+                                    @if (task.Important)
                                     {
-                                        <span class="t-dot-sep"></span>
+                                        <span class="t-imp" title="Важная задача">
+                                            <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>
+                                        </span>
                                     }
 
-                                    <span class="t-from">@task.OwnerDisplayName</span>
-                                }
-                            </div>
-                        }
+                                    <b>@task.Title</b>
 
-                        @if (!string.IsNullOrWhiteSpace(task.Notes))
-                        {
-                            <p class="task-notes-text">@task.Notes</p>
-                        }
+                                    <span class="task-state state-@item.State.ToString().ToLowerInvariant()">
+                                        @Portal.Web.Pages.Tasks.AssignedTaskText.StateFor(item.State)
+                                    </span>
+                                </div>
 
-                        @if (task.Shares.Count > 0)
-                        {
-                            <div class="task-shared">
-                                <span class="hint">Видят:</span>
-                                @foreach (var share in task.Shares)
+                                @if (!string.IsNullOrWhiteSpace(task.Notes))
                                 {
-                                    <span class="chip">
-                                        @share.DisplayName
-                                        @if (card.Mine)
-                                        {
-                                            <button class="chip-x" type="submit" form="unshare-@task.Id-@share.Id"
-                                                    title="Убрать из списка">×</button>
-                                        }
+                                    <p class="bcard-notes">@task.Notes</p>
+                                }
+
+                                <div class="task-meta-row">
+                                    <span class="t-when@(card.Overdue ? " late" : "")@urgency">
+                                        <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(item.DueAt, task.DueMinutes is not null)
                                     </span>
 
+                                    <span class="t-dot-sep"></span>
+
+                                    <span class="t-from">@task.AuthorDisplayName</span>
+                                </div>
+
+                                @if (item.State == Portal.Web.Data.TaskState.Returned && item.ReturnReason is { } reason)
+                                {
+                                    <p class="task-return">
+                                        <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-restore" /></svg>
+                                        Возвращено: @reason
+                                    </p>
+                                }
+
+                                @* Файлы: сначала приложенное автором (бланк,
+                                   образец), потом сданное. *@
+                                @if (task.Files.Count > 0 || item.Files.Count > 0)
+                                {
+                                    <div class="task-files">
+                                        @foreach (var file in task.Files.Concat(item.Files))
+                                        {
+                                            <a class="chip" asp-page-handler="File" asp-route-fileId="@file.Id">
+                                                @file.OriginalName
+                                            </a>
+                                        }
+                                    </div>
+                                }
+
+                                @if (!item.IsClosed && item.State != Portal.Web.Data.TaskState.Submitted)
+                                {
+                                    <form method="post" asp-page-handler="Submit" asp-route-instanceId="@item.Id"
+                                          asp-route-view="@Model.View" enctype="multipart/form-data" class="task-submit">
+
+                                        <label class="file-pick">
+                                            <input type="file" name="attachments" multiple
+                                                   aria-label="Файл к задаче" data-file-pick />
+                                            <span class="file-pick-btn">
+                                                <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload" /></svg>Файл
+                                            </span>
+                                            <span class="file-pick-name" data-file-name>не выбран</span>
+                                        </label>
+
+                                        <button class="btn primary sm" type="submit">
+                                            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>@(task.NeedCheck ? "Сдать" : "Выполнено")
+                                        </button>
+
+                                        @if (task.NeedFile)
+                                        {
+                                            <span class="hint">Нужен файл</span>
+                                        }
+                                    </form>
+                                }
+                            </article>
+                        }
+
+                        @* ---------- Свои заметки ---------- *@
+                        @foreach (var card in column.Own)
+                        {
+                            var task = card.Task;
+
+                            var urgency = card.Urgency switch
+                            {
+                                Portal.Web.Services.Tasks.TaskUrgency.Now => " urgent-now",
+                                Portal.Web.Services.Tasks.TaskUrgency.Close => " urgent-close",
+                                Portal.Web.Services.Tasks.TaskUrgency.Soon => " urgent-soon",
+                                _ => ""
+                            };
+
+                            <article class="bcard@(task.IsDone ? " done" : "")@(card.Overdue ? " overdue" : "")@urgency">
+                                <div class="bcard-top">
+                                    @* Галочка — форма, а не кнопка с кодом: так она
+                                       работает и без JavaScript, а права проверяет
+                                       сервер, а не разметка. *@
                                     @if (card.Mine)
                                     {
-                                        @* Форма вынесена из разметки фишки: кнопка внутри
-                                           формы внутри формы — недопустимая разметка. *@
-                                        <form method="post" asp-page-handler="Unshare" asp-route-id="@task.Id"
-                                              asp-route-view="@Model.View" id="unshare-@task.Id-@share.Id" hidden>
-                                            <input type="hidden" name="login" value="@share.UserName" />
+                                        <form method="post" asp-page-handler="Done" asp-route-id="@task.Id"
+                                              asp-route-view="@Model.View" class="task-check-form">
+                                            <button class="task-check@(task.IsDone ? " on" : "")" type="submit"
+                                                    title="@(task.IsDone ? "Вернуть в работу" : "Отметить выполненной")">
+                                                <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
+                                            </button>
                                         </form>
                                     }
+                                    else
+                                    {
+                                        <span class="task-check@(task.IsDone ? " on" : "") locked" title="Чужая задача — отмечает её хозяин">
+                                            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
+                                        </span>
+                                    }
+
+                                    <b>@task.Title</b>
+                                </div>
+
+                                @if (!string.IsNullOrWhiteSpace(task.Notes))
+                                {
+                                    <p class="bcard-notes">@task.Notes</p>
                                 }
-                            </div>
+
+                                @if (task.DueOn is not null || !card.Mine)
+                                {
+                                    <div class="task-meta-row">
+                                        @if (task.DueOn is { } due)
+                                        {
+                                            <span class="t-when@(card.Overdue ? " late" : "")@urgency">
+                                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(due)
+                                            </span>
+                                        }
+
+                                        @if (!card.Mine)
+                                        {
+                                            @if (task.DueOn is not null)
+                                            {
+                                                <span class="t-dot-sep"></span>
+                                            }
+
+                                            <span class="t-from">@task.OwnerDisplayName</span>
+                                        }
+                                    </div>
+                                }
+
+                                @if (task.Shares.Count > 0)
+                                {
+                                    <div class="task-shared">
+                                        <span class="hint">Видят:</span>
+                                        @foreach (var share in task.Shares)
+                                        {
+                                            <span class="chip">
+                                                @share.DisplayName
+                                                @if (card.Mine)
+                                                {
+                                                    <button class="chip-x" type="submit" form="unshare-@task.Id-@share.Id"
+                                                            title="Убрать из списка">×</button>
+                                                }
+                                            </span>
+
+                                            @if (card.Mine)
+                                            {
+                                                @* Форма вынесена из разметки фишки: кнопка внутри
+                                                   формы внутри формы — недопустимая разметка. *@
+                                                <form method="post" asp-page-handler="Unshare" asp-route-id="@task.Id"
+                                                      asp-route-view="@Model.View" id="unshare-@task.Id-@share.Id" hidden>
+                                                    <input type="hidden" name="login" value="@share.UserName" />
+                                                </form>
+                                            }
+                                        }
+                                    </div>
+                                }
+
+                                @if (card.Mine)
+                                {
+                                    <footer class="bcard-foot bcard-tools">
+                                        <button class="icon-btn" type="button" title="Показать коллеге"
+                                                data-share-task="@task.Id" data-task-title="@task.Title">
+                                            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>
+                                        </button>
+
+                                        <form method="post" asp-page-handler="Delete" asp-route-id="@task.Id"
+                                              asp-route-view="@Model.View" class="head-form">
+                                            <button class="icon-btn del" type="submit" data-confirm-action
+                                                    data-confirm-text="Удалить задачу «@task.Title»? Восстановить её будет нельзя."
+                                                    data-confirm-ok="Удалить"
+                                                    title="Удалить">
+                                                <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash" /></svg>
+                                            </button>
+                                        </form>
+                                    </footer>
+                                }
+                            </article>
+                        }
+
+                        @if (column.Count == 0)
+                        {
+                            <p class="tcol-empty">пусто</p>
                         }
                     </div>
-
-                    @if (card.Mine)
-                    {
-                        <div class="task-tools">
-                            <button class="icon-btn" type="button" title="Показать коллеге"
-                                    data-share-task="@task.Id" data-task-title="@task.Title">
-                                <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>
-                            </button>
-
-                            <form method="post" asp-page-handler="Archive" asp-route-id="@task.Id"
-                                  asp-route-view="@Model.View" class="head-form">
-                                <button class="icon-btn" type="submit"
-                                        title="@(task.IsArchived ? "Вернуть из архива" : "Убрать в архив")">
-                                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="@(task.IsArchived ? "#i-restore" : "#i-archive")" /></svg>
-                                </button>
-                            </form>
-
-                            <form method="post" asp-page-handler="Delete" asp-route-id="@task.Id"
-                                  asp-route-view="@Model.View" class="head-form">
-                                <button class="icon-btn del" type="submit" data-confirm-action
-                                        data-confirm-text="Удалить задачу «@task.Title»? Восстановить её будет нельзя — если нужно просто убрать с глаз, отправьте её в архив."
-                                        data-confirm-ok="Удалить"
-                                        title="Удалить насовсем">
-                                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash" /></svg>
-                                </button>
-                            </form>
-                        </div>
-                    }
-                </div>
+                </section>
             }
         </div>
     }

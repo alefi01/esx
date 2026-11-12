@@ -53,7 +53,37 @@
             Остальные разделы портала работают.
         </div>
     }
-    else if (!Model.NothingToShow)
+    else
+    {
+        @* Заголовок ленты стоит всегда — и когда в ней пусто.
+
+           Раньше на пустой главной не было вообще ничего: человек видел
+           часы, поиск и белое поле под ними и не понимал, то ли портал
+           не догрузился, то ли показывать действительно нечего. Строка
+           «новых объявлений нет» отвечает на этот вопрос за него. *@
+        <div class="side-head feed-head">
+            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
+            Лента
+            @if (Model.UnreadCount > 0)
+            {
+                <span class="unread-count">@Model.UnreadCount</span>
+            }
+        </div>
+    }
+
+    @if (!Model.DatabaseUnavailable && Model.NothingToShow)
+    {
+        <div class="empty feed-empty">
+            <svg class="ic" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
+            <b>Новых объявлений нет</b>
+            <p>
+                Здесь появляется то, что повесили начальники отделов.
+                Прочитанное и старое лежит в папках отделов — в разделе
+                <a asp-page="/Files/Index">«Файлы»</a>.
+            </p>
+        </div>
+    }
+    else if (!Model.DatabaseUnavailable)
     {
         @* Два столбца: слева новое, справа закреплённое. Закреплённое
            справа и уже — это фон, а не новость: его читают один раз,
@@ -72,12 +102,6 @@
             @if (Model.Items.Count > 0)
             {
                 <div class="home-col-main">
-                    <div class="side-head">
-                        <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
-                        Новые объявления
-                        <span class="unread-count">@Model.UnreadCount</span>
-                    </div>
-
                     @foreach (var item in Model.Items)
                     {
                         @await Html.PartialAsync("_HomeCard", item)

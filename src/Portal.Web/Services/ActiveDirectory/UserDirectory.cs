@@ -301,37 +301,68 @@ public sealed class UserDirectory : IUserDirectory
             _ad.BaseDn, filter, SearchScope.Subtree,
             "sAMAccountName", "displayName", "cn", "userAccountControl");
 
-        var response = (SearchResponse)connection.SendRequest(request);
+        // ---------- Выборка по страницам ----------
+        //
+        // БЕЗ ЭТОГО КАТАЛОГ ОТДАЁТ НЕ ВСЕХ. Active Directory возвращает
+        // за один запрос не больше MaxPageSize записей — по умолчанию
+        // тысячу — и молча обрывает остальное: ни ошибки, ни признака
+        // в ответе. В небольшой организации этого не видно, а в крупной
+        // половина сотрудников просто не находится в поиске, и выглядит
+        // это как «портал их не знает».
+        //
+        // Поэтому спрашиваем страницами и склеиваем ответы, пока каталог
+        // не скажет, что всё.
+        var paging = new PageResultRequestControl(500);
+
+        request.Controls.Add(paging);
+
         var result = new List<DirectoryUser>();
 
-        foreach (SearchResultEntry entry in response.Entries)
+        while (true)
         {
-            var login = First(entry, "sAMAccountName");
+            var response = (SearchResponse)connection.SendRequest(request);
 
-            if (string.IsNullOrWhiteSpace(login))
+            foreach (SearchResultEntry entry in response.Entries)
             {
-                continue;
+                var login = First(entry, "sAMAccountName");
+
+                if (string.IsNullOrWhiteSpace(login))
+                {
+                    continue;
+                }
+
+                // Отключённые учётные записи пропускаем: писать уволенному
+                // сотруднику незачем. Второй бит признака как раз означает
+                // «учётная запись отключена».
+                var flags = First(entry, "userAccountControl");
+
+                if (int.TryParse(flags, out var value) && (value & 0x0002) != 0)
+                {
+                    continue;
+                }
+
+                var name = First(entry, "displayName");
+
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    name = First(entry, "cn");
+                }
+
+                result.Add(new DirectoryUser(
+                    login, string.IsNullOrWhiteSpace(name) ? login : name));
             }
 
-            // Отключённые учётные записи пропускаем: писать уволенному
-            // сотруднику незачем. Второй бит признака как раз означает
-            // «учётная запись отключена».
-            var flags = First(entry, "userAccountControl");
+            var answer = response.Controls
+                .OfType<PageResultResponseControl>()
+                .FirstOrDefault();
 
-            if (int.TryParse(flags, out var value) && (value & 0x0002) != 0)
+            // Пустая закладка — страниц больше нет.
+            if (answer is null || answer.Cookie.Length == 0)
             {
-                continue;
+                break;
             }
 
-            var name = First(entry, "displayName");
-
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                name = First(entry, "cn");
-            }
-
-            result.Add(new DirectoryUser(
-                login, string.IsNullOrWhiteSpace(name) ? login : name));
+            paging.Cookie = answer.Cookie;
         }
 
         _logger.LogInformation(

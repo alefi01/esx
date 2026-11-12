@@ -69,7 +69,7 @@ public class AssignedModel : PageModel
 
     private string DisplayName => User.FindFirstValue(ClaimTypes.GivenName) ?? UserName;
 
-    /// <summary>Какой список: active — в работе и на проверке, done — закрытые.</summary>
+    /// <summary>Какой список: active — в работе и на проверке, done — выполненные.</summary>
     [BindProperty(SupportsGet = true, Name = "view")]
     public string? View { get; set; }
 
@@ -208,12 +208,28 @@ public class AssignedModel : PageModel
         MineAttention = await _assigned.NeedsAttentionCountAsync(UserName, cancellationToken) + overdueOwn;
     }
 
-    /// <summary>Поиск сотрудников для выбора исполнителя — тот же, что в переписке.</summary>
+    /// <summary>
+    /// Поиск сотрудников для выбора исполнителя.
+    ///
+    /// Берём с запасом — двести человек, — и сообщаем, если нашлось
+    /// ещё больше. Раньше бралось пятьдесят, и в организации на двести
+    /// человек половина в подсказке просто не появлялась: выглядело
+    /// это как «портал их не знает», хотя он знал.
+    /// </summary>
     public async Task<IActionResult> OnGetPeopleAsync(string? q, CancellationToken cancellationToken)
     {
-        var people = await _directory.SearchAsync(q, "", 50, cancellationToken);
+        const int limit = 200;
 
-        return new JsonResult(people.Select(p => new { userName = p.UserName, displayName = p.DisplayName }));
+        var people = await _directory.SearchAsync(q, "", limit + 1, cancellationToken);
+
+        var more = people.Count > limit;
+
+        return new JsonResult(new
+        {
+            more,
+            people = people.Take(limit)
+                .Select(p => new { userName = p.UserName, displayName = p.DisplayName })
+        });
     }
 
     public async Task<IActionResult> OnPostCreateAsync(

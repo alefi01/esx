@@ -29,6 +29,7 @@ public class LoginModel : PageModel
     private readonly LoginThrottle _throttle;
     private readonly ActiveDirectoryOptions _adOptions;
     private readonly NotificationService _notifications;
+    private readonly PresenceService _presence;
     private readonly ILogger<LoginModel> _logger;
 
     public LoginModel(
@@ -37,6 +38,7 @@ public class LoginModel : PageModel
         LoginThrottle throttle,
         IOptions<ActiveDirectoryOptions> adOptions,
         NotificationService notifications,
+        PresenceService presence,
         ILogger<LoginModel> logger)
     {
         _authentication = authentication;
@@ -44,6 +46,7 @@ public class LoginModel : PageModel
         _throttle = throttle;
         _adOptions = adOptions.Value;
         _notifications = notifications;
+        _presence = presence;
         _logger = logger;
     }
 
@@ -182,6 +185,19 @@ public class LoginModel : PageModel
         }
 
         _throttle.RegisterSuccess(throttleKey);
+
+        // На сменном компьютере вход одного человека означает уход
+        // другого: предыдущая учётная запись здесь больше не работает,
+        // и держать её «в сети» нельзя. Про выход через кнопку портал
+        // узнаёт сам, а вот когда просто входят под другой учёткой —
+        // только отсюда.
+        var before = User.Identity?.Name;
+
+        if (!string.IsNullOrEmpty(before)
+            && !string.Equals(before, user.SamAccountName, StringComparison.OrdinalIgnoreCase))
+        {
+            await _presence.MarkOfflineAsync(before, cancellationToken);
+        }
 
         await SignInAsync(user, office, result.DomainController);
 

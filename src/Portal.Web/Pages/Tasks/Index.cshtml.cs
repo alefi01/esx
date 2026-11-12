@@ -60,11 +60,66 @@ public class IndexModel : PageModel
 
     private string UserName => User.Identity?.Name ?? "";
 
-    /// <summary>Какой список показываем: active, done, archive.</summary>
+    /// <summary>Какой список показываем: active или done.</summary>
+    /// <remarks>
+    /// Архива больше нет. Он был третьим списком, куда убирали «с глаз»,
+    /// и этим ничем не отличался от выполненного: открывали его почти
+    /// никогда, а объяснять разницу между «выполнено» и «в архиве»
+    /// приходилось каждому. Убранное раньше в архив лежит теперь
+    /// в «Выполненных» — ничего не потерялось.
+    /// </remarks>
     [BindProperty(SupportsGet = true, Name = "view")]
     public string? View { get; set; }
 
-    public string ViewMode => View is "done" or "archive" ? View : "active";
+    public string ViewMode => View == "done" ? "done" : "active";
+
+    /// <summary>Столбец доски: заголовок, признак для цвета и карточки.</summary>
+    /// <param name="Head">Задачи от начальника.</param>
+    /// <param name="Own">Свои заметки.</param>
+    public sealed record Column(
+        string Title, string Key,
+        IReadOnlyList<AssignedCard> Head,
+        IReadOnlyList<TaskCard> Own)
+    {
+        public int Count => Head.Count + Own.Count;
+    }
+
+    /// <summary>
+    /// Столбцы доски.
+    ///
+    /// Разложены не по видам задач, а по тому, что человеку с ними
+    /// делать: горит — делать сейчас; в работе — делать на днях; сдано —
+    /// от него больше ничего не нужно, ждёт начальника.
+    ///
+    /// Поэтому в одном столбце лежат и задачи от начальника, и свои
+    /// заметки: для того, кто их делает, это один список дел, а не два.
+    /// </summary>
+    public IReadOnlyList<Column> Columns => ViewMode == "done"
+        ?
+        [
+            new("Принято", "accepted",
+                FromHead.Where(c => c.Instance.State is Portal.Web.Data.TaskState.Accepted
+                                        or Portal.Web.Data.TaskState.Done).ToList(),
+                Items),
+            new("Не сдано", "missed",
+                FromHead.Where(c => c.Instance.State is Portal.Web.Data.TaskState.Missed
+                                        or Portal.Web.Data.TaskState.Cancelled).ToList(),
+                [])
+        ]
+        :
+        [
+            new("Горит", "late",
+                FromHead.Where(c => c.Overdue && c.Instance.State != Portal.Web.Data.TaskState.Submitted).ToList(),
+                Items.Where(c => c.Overdue).ToList()),
+
+            new("В работе", "open",
+                FromHead.Where(c => !c.Overdue && c.Instance.State != Portal.Web.Data.TaskState.Submitted).ToList(),
+                Items.Where(c => !c.Overdue).ToList()),
+
+            new("Сдано на проверку", "submitted",
+                FromHead.Where(c => c.Instance.State == Portal.Web.Data.TaskState.Submitted).ToList(),
+                [])
+        ];
 
     public IReadOnlyList<TaskCard> Items { get; private set; } = [];
 
@@ -125,11 +180,8 @@ public class IndexModel : PageModel
         Items = await _tasks.ListAsync(UserName, ViewMode, cancellationToken);
         ActiveCount = await _tasks.ActiveCountAsync(UserName, cancellationToken);
 
-        // В архиве задач от начальника нет: архив — это про свои заметки,
-        // а поручение убирает с глаз тот, кто его поставил.
-        FromHead = ViewMode == "archive"
-            ? []
-            : await _assigned.ForAssigneeAsync(UserName, closed: ViewMode == "done", cancellationToken);
+        FromHead = await _assigned.ForAssigneeAsync(
+            UserName, closed: ViewMode == "done", cancellationToken);
 
         HeadCount = await _assigned.NeedsAttentionCountAsync(UserName, cancellationToken);
 

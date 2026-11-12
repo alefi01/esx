@@ -35,8 +35,19 @@ public sealed record Presence(bool Online, DateTime? LastActiveAt, bool SignedOu
 /// </summary>
 public sealed class PresenceService
 {
-    /// <summary>Сколько человек считается «в сети» после последнего действия.</summary>
-    public static readonly TimeSpan OnlineFor = TimeSpan.FromMinutes(5);
+    /// <summary>
+    /// Сколько человек считается «в сети» после последнего действия.
+    ///
+    /// Две минуты, а не пять. Пока портал открыт, страница сама
+    /// спрашивает сервер каждые несколько секунд, поэтому отметка
+    /// у работающего человека свежая всегда. А вот закрытая вкладка
+    /// или ушедший с машины человек должны переставать числиться
+    /// в сети быстро: пять минут «в сети» после ухода — это пять минут,
+    /// в течение которых коллега ждёт мгновенного ответа и не получает
+    /// его. Особенно заметно на сменном компьютере, где за одним столом
+    /// работают по очереди.
+    /// </summary>
+    public static readonly TimeSpan OnlineFor = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// Сколько после этого человек считается «нет на месте».
@@ -81,8 +92,14 @@ public sealed class PresenceService
         _ => "не в сети"
     };
 
-    /// <summary>Как часто отметка доходит до базы.</summary>
-    private static readonly TimeSpan WriteEvery = TimeSpan.FromMinutes(1);
+    /// <summary>
+    /// Как часто отметка доходит до базы.
+    ///
+    /// Реже, чем длится «в сети», но заметно реже и чем опрос страницы:
+    /// писать на каждый запрос — это запись на каждую картинку
+    /// и каждый переход.
+    /// </summary>
+    private static readonly TimeSpan WriteEvery = TimeSpan.FromSeconds(40);
 
     private readonly PortalDbContext _db;
     private readonly IMemoryCache _cache;

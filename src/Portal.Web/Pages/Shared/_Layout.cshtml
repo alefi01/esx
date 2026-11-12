@@ -15,6 +15,9 @@
     var adminGroup = AdOptions.Value.AdminGroup;
     var isAdmin = User.IsInRole(adminGroup);
 
+    // Начальник отдела — член группы ActiveDirectory:HeadGroup.
+    var isHead = User.IsInRole(AdOptions.Value.HeadGroup);
+
     var signedIn = User.Identity?.IsAuthenticated == true;
 
     // Занятое место для карточки внизу меню. Считается только для
@@ -99,17 +102,16 @@
         <svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-menu" /></svg>
     </button>
 
+    @* Нарисованного значка в шапке нет: квадратик со зданием ничего
+       не сообщал и спорил с названием. Если у организации есть
+       настоящий логотип, он показывается — его и укажите
+       в Branding:LogoFile. *@
     <a class="brand" asp-page="/Index">
-        <div class="brand-logo">
-            @if (string.IsNullOrWhiteSpace(brand.LogoFile))
-            {
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-@brand.LogoIcon" /></svg>
-            }
-            else
-            {
-                <img src="@brand.LogoFile" alt="" />
-            }
-        </div>
+        @if (!string.IsNullOrWhiteSpace(brand.LogoFile))
+        {
+            <div class="brand-logo"><img src="@brand.LogoFile" alt="" /></div>
+        }
+
         <div>@brand.Title<small>@brand.Subtitle</small></div>
     </a>
   </div>
@@ -223,7 +225,11 @@
                 </div>
                 <div class="u-meta">
                     <b>@displayName</b>
-                    <span>@(isAdmin ? "Администратор" : "Пользователь")</span>
+                    @* Подпись под именем — роль в портале, а не «пользователь»
+                       для всех подряд. Начальник отдела видит здесь
+                       «Руководитель»: он заходит ставить задачи и вешать
+                       объявления, и подпись должна это подтверждать. *@
+                    <span>@(isAdmin ? "Администратор" : isHead ? "Руководитель" : "Пользователь")</span>
                 </div>
             </div>
 

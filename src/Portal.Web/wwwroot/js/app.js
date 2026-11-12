@@ -1009,9 +1009,22 @@
                         // к объявлению или к переписке. Всё непрочитанное
                         // при этом отмечается прочитанным, иначе счётчик
                         // на колокольчике висел бы до отдельного нажатия.
+                        // Что это — сообщение или объявление — написано
+                        // словом, а не только значком. По одному значку
+                        // люди не отличают: оба синие, оба круглые,
+                        // а понять, звонит колокольчик по переписке
+                        // или по объявлению, надо с одного взгляда.
+                        const word = kind === 'message' ? 'Сообщение' : 'Объявление';
+
+                        // У сообщения в заголовке стоит имя собеседника
+                        // (или название группы), у объявления — его
+                        // название. Вторая строка — первые слова текста,
+                        // если они есть.
                         return `<a class="notif" href="${esc(n.url)}" data-seen>` +
                             `<div class="n-ic n-ic--${kind}">${ic(NOTIF_ICON[kind], 17)}</div>` +
-                            `<p><b>${esc(n.title)}</b>` +
+                            `<p><span class="n-kind n-kind--${kind}">${word}</span>` +
+                            `<b>${esc(n.title)}</b>` +
+                            (n.preview ? `<span class="n-prev">${esc(n.preview)}</span>` : '') +
                             `<time>${esc(n.author)} · ${esc(relTime(n.at))}</time></p>` +
                             '<div class="ndot"></div></a>';
                     }).join('')
@@ -2640,6 +2653,15 @@
             const apply = mode => {
                 const list = mode === 'list';
 
+                // Признак на <html> ставит ещё theme.js — до первой
+                // отрисовки, чтобы не мелькала плитка. Здесь он
+                // поддерживается в согласии с переключателем.
+                if (list) {
+                    document.documentElement.setAttribute('data-file-view', 'list');
+                } else {
+                    document.documentElement.removeAttribute('data-file-view');
+                }
+
                 $$('.fgrid', container).forEach(x => { x.hidden = list; });
                 $$('.flist', container).forEach(x => { x.hidden = !list; });
 
@@ -3891,9 +3913,7 @@
                     fn: () => submit(
                         '/Messages?handler=Pin&id=' + id + '&on=' + (pinned ? 'false' : 'true'),
                         { current: conversationId || '' })
-                },
-
-                { icon: 'share', label: 'Скопировать ссылку', fn: () => copyText(location.origin + '/Messages?id=' + id, 'Ссылка на переписку скопирована') }
+                }
             ];
 
             entries.push({ sep: 1 });
@@ -4522,7 +4542,7 @@
 
             const hide = () => { suggest.hidden = true; };
 
-            const show = people => {
+            const show = (people, more) => {
                 suggest.innerHTML = '';
 
                 if (people.length === 0) {
@@ -4550,6 +4570,14 @@
                     suggest.appendChild(row);
                 });
 
+                // Людей больше, чем влезло: молчать об этом нельзя —
+                // человек решит, что нужного сотрудника в портале нет.
+                if (more) {
+                    suggest.appendChild(el(
+                        '<p class="hint pick-none">Показаны первые ' + people.length +
+                        '. Введите фамилию, чтобы найти нужного.</p>'));
+                }
+
                 suggest.hidden = false;
             };
 
@@ -4565,7 +4593,7 @@
                     headers: { 'X-Requested-With': 'XMLHttpRequest' }
                 })
                     .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
-                    .then(show)
+                    .then(answer => show(answer.people || [], answer.more))
                     .catch(() => hide());
             };
 
