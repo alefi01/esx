@@ -104,6 +104,42 @@ public sealed class TaskService
     }
 
     /// <summary>
+    /// Поправить свою заметку: название, подробности, срок.
+    ///
+    /// Отметка «изменено» ставится так же, как в переписке: задачу
+    /// могли показать коллеге, и тот должен видеть, что текст с тех
+    /// пор менялся.
+    /// </summary>
+    public async Task<bool> EditAsync(
+        int id,
+        string userName,
+        string title,
+        string? notes,
+        DateTime? dueOn,
+        CancellationToken cancellationToken)
+    {
+        var task = await _db.Tasks.AsTracking()
+            .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
+
+        // Правит только хозяин: тот, кому задачу показали, видит её,
+        // но менять чужой текст не может.
+        if (task is null
+            || !string.Equals(task.OwnerUserName, userName, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        task.Title = title.Trim();
+        task.Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+        task.DueOn = dueOn;
+        task.EditedAt = _time.GetUtcNow().UtcDateTime;
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return true;
+    }
+
+    /// <summary>
     /// Насколько горит задача.
     ///
     /// Выполненная не горит никогда, даже если срок давно прошёл: она

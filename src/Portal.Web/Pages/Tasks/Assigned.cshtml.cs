@@ -67,6 +67,9 @@ public class AssignedModel : PageModel
 
     private string UserName => User.Identity?.Name ?? "";
 
+    /// <summary>Кто смотрит. Разметке нужно отличить автора: править задачу может только он.</summary>
+    public string Me => UserName;
+
     private string DisplayName => User.FindFirstValue(ClaimTypes.GivenName) ?? UserName;
 
     /// <summary>Какой список: active — в работе и на проверке, done — выполненные.</summary>
@@ -154,8 +157,22 @@ public class AssignedModel : PageModel
 
     public class NewAssignedTask
     {
+        /// <summary>
+        /// Кому поставлена: логины через запятую.
+        ///
+        /// Одним полем, а не списком: исполнителей выбирают подсказкой
+        /// в поле, и собирать их в скрытую строку проще всего там же.
+        /// Разбираем её на сервере — он всё равно проверяет каждого
+        /// заново.
+        /// </summary>
         [Required(ErrorMessage = "Выберите, кому поставить задачу")]
         public string Assignee { get; set; } = "";
+
+        /// <summary>
+        /// Кому из исполнителей поручен контроль. Пусто — никому,
+        /// принимает сам автор.
+        /// </summary>
+        public string? Controller { get; set; }
 
         [Required(ErrorMessage = "Напишите, что нужно сделать")]
         [MaxLength(300, ErrorMessage = "Название не длиннее 300 символов")]
@@ -242,15 +259,45 @@ public class AssignedModel : PageModel
             return Page();
         }
 
-        var login = Input.Assignee.Trim();
+        // Логины приходят строкой через запятую: так их собирает
+        // подсказка в поле. Повторы убираем — иначе человеку заведётся
+        // два экземпляра одной задачи.
+        var logins = Input.Assignee
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
-        if (!await _directory.ExistsAsync(login, cancellationToken))
+        if (logins.Count == 0)
         {
-            ErrorMessage = "Такого сотрудника нет в списке доступа к порталу.";
+            ErrorMessage = "Выберите, кому поставить задачу.";
 
             await LoadAsync(cancellationToken);
 
             return Page();
+        }
+
+        var people = new List<AssignedTaskAssignee>();
+
+        foreach (var login in logins)
+        {
+            if (!await _directory.ExistsAsync(login, cancellationToken))
+            {
+                ErrorMessage = $"Сотрудника «{login}» нет в списке доступа к порталу.";
+
+                await LoadAsync(cancellationToken);
+
+                return Page();
+            }
+
+            people.Add(new AssignedTaskAssignee
+            {
+                UserName = login,
+                DisplayName = await _directory.DisplayNameAsync(login, cancellationToken),
+
+                // Контроль — одному из исполнителей, и только если
+                // его выбрали среди них.
+                IsController = string.Equals(login, Input.Controller, StringComparison.OrdinalIgnoreCase)
+            });
         }
 
         var mask = 0;
@@ -279,8 +326,7 @@ public class AssignedModel : PageModel
         {
             AuthorUserName = UserName,
             AuthorDisplayName = DisplayName,
-            AssigneeUserName = login,
-            AssigneeDisplayName = await _directory.DisplayNameAsync(login, cancellationToken),
+            Assignees = people,
             Title = Input.Title.Trim(),
             Notes = string.IsNullOrWhiteSpace(Input.Notes) ? null : Input.Notes.Trim(),
             Repeat = Input.Repeat,
@@ -297,13 +343,82 @@ public class AssignedModel : PageModel
 
         var problems = await AttachAsync(task, attachments, cancellationToken);
 
-        // Будим страницу исполнителя: ему поставили задачу, и узнать
-        // об этом он должен сейчас, а не при следующем заходе.
-        _hub.Notify([login]);
+        // Будим страницы исполнителей: им поставили задачу, и узнать
+        // об этом они должны сейчас, а не при следующем заходе.
+        _hub.Notify(people.Select(p => p.UserName).ToList());
+
+        var who = people.Count == 1
+            ? people[0].DisplayName
+            : $"{people.Count} " + Portal.Web.Pages.Shared.Plural.Of(
+                people.Count, "исполнителю", "исполнителям", "исполнителям");
 
         StatusMessage = problems.Count > 0
             ? "Задача поставлена, но не приложены: " + string.Join("; ", problems)
-            : $"Задача поставлена: {task.AssigneeDisplayName}.";
+            : $"Задача поставлена: {who}.";
+
+        return RedirectToPage(new { view = View, sort = Sort });
+    }
+
+    /// <summary>
+    /// Поправить поставленную задачу.
+    ///
+    /// Условия меняются: перенесли совещание, уточнили, что приложить.
+    /// Раньше задачу приходилось снимать и ставить заново — вместе
+    /// с ней терялась вся история сдачи.
+    ///
+    /// Исполнителей правка не трогает: сменить исполнителя посреди
+    /// работы — это другая задача, и путать её с уточнением условий
+    /// не стоит.
+    /// </summary>
+    public async Task<IActionResult> OnPostEditAsync(
+        int taskId,
+        string title,
+        string? notes,
+        DateTime? dueOn,
+        TimeOnly? dueTime,
+        bool needFile,
+        bool needCheck,
+        bool important,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            ErrorMessage = "Название задачи не может быть пустым.";
+
+            return RedirectToPage(new { view = View, sort = Sort });
+        }
+
+        var changed = await _assigned.EditAsync(
+            taskId,
+            UserName,
+            title,
+            notes,
+            dueOn,
+            dueTime is { } time ? time.Hour * 60 + time.Minute : null,
+            needFile,
+            needCheck,
+            important,
+            cancellationToken);
+
+        if (!changed)
+        {
+            ErrorMessage = "Изменить задачу может только тот, кто её поставил.";
+
+            return RedirectToPage(new { view = View, sort = Sort });
+        }
+
+        // Будим исполнителей: условия поменялись, и узнать об этом
+        // они должны сейчас, а не когда сдадут по-старому.
+        var task = await _assigned.TaskAsync(taskId, cancellationToken);
+
+        if (task is not null)
+        {
+            _hub.Notify(task.Assignees.Count > 0
+                ? task.Assignees.Select(a => a.UserName).ToList()
+                : [task.AssigneeUserName]);
+        }
+
+        StatusMessage = "Задача изменена.";
 
         return RedirectToPage(new { view = View, sort = Sort });
     }

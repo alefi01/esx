@@ -55,6 +55,14 @@ public class UserTask
     /// <summary>Когда отметили выполненной. null — ещё в работе.</summary>
     public DateTime? CompletedAt { get; set; }
 
+    /// <summary>
+    /// Когда заметку правили. null — не правили.
+    ///
+    /// Нужна она даже в своей заметке: чужую задачу могли показать
+    /// коллеге, и тот должен видеть, что текст с тех пор менялся.
+    /// </summary>
+    public DateTime? EditedAt { get; set; }
+
     /// <summary>Когда убрали в архив. null — задача на виду.</summary>
     public DateTime? ArchivedAt { get; set; }
 

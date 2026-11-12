@@ -2340,3 +2340,75 @@ html.lite select{
 html.lite .home-top,
 html.lite .view,
 html.lite .main{background-image:none !important}
+
+/* ---------- Исполнители задачи ----------
+
+   Выбранные стоят плашками над полем поиска: одну задачу часто
+   ставят нескольким, и список имён строкой быстро перестаёт
+   читаться — не видно, кого уже выбрали и кого можно убрать. */
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.chips:empty { margin-bottom: 0; }
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px 4px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface-3);
+    font-size: 13px;
+}
+
+.chip-name { white-space: nowrap; }
+
+/* «Контроль» — неяркая подпись, а не кнопка-акцент: это пометка
+   на одном из исполнителей, а не главное действие формы. */
+.chip-ctrl,
+.chip-x {
+    border: 0;
+    background: none;
+    padding: 0 4px;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 6px;
+}
+
+.chip-ctrl:hover,
+.chip-x:hover { color: var(--text); background: var(--surface-3); }
+
+.chip-x { font-size: 15px; line-height: 1; }
+
+.chip--ctrl { border-color: var(--accent); }
+
+.chip--ctrl .chip-ctrl {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+/* Кто принимает работу — видно прямо на карточке: иначе исполнитель
+   сдаёт «начальнику», а ждёт его коллега. */
+.t-ctrl {
+    font-size: 11px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 1px 7px;
+}
+
+/* Отметка правки — как в переписке: исполнитель мог прочитать задачу
+   вчера и делать по тому, что прочитал. */
+.bcard-edited,
+.t-edited {
+    margin: 2px 0 0;
+    font-size: 11px;
+    color: var(--muted);
+}

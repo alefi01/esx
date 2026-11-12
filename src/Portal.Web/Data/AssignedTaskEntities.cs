@@ -75,6 +75,44 @@ public enum TaskState
 /// период. Без такого разделения повторяющаяся задача либо затирает
 /// собственную историю, либо превращается в сотню копий.
 /// </summary>
+/// <summary>
+/// Исполнитель задачи.
+///
+/// ПОЧЕМУ ОТДЕЛЬНОЙ ТАБЛИЦЕЙ
+///
+/// Одно и то же поручение часто адресуют нескольким: «сдать отчёты
+/// до пятницы» касается всего отдела. Раньше начальнику приходилось
+/// заводить пять одинаковых задач и потом принимать их по одной,
+/// не помня, какая чья.
+///
+/// Каждому исполнителю заводится СВОЙ экземпляр — свой срок сдачи,
+/// свои файлы, своё состояние. Иначе сдача одного закрывала бы задачу
+/// для всех.
+/// </summary>
+public class AssignedTaskAssignee
+{
+    public int Id { get; set; }
+
+    public int TaskId { get; set; }
+    public AssignedTask? Task { get; set; }
+
+    [MaxLength(256)]
+    public string UserName { get; set; } = "";
+
+    [MaxLength(256)]
+    public string DisplayName { get; set; } = "";
+
+    /// <summary>
+    /// Этому исполнителю поручен контроль.
+    ///
+    /// Контролёр принимает и возвращает работу наравне с автором —
+    /// и чужую, и свою. Нужно это там, где начальник ставит задачу
+    /// отделу, а следит за ней старший: без такой пометки принимать
+    /// пришлось бы самому начальнику, и задача повисала бы на нём.
+    /// </summary>
+    public bool IsController { get; set; }
+}
+
 public class AssignedTask
 {
     public int Id { get; set; }
@@ -86,12 +124,30 @@ public class AssignedTask
     [MaxLength(256)]
     public string AuthorDisplayName { get; set; } = "";
 
-    /// <summary>Кому поставлена.</summary>
+    /// <summary>
+    /// Кому поставлена — основной исполнитель.
+    ///
+    /// Остаётся ради совместимости со старыми задачами и ради простых
+    /// случаев «одному человеку». Полный список — в Assignees, и когда
+    /// исполнителей несколько, читать нужно его.
+    /// </summary>
     [MaxLength(256)]
     public string AssigneeUserName { get; set; } = "";
 
     [MaxLength(256)]
     public string AssigneeDisplayName { get; set; } = "";
+
+    /// <summary>Все исполнители задачи. У каждого свой экземпляр.</summary>
+    public List<AssignedTaskAssignee> Assignees { get; set; } = [];
+
+    /// <summary>
+    /// Когда задачу правили в последний раз. null — не правили.
+    ///
+    /// Показывается так же, как в переписке: «изменено» и время.
+    /// Исполнитель должен видеть, что условия поменялись, — иначе
+    /// он сделает по тому, что прочитал вчера.
+    /// </summary>
+    public DateTime? EditedAt { get; set; }
 
     [Required(ErrorMessage = "Напишите, что нужно сделать")]
     [MaxLength(300, ErrorMessage = "Название не длиннее 300 символов")]
@@ -163,6 +219,21 @@ public class AssignedTaskInstance
 
     public int TaskId { get; set; }
     public AssignedTask? Task { get; set; }
+
+    /// <summary>
+    /// Чей это экземпляр. У задачи с несколькими исполнителями
+    /// экземпляр заводится каждому: свои файлы, своё состояние,
+    /// своя сдача.
+    ///
+    /// У задач, заведённых до появления нескольких исполнителей,
+    /// поле заполнено исполнителем самой задачи — его проставила
+    /// миграция.
+    /// </summary>
+    [MaxLength(256)]
+    public string AssigneeUserName { get; set; } = "";
+
+    [MaxLength(256)]
+    public string AssigneeDisplayName { get; set; } = "";
 
     /// <summary>
     /// Срок. Хранится моментом времени в UTC: у задачи может быть время

@@ -169,6 +169,9 @@ namespace Portal.Web.Data.Migrations
                     b.Property<int?>("DueMinutes")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("EditedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("Important")
                         .HasColumnType("boolean");
 
@@ -209,6 +212,40 @@ namespace Portal.Web.Data.Migrations
                     b.HasIndex("AuthorUserName");
 
                     b.ToTable("AssignedTasks");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.AssignedTaskAssignee", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<bool>("IsController")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("TaskId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserName");
+
+                    b.HasIndex("TaskId", "UserName")
+                        .IsUnique();
+
+                    b.ToTable("AssignedTaskAssignees");
                 });
 
             modelBuilder.Entity("Portal.Web.Data.AssignedTaskFile", b =>
@@ -271,6 +308,16 @@ namespace Portal.Web.Data.Migrations
                     b.Property<bool>("Alerted")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("AssigneeDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("AssigneeUserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
                     b.Property<DateTime?>("ClosedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -300,6 +347,8 @@ namespace Portal.Web.Data.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AssigneeUserName");
 
                     b.HasIndex("DueAt");
 
@@ -1155,6 +1204,9 @@ namespace Portal.Web.Data.Migrations
                     b.Property<DateTime?>("DueOn")
                         .HasColumnType("date");
 
+                    b.Property<DateTime?>("EditedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
@@ -1233,6 +1285,17 @@ namespace Portal.Web.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Announcement");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.AssignedTaskAssignee", b =>
+                {
+                    b.HasOne("Portal.Web.Data.AssignedTask", "Task")
+                        .WithMany("Assignees")
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Task");
                 });
 
             modelBuilder.Entity("Portal.Web.Data.AssignedTaskFile", b =>
@@ -1396,6 +1459,8 @@ namespace Portal.Web.Data.Migrations
 
             modelBuilder.Entity("Portal.Web.Data.AssignedTask", b =>
                 {
+                    b.Navigation("Assignees");
+
                     b.Navigation("Files");
 
                     b.Navigation("Instances");

@@ -219,6 +219,35 @@ public class IndexModel : PageModel
             : 0;
     }
 
+    /// <summary>
+    /// Поправить свою заметку.
+    ///
+    /// Правит только хозяин: тот, кому задачу показали, видит её,
+    /// но менять чужой текст не может — иначе «показать коллеге»
+    /// означало бы «отдать».
+    /// </summary>
+    public async Task<IActionResult> OnPostEditAsync(
+        int id, string title, string? notes, DateTime? dueOn, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            ErrorMessage = "Название задачи не может быть пустым.";
+
+            return RedirectToPage(new { scope = Scope, view = View });
+        }
+
+        if (!await _tasks.EditAsync(id, UserName, title, notes, dueOn, cancellationToken))
+        {
+            ErrorMessage = "Изменить можно только свою задачу.";
+        }
+        else
+        {
+            StatusMessage = "Задача изменена.";
+        }
+
+        return RedirectToPage(new { scope = Scope, view = View });
+    }
+
     // ==================================================================
     // Задачи от начальника
     // ==================================================================

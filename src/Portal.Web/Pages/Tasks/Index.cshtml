@@ -316,9 +316,25 @@
                                     </div>
                                 }
 
+                                @if (task.EditedAt is { } edited)
+                                {
+                                    @* То же, что в переписке: задачу могли
+                                       показать коллеге, и тот должен видеть,
+                                       что текст с тех пор менялся. *@
+                                    <p class="t-edited">отредактировано @edited.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</p>
+                                }
+
                                 @if (card.Mine)
                                 {
                                     <footer class="bcard-foot bcard-tools">
+                                        <button class="icon-btn" type="button" title="Изменить"
+                                                data-edit-own="@task.Id"
+                                                data-title="@task.Title"
+                                                data-notes="@task.Notes"
+                                                data-due="@(task.DueOn?.ToString("yyyy-MM-dd"))">
+                                            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-edit" /></svg>
+                                        </button>
+
                                         <button class="icon-btn" type="button" title="Показать коллеге"
                                                 data-share-task="@task.Id" data-task-title="@task.Title">
                                             <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>
@@ -355,6 +371,39 @@
             }
         </div>
     }
+
+    @* ---------- Правка своей задачи ----------
+
+       Форма одна на страницу: правят по одной задаче за раз, а по
+       одной форме на карточку — это сотня наборов полей в разметке
+       на каждую загрузку. *@
+    <div id="editOwnHolder" hidden>
+        <form method="post" asp-page-handler="Edit" id="editOwnForm" class="assigned-form">
+            <input type="hidden" name="id" id="editOwnId" />
+            <input type="hidden" name="scope" value="@Model.Scope" />
+            <input type="hidden" name="view" value="@Model.View" />
+
+            <div class="field">
+                <label for="editOwnTitle">Что нужно сделать</label>
+                <input type="text" name="title" id="editOwnTitle" maxlength="300" autocomplete="off" required />
+            </div>
+
+            <div class="field">
+                <label for="editOwnNotes">Подробности</label>
+                <textarea name="notes" id="editOwnNotes" rows="2" maxlength="4000"></textarea>
+            </div>
+
+            <div class="field">
+                <label for="editOwnDue">Срок</label>
+                <input type="date" name="dueOn" id="editOwnDue" />
+            </div>
+
+            <div class="form-actions">
+                <button class="btn primary" type="submit">Сохранить</button>
+                <button class="btn" type="button" id="cancelEditOwn">Отмена</button>
+            </div>
+        </form>
+    </div>
 
     @* Скрытая форма для окна «показать коллеге»: из неё код страницы
        берёт antiforgery-токен. *@

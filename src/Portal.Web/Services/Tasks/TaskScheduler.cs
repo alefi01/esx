@@ -103,7 +103,9 @@ public sealed class TaskSchedulerService : BackgroundService
         // Разбирать здесь, кому что показать, незачем — это та же
         // проверка, только дважды.
         var people = reminders
-            .Select(instance => instance.Task!.AssigneeUserName)
+            .Select(instance => instance.AssigneeUserName.Length > 0
+                ? instance.AssigneeUserName
+                : instance.Task!.AssigneeUserName)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 

@@ -88,6 +88,12 @@
                        сама теперь живёт в окне, а второе окно закрывает
                        первое — вместе с набранным текстом. Подсказка
                        в поле короче на два нажатия и ничего не закрывает. *@
+                    @* Выбранные стоят плашками над полем: одну задачу
+                       часто ставят нескольким, и список имён строкой
+                       быстро перестаёт читаться — не видно, кого уже
+                       выбрали и кого можно убрать. *@
+                    <div class="chips" id="assigneeChips"></div>
+
                     <div class="pick" data-pick>
                         <input type="text" id="assigneeName" autocomplete="off"
                                placeholder="Фамилия или логин" value="" />
@@ -95,7 +101,12 @@
                         <div class="pick-list" id="assigneeList" hidden></div>
                     </div>
 
+                    <p class="hint">Можно выбрать нескольких. Щелчок по
+                       «контроль» поручает приёмку работы этому исполнителю —
+                       иначе принимаете вы.</p>
+
                     <input type="hidden" asp-for="Input.Assignee" id="assigneeLogin" />
+                    <input type="hidden" asp-for="Input.Controller" id="controllerLogin" />
                     <span asp-validation-for="Input.Assignee" class="err"></span>
                 </div>
 
@@ -207,6 +218,77 @@
         </form>
     </div>
 
+    @* ---------- Правка задачи ----------
+
+       Условия меняются: перенесли совещание, уточнили, что приложить.
+       Раньше задачу приходилось снимать и ставить заново — и вместе
+       с ней терялась вся история сдачи.
+
+       Форма одна на страницу, а не по одной на карточку: правят по
+       одной задаче за раз, а сотня скрытых форм — это сотня наборов
+       полей в разметке на каждую загрузку.
+
+       Исполнителей правка не трогает: сменить исполнителя посреди
+       работы — это другая задача, и путать её с уточнением условий
+       не стоит. *@
+    <div id="editTaskHolder" hidden>
+        <form method="post" asp-page-handler="Edit" id="editTaskForm" class="assigned-form">
+            <input type="hidden" name="taskId" id="editTaskId" />
+            <input type="hidden" name="view" value="@Model.View" />
+            <input type="hidden" name="sort" value="@Model.Sort" />
+
+            <div class="field">
+                <label for="editTitle">Что нужно сделать</label>
+                <input type="text" name="title" id="editTitle" maxlength="300" autocomplete="off" required />
+            </div>
+
+            <div class="field">
+                <label for="editNotes">Подробности</label>
+                <textarea name="notes" id="editNotes" rows="2" maxlength="4000"></textarea>
+            </div>
+
+            <div class="row-form">
+                <div class="field">
+                    <label for="editDue">Срок</label>
+                    <input type="date" name="dueOn" id="editDue" />
+                </div>
+
+                <div class="field">
+                    <label for="editTime">Время</label>
+                    <input type="time" name="dueTime" id="editTime" />
+                    <span class="hint">Пусто — конец дня</span>
+                </div>
+            </div>
+
+            <div class="row-form">
+                <label class="fs-check">
+                    <input type="checkbox" name="needCheck" value="true" id="editCheck" />
+                    <span>Нужна проверка</span>
+                </label>
+
+                <label class="fs-check">
+                    <input type="checkbox" name="needFile" value="true" id="editFile" />
+                    <span>Сдать с файлом</span>
+                </label>
+
+                <label class="fs-check">
+                    <input type="checkbox" name="important" value="true" id="editImp" />
+                    <span>Важно</span>
+                </label>
+            </div>
+
+            <p class="hint">
+                Исполнитель увидит отметку «отредактировано» и время —
+                он мог прочитать задачу раньше и делать по старому тексту.
+            </p>
+
+            <div class="form-actions">
+                <button class="btn primary" type="submit">Сохранить</button>
+                <button class="btn" type="button" id="cancelEditTask">Отмена</button>
+            </div>
+        </form>
+    </div>
+
     @if (Model.Items.Count > 0)
     {
         @* ---------- Доска ----------
@@ -244,6 +326,21 @@
                         {
                             var item = card.Instance;
                             var task = card.Task;
+
+                            @* Исполнитель берётся у ЭКЗЕМПЛЯРА: у задачи
+                               их может быть несколько, и каждая карточка
+                               на доске — чья-то конкретная работа.
+                               У задач, заведённых до появления нескольких
+                               исполнителей, поле пустое — для них смотрим
+                               на саму задачу. *@
+                            var who = string.IsNullOrEmpty(item.AssigneeDisplayName)
+                                ? task.AssigneeDisplayName
+                                : item.AssigneeDisplayName;
+
+                            var controls = task.Assignees.Any(a => a.IsController
+                                && string.Equals(a.UserName, item.AssigneeUserName, StringComparison.OrdinalIgnoreCase));
+
+                            var mine = string.Equals(task.AuthorUserName, Model.Me, StringComparison.OrdinalIgnoreCase);
 
                             var urgency = card.Urgency switch
                             {
@@ -294,9 +391,40 @@
                                     }
                                 </div>
 
+                                @if (task.EditedAt is { } edited)
+                                {
+                                    @* То же, что в переписке: исполнитель мог
+                                       прочитать задачу вчера и делать по тому,
+                                       что прочитал. Молча подменённый текст
+                                       хуже отсутствия правки вовсе. *@
+                                    <p class="bcard-edited">отредактировано @edited.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</p>
+                                }
+
                                 <footer class="bcard-foot">
-                                    <span class="task-who-ava" title="@task.AssigneeDisplayName">@Portal.Web.Pages.Shared.Avatars.Initials(task.AssigneeDisplayName)</span>
-                                    <span class="bcard-who">@task.AssigneeDisplayName</span>
+                                    <span class="task-who-ava" title="@who">@Portal.Web.Pages.Shared.Avatars.Initials(who)</span>
+                                    <span class="bcard-who">@who</span>
+
+                                    @if (controls)
+                                    {
+                                        <span class="t-ctrl" title="Этот исполнитель принимает работу">контроль</span>
+                                    }
+
+                                    @if (mine && !item.IsClosed)
+                                    {
+                                        @* Иконкой, а не словом: подвал карточки узкий,
+                                           и текстовая кнопка съедает имя исполнителя. *@
+                                        <button class="icon-btn" type="button" title="Изменить"
+                                                data-edit-task="@task.Id"
+                                                data-title="@task.Title"
+                                                data-notes="@task.Notes"
+                                                data-due="@(item.DueAt.ToLocalTime().ToString("yyyy-MM-dd"))"
+                                                data-time="@(task.DueMinutes is { } m ? new TimeOnly(m / 60, m % 60).ToString("HH\\:mm") : "")"
+                                                data-file="@(task.NeedFile ? "1" : "")"
+                                                data-check="@(task.NeedCheck ? "1" : "")"
+                                                data-imp="@(task.Important ? "1" : "")">
+                                            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-edit" /></svg>
+                                        </button>
+                                    }
 
                                     @if (item.State == TaskState.Submitted)
                                     {

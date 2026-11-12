@@ -54,6 +54,7 @@ public class PortalDbContext : DbContext
     public DbSet<AssignedTask> AssignedTasks => Set<AssignedTask>();
     public DbSet<AssignedTaskInstance> AssignedTaskInstances => Set<AssignedTaskInstance>();
     public DbSet<AssignedTaskFile> AssignedTaskFiles => Set<AssignedTaskFile>();
+    public DbSet<AssignedTaskAssignee> AssignedTaskAssignees => Set<AssignedTaskAssignee>();
 
     /// <summary>Очки в игре-пасхалке. К работе портала отношения не имеет.</summary>
     public DbSet<GameScore> GameScores => Set<GameScore>();
@@ -315,6 +316,21 @@ public class PortalDbContext : DbContext
                 .WithOne(instance => instance.Task!)
                 .HasForeignKey(instance => instance.TaskId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(task => task.Assignees)
+                .WithOne(assignee => assignee.Task!)
+                .HasForeignKey(assignee => assignee.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AssignedTaskAssignee>(entity =>
+        {
+            // Главный запрос — «что поручено этому человеку».
+            entity.HasIndex(assignee => assignee.UserName);
+
+            // Один человек в задаче один раз: иначе ему заведётся
+            // два экземпляра и он сдаст одно и то же дважды.
+            entity.HasIndex(assignee => new { assignee.TaskId, assignee.UserName }).IsUnique();
         });
 
         modelBuilder.Entity<AssignedTaskInstance>(entity =>
@@ -322,6 +338,10 @@ public class PortalDbContext : DbContext
             // Планировщик ищет по сроку среди незакрытых, страницы — по задаче.
             entity.HasIndex(instance => instance.DueAt);
             entity.HasIndex(instance => new { instance.TaskId, instance.State });
+
+            // «Что поставили мне» ищется по исполнителю экземпляра:
+            // у задачи их может быть несколько, и у каждого свой.
+            entity.HasIndex(instance => instance.AssigneeUserName);
 
             entity.Ignore(instance => instance.IsClosed);
         });

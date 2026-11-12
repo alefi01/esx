@@ -120,29 +120,66 @@ public sealed class AssignedTaskService
     {
         task.CreatedAt = Now;
 
+        // Основным исполнителем считается первый в списке: по нему
+        // задача называется в списках, где место есть только на одного.
+        var first = task.Assignees.FirstOrDefault();
+
+        if (first is not null)
+        {
+            task.AssigneeUserName = first.UserName;
+            task.AssigneeDisplayName = first.DisplayName;
+        }
+        else if (task.AssigneeUserName.Length > 0)
+        {
+            // Задачу поставили одному человеку старым способом —
+            // заводим ему запись исполнителя, чтобы дальше всё
+            // работало единообразно.
+            task.Assignees.Add(new AssignedTaskAssignee
+            {
+                UserName = task.AssigneeUserName,
+                DisplayName = task.AssigneeDisplayName
+            });
+        }
+
         _db.AssignedTasks.Add(task);
         await _db.SaveChangesAsync(cancellationToken);
 
-        await AddInstanceAsync(task, firstDueLocal, cancellationToken);
+        await AddInstancesAsync(task, firstDueLocal, cancellationToken);
 
         return task;
     }
 
-    private async Task<AssignedTaskInstance> AddInstanceAsync(
+    /// <summary>
+    /// Завести экземпляр КАЖДОМУ исполнителю.
+    ///
+    /// Свой экземпляр на человека — не прихоть: у каждого своя сдача,
+    /// свои файлы и своё состояние. Один общий экземпляр означал бы,
+    /// что сдача первого закрывает задачу для всех.
+    /// </summary>
+    private async Task AddInstancesAsync(
         AssignedTask task, DateTime dueLocal, CancellationToken cancellationToken)
     {
-        var instance = new AssignedTaskInstance
+        var dueAt = DueAtOf(dueLocal, task.DueMinutes);
+        var now = Now;
+
+        var people = task.Assignees.Count > 0
+            ? task.Assignees.Select(a => (a.UserName, a.DisplayName)).ToList()
+            : [(task.AssigneeUserName, task.AssigneeDisplayName)];
+
+        foreach (var (login, name) in people)
         {
-            TaskId = task.Id,
-            DueAt = DueAtOf(dueLocal, task.DueMinutes),
-            State = TaskState.Open,
-            CreatedAt = Now
-        };
+            _db.AssignedTaskInstances.Add(new AssignedTaskInstance
+            {
+                TaskId = task.Id,
+                AssigneeUserName = login,
+                AssigneeDisplayName = name,
+                DueAt = dueAt,
+                State = TaskState.Open,
+                CreatedAt = now
+            });
+        }
 
-        _db.AssignedTaskInstances.Add(instance);
         await _db.SaveChangesAsync(cancellationToken);
-
-        return instance;
     }
 
     /// <summary>
@@ -153,6 +190,7 @@ public sealed class AssignedTaskService
         int taskId, string authorUserName, Action<AssignedTask> change, CancellationToken cancellationToken)
     {
         var task = await _db.AssignedTasks.AsTracking()
+            .Include(t => t.Assignees)
             .FirstOrDefaultAsync(t => t.Id == taskId, cancellationToken);
 
         if (task is null || !IsAuthor(task, authorUserName))
@@ -167,11 +205,106 @@ public sealed class AssignedTaskService
         return true;
     }
 
+    /// <summary>
+    /// Правка поставленной задачи: название, подробности, срок
+    /// и признаки.
+    ///
+    /// ПОЧЕМУ ЭТО НУЖНО
+    ///
+    /// Условия меняются: перенесли совещание, уточнили, что именно
+    /// приложить. Раньше задачу приходилось снимать и ставить заново —
+    /// и вместе с ней терялась вся история сдачи.
+    ///
+    /// ПОЧЕМУ ВИДНО, ЧТО ПРАВИЛИ
+    ///
+    /// Исполнитель мог прочитать задачу вчера и делать по тому, что
+    /// прочитал. Отметка «изменено» и время — то же, что в переписке:
+    /// молча подменённый текст хуже отсутствия правки вовсе.
+    ///
+    /// Срок меняется у НЕЗАКРЫТЫХ экземпляров: сданное и принятое
+    /// переписывать задним числом нельзя.
+    /// </summary>
+    public async Task<bool> EditAsync(
+        int taskId,
+        string userName,
+        string title,
+        string? notes,
+        DateTime? dueLocal,
+        int? dueMinutes,
+        bool needFile,
+        bool needCheck,
+        bool important,
+        CancellationToken cancellationToken)
+    {
+        var task = await _db.AssignedTasks.AsTracking()
+            .Include(t => t.Assignees)
+            .Include(t => t.Instances)
+            .FirstOrDefaultAsync(t => t.Id == taskId, cancellationToken);
+
+        // Править может только тот, кто поставил. Контролёр принимает
+        // работу, но условия задачи — не его: он за них не отвечает.
+        if (task is null || !IsAuthor(task, userName))
+        {
+            return false;
+        }
+
+        task.Title = title.Trim();
+        task.Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+        task.DueMinutes = dueMinutes;
+        task.NeedFile = needFile;
+        task.NeedCheck = needCheck;
+        task.Important = important;
+        task.EditedAt = Now;
+
+        if (dueLocal is { } due)
+        {
+            var dueAt = DueAtOf(due, dueMinutes);
+
+            foreach (var instance in task.Instances.Where(i => !i.IsClosed))
+            {
+                instance.DueAt = dueAt;
+
+                // Срок сдвинули — напоминание должно прийти заново.
+                instance.Reminded = false;
+                instance.Alerted = false;
+            }
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return true;
+    }
+
+    /// <summary>Задача со всем, что нужно для правки. Права проверяет вызывающий.</summary>
+    public async Task<AssignedTask?> TaskAsync(int taskId, CancellationToken cancellationToken) =>
+        await _db.AssignedTasks
+            .Include(t => t.Assignees)
+            .FirstOrDefaultAsync(t => t.Id == taskId, cancellationToken);
+
     private static bool IsAuthor(AssignedTask task, string userName) =>
         string.Equals(task.AuthorUserName, userName, StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsAssignee(AssignedTask task, string userName) =>
-        string.Equals(task.AssigneeUserName, userName, StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Кто вправе принимать и возвращать: автор задачи и тот, кому
+    /// поручен контроль.
+    ///
+    /// Контролёр нужен там, где начальник ставит задачу отделу,
+    /// а следит за ней старший: без этого принимать пришлось бы самому
+    /// начальнику, и задача повисала бы на нём.
+    /// </summary>
+    private static bool CanCheck(AssignedTask task, string userName) =>
+        IsAuthor(task, userName)
+        || task.Assignees.Any(a => a.IsController
+            && string.Equals(a.UserName, userName, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Этот экземпляр принадлежит этому человеку.</summary>
+    private static bool IsAssignee(AssignedTaskInstance instance, string userName) =>
+        string.Equals(
+            instance.AssigneeUserName.Length > 0
+                ? instance.AssigneeUserName
+                : instance.Task?.AssigneeUserName ?? "",
+            userName,
+            StringComparison.OrdinalIgnoreCase);
 
     // ==================================================================
     // Действия исполнителя
@@ -190,11 +323,12 @@ public sealed class AssignedTaskService
         int instanceId, string userName, CancellationToken cancellationToken)
     {
         var instance = await _db.AssignedTaskInstances.AsTracking()
-            .Include(i => i.Task)
+            .Include(i => i.Task)!
+                .ThenInclude(t => t!.Assignees)
             .Include(i => i.Files)
             .FirstOrDefaultAsync(i => i.Id == instanceId, cancellationToken);
 
-        if (instance?.Task is null || !IsAssignee(instance.Task, userName))
+        if (instance?.Task is null || !IsAssignee(instance, userName))
         {
             return "Задача не найдена.";
         }
@@ -274,7 +408,7 @@ public sealed class AssignedTaskService
             .Include(i => i.Task)
             .FirstOrDefaultAsync(i => i.Id == instanceId, cancellationToken);
 
-        if (instance?.Task is null || !IsAuthor(instance.Task, userName))
+        if (instance?.Task is null || !CanCheck(instance.Task, userName))
         {
             return false;
         }
@@ -327,10 +461,17 @@ public sealed class AssignedTaskService
     public async Task<IReadOnlyList<AssignedCard>> ForAssigneeAsync(
         string userName, bool closed, CancellationToken cancellationToken)
     {
+        // Ищем по исполнителю ЭКЗЕМПЛЯРА: у задачи их может быть
+        // несколько, и каждый сдаёт своё. У старых задач, заведённых
+        // до появления нескольких исполнителей, поле пустое —
+        // для них смотрим на саму задачу.
         var rows = await _db.AssignedTaskInstances
-            .Include(i => i.Task)
+            .Include(i => i.Task)!
+                .ThenInclude(t => t!.Assignees)
             .Include(i => i.Files)
-            .Where(i => i.Task!.AssigneeUserName.ToLower() == userName.ToLower())
+            .Where(i => i.AssigneeUserName.ToLower() == userName.ToLower()
+                        || (i.AssigneeUserName == ""
+                            && i.Task!.AssigneeUserName.ToLower() == userName.ToLower()))
             .OrderBy(i => i.DueAt)
             .ToListAsync(cancellationToken);
 
@@ -341,10 +482,15 @@ public sealed class AssignedTaskService
     public async Task<IReadOnlyList<AssignedCard>> ForAuthorAsync(
         string userName, bool closed, CancellationToken cancellationToken)
     {
+        // Свои поставленные — и те, где человеку поручен контроль:
+        // он их принимает, значит они его работа.
         var rows = await _db.AssignedTaskInstances
-            .Include(i => i.Task)
+            .Include(i => i.Task)!
+                .ThenInclude(t => t!.Assignees)
             .Include(i => i.Files)
-            .Where(i => i.Task!.AuthorUserName.ToLower() == userName.ToLower())
+            .Where(i => i.Task!.AuthorUserName.ToLower() == userName.ToLower()
+                        || i.Task!.Assignees.Any(a => a.IsController
+                            && a.UserName.ToLower() == userName.ToLower()))
             .OrderBy(i => i.DueAt)
             .ToListAsync(cancellationToken);
 
@@ -402,26 +548,33 @@ public sealed class AssignedTaskService
         // Просроченные считать отдельно не нужно: они остаются открытыми,
         // пока их не сдадут, и уже попадают в это же число.
         return await _db.AssignedTaskInstances
-            .Where(i => i.Task!.AssigneeUserName.ToLower() == userName.ToLower())
+            .Where(i => i.AssigneeUserName.ToLower() == userName.ToLower()
+                        || (i.AssigneeUserName == ""
+                            && i.Task!.AssigneeUserName.ToLower() == userName.ToLower()))
             .CountAsync(i => i.State == TaskState.Open || i.State == TaskState.Returned, cancellationToken);
     }
 
     /// <summary>Сколько сдано на проверку — число у пункта меню начальника.</summary>
     public async Task<int> WaitingCheckCountAsync(string userName, CancellationToken cancellationToken) =>
         await _db.AssignedTaskInstances
-            .Where(i => i.Task!.AuthorUserName.ToLower() == userName.ToLower())
+            .Where(i => i.Task!.AuthorUserName.ToLower() == userName.ToLower()
+                        || i.Task!.Assignees.Any(a => a.IsController
+                            && a.UserName.ToLower() == userName.ToLower()))
             .CountAsync(i => i.State == TaskState.Submitted, cancellationToken);
 
     /// <summary>Один экземпляр со всем, что нужно странице. Права проверяет вызывающий.</summary>
     public async Task<AssignedTaskInstance?> InstanceAsync(int id, CancellationToken cancellationToken) =>
         await _db.AssignedTaskInstances
-            .Include(i => i.Task)
+            .Include(i => i.Task)!
+                .ThenInclude(t => t!.Assignees)
             .Include(i => i.Files)
             .FirstOrDefaultAsync(i => i.Id == id, cancellationToken);
 
     /// <summary>Человек участвует в задаче: поставил её или должен выполнить.</summary>
     public static bool CanSee(AssignedTask task, string userName) =>
-        IsAuthor(task, userName) || IsAssignee(task, userName);
+        IsAuthor(task, userName)
+        || string.Equals(task.AssigneeUserName, userName, StringComparison.OrdinalIgnoreCase)
+        || task.Assignees.Any(a => string.Equals(a.UserName, userName, StringComparison.OrdinalIgnoreCase));
 
     // ==================================================================
     // Повторение: работа планировщика
@@ -447,30 +600,34 @@ public sealed class AssignedTaskService
         var tasks = await _db.AssignedTasks
             .AsTracking()
             .Include(t => t.Instances)
+            .Include(t => t.Assignees)
             .Where(t => !t.Stopped && t.Repeat != TaskRepeat.Once)
             .ToListAsync(cancellationToken);
 
         foreach (var task in tasks)
         {
-            var open = task.Instances.FirstOrDefault(i => !i.IsClosed);
+            // Незакрытые экземпляры — по одному на исполнителя.
+            var open = task.Instances.Where(i => !i.IsClosed).ToList();
 
-            // Пока открытый экземпляр в срок — ничего не делаем.
-            if (open is not null && open.DueAt > now)
+            // Пока хоть у кого-то срок не наступил, новый круг
+            // не начинаем: иначе у разных исполнителей разъехались бы
+            // сроки одной и той же задачи.
+            if (open.Any(i => i.DueAt > now))
             {
                 continue;
             }
 
-            if (open is not null)
+            // Сданное на проверку не трогаем: оно ждёт автора,
+            // а не исполнителя, и «не сдано» было бы неправдой.
+            if (open.Any(i => i.State == TaskState.Submitted))
             {
-                // Срок прошёл. Сданное на проверку не трогаем: оно ждёт
-                // автора, а не исполнителя, и «не сдано» было бы неправдой.
-                if (open.State == TaskState.Submitted)
-                {
-                    continue;
-                }
+                continue;
+            }
 
-                open.State = TaskState.Missed;
-                open.ClosedAt = now;
+            foreach (var instance in open)
+            {
+                instance.State = TaskState.Missed;
+                instance.ClosedAt = now;
             }
 
             var lastDue = task.Instances.Count == 0
@@ -484,15 +641,25 @@ public sealed class AssignedTaskService
                 continue;
             }
 
-            _db.AssignedTaskInstances.Add(new AssignedTaskInstance
-            {
-                TaskId = task.Id,
-                DueAt = DueAtOf(next.Value, task.DueMinutes),
-                State = TaskState.Open,
-                CreatedAt = now
-            });
+            // Новый круг — каждому исполнителю свой экземпляр.
+            var people = task.Assignees.Count > 0
+                ? task.Assignees.Select(a => (a.UserName, a.DisplayName)).ToList()
+                : [(task.AssigneeUserName, task.AssigneeDisplayName)];
 
-            created++;
+            foreach (var (login, name) in people)
+            {
+                _db.AssignedTaskInstances.Add(new AssignedTaskInstance
+                {
+                    TaskId = task.Id,
+                    AssigneeUserName = login,
+                    AssigneeDisplayName = name,
+                    DueAt = DueAtOf(next.Value, task.DueMinutes),
+                    State = TaskState.Open,
+                    CreatedAt = now
+                });
+
+                created++;
+            }
         }
 
         if (created > 0 || tasks.Count > 0)

@@ -4458,16 +4458,17 @@
      * Приём общий для постановки задачи подчинённому и для своей
      * заметки: окна разные, а устройство одно.
      */
-    function formInWindow(options) {
-        const openBtn = $(options.button);
-        const holder = $(options.holder);
-        const form = $(options.form);
-
-        if (!openBtn || !holder || !form) { return; }
-
-        const open = () => {
+    /**
+     * Показать настоящую форму страницы в окне.
+     *
+     * Форма переносится в окно и возвращается на страницу при закрытии:
+     * так работают и проверка на сервере, и загрузка файла, и защита
+     * от подделки запроса — всё то, что пришлось бы повторять, рисуй
+     * мы окно кодом.
+     */
+    function showFormWindow(form, holder, title, focus) {
             const m = openModal({
-                title: options.title,
+                title: title,
                 body: '<div class="form-slot"></div>'
             });
 
@@ -4477,7 +4478,7 @@
 
             $('.form-slot', m).appendChild(form);
 
-            const first = options.focus ? $(options.focus, m) : null;
+            const first = focus ? $(focus, m) : null;
 
             if (first) { first.focus(); }
 
@@ -4498,6 +4499,17 @@
             });
 
             watch.observe($('#modalRoot'), { childList: true });
+    }
+
+    function formInWindow(options) {
+        const openBtn = $(options.button);
+        const holder = $(options.holder);
+        const form = $(options.form);
+
+        if (!openBtn || !holder || !form) { return; }
+
+        const open = () => {
+            showFormWindow(form, holder, options.title, options.focus);
         };
 
         openBtn.onclick = open;
@@ -4525,6 +4537,34 @@
         focus: '#Input_Title',
         cancel: '#cancelOwn'
     });
+
+    // ---------- Правка своей задачи ----------
+    //
+    // Значения приходят в data-атрибутах кнопки: страница уже их
+    // нарисовала, и ходить за ними на сервер не за чем.
+    const editOwnForm = $('#editOwnForm');
+    const editOwnHolder = $('#editOwnHolder');
+
+    if (editOwnForm && editOwnHolder) {
+        document.addEventListener('click', e => {
+            const button = e.target.closest('[data-edit-own]');
+
+            if (!button) { return; }
+
+            const d = button.dataset;
+
+            $('#editOwnId').value = d.editOwn || '';
+            $('#editOwnTitle').value = d.title || '';
+            $('#editOwnNotes').value = d.notes || '';
+            $('#editOwnDue').value = d.due || '';
+
+            showFormWindow(editOwnForm, editOwnHolder, 'Изменить задачу', '#editOwnTitle');
+        });
+
+        const cancelOwnEdit = $('#cancelEditOwn');
+
+        if (cancelOwnEdit) { cancelOwnEdit.onclick = closeModal; }
+    }
 
     const assignedPage = $('[data-assigned-tasks]');
 
@@ -4578,8 +4618,74 @@
         const nameField = $('#assigneeName');
         const loginField = $('#assigneeLogin');
         const suggest = $('#assigneeList');
+        const chipBox = $('#assigneeChips');
+        const ctrlField = $('#controllerLogin');
 
         if (nameField && loginField && suggest) {
+            // Выбранные исполнители. Логин — ключ: по нему сервер
+            // и ищет человека, а имена бывают одинаковые.
+            const chosen = [];
+
+            // Перерисовываем плашки целиком: список короткий, а чинить
+            // его по частям — лишний повод разъехаться с полями формы.
+            const paintChips = () => {
+                if (!chipBox) { return; }
+
+                chipBox.innerHTML = '';
+
+                chosen.forEach(person => {
+                    const chip = el('<span class="chip' +
+                        (person.control ? ' chip--ctrl' : '') + '">' +
+                        '<span class="chip-name">' + esc(person.displayName) + '</span>' +
+                        '<button type="button" class="chip-ctrl" ' +
+                        'title="Поручить этому исполнителю приёмку работы">контроль</button>' +
+                        '<button type="button" class="chip-x" title="Убрать">&times;</button>' +
+                        '</span>');
+
+                    // Контроль — одному: двое принимающих означают, что
+                    // не отвечает никто.
+                    $('.chip-ctrl', chip).onclick = () => {
+                        const was = person.control;
+
+                        chosen.forEach(other => { other.control = false; });
+                        person.control = !was;
+
+                        paintChips();
+                    };
+
+                    $('.chip-x', chip).onclick = () => {
+                        chosen.splice(chosen.indexOf(person), 1);
+                        paintChips();
+                    };
+
+                    chipBox.appendChild(chip);
+                });
+
+                // На сервер — логины через запятую и логин контролёра.
+                loginField.value = chosen.map(p => p.userName).join(',');
+
+                if (ctrlField) {
+                    const boss = chosen.find(p => p.control);
+
+                    ctrlField.value = boss ? boss.userName : '';
+                }
+            };
+
+            const add = person => {
+                const already = chosen.some(p =>
+                    p.userName.toLowerCase() === person.userName.toLowerCase());
+
+                if (!already) {
+                    chosen.push({
+                        userName: person.userName,
+                        displayName: person.displayName,
+                        control: false
+                    });
+                }
+
+                paintChips();
+            };
+
             let timer = 0;
             let lastQuery = null;
 
@@ -4604,8 +4710,12 @@
                         '</button>');
 
                     row.onclick = () => {
-                        loginField.value = person.userName;
-                        nameField.value = person.displayName;
+                        add(person);
+
+                        // Поле очищаем: следующего ищут с чистого листа,
+                        // а выбранный уже виден плашкой выше.
+                        nameField.value = '';
+                        lastQuery = null;
 
                         hide();
                     };
@@ -4641,10 +4751,10 @@
             };
 
             nameField.addEventListener('input', () => {
-                // Набранное руками имя больше не соответствует выбранному
-                // человеку — выбор сбрасываем, иначе уйдёт не тот логин.
-                loginField.value = '';
-
+                // Набранное в поле — это поиск следующего исполнителя.
+                // Уже выбранных оно не трогает: они живут плашками,
+                // и сбрасывать их на каждую букву значило бы терять
+                // работу человека.
                 clearTimeout(timer);
                 timer = setTimeout(look, 200);
             });
@@ -4658,6 +4768,39 @@
             nameField.addEventListener('keydown', e => {
                 if (e.key === 'Escape') { hide(); }
             });
+        }
+
+        // ---------- Правка задачи ----------
+        //
+        // Форма одна на страницу: правят по одной задаче за раз.
+        // Кнопка на карточке приносит значения в data-атрибутах —
+        // так страница не ходит на сервер за тем, что уже нарисовано.
+        const editForm = $('#editTaskForm');
+        const editHolder = $('#editTaskHolder');
+
+        if (editForm && editHolder) {
+            assignedPage.addEventListener('click', e => {
+                const button = e.target.closest('[data-edit-task]');
+
+                if (!button) { return; }
+
+                const d = button.dataset;
+
+                $('#editTaskId').value = d.editTask || '';
+                $('#editTitle').value = d.title || '';
+                $('#editNotes').value = d.notes || '';
+                $('#editDue').value = d.due || '';
+                $('#editTime').value = d.time || '';
+                $('#editFile').checked = d.file === '1';
+                $('#editCheck').checked = d.check === '1';
+                $('#editImp').checked = d.imp === '1';
+
+                showFormWindow(editForm, editHolder, 'Изменить задачу', '#editTitle');
+            });
+
+            const cancelEdit = $('#cancelEditTask');
+
+            if (cancelEdit) { cancelEdit.onclick = closeModal; }
         }
 
         // ---------- Возврат на доработку ----------
