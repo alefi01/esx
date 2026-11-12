@@ -317,6 +317,13 @@ select.sel{appearance:none;border:1px solid var(--border);background:var(--surfa
 .convo .c-meta b{font-size:13px;display:flex;justify-content:space-between;gap:6px}
 .convo .c-meta b time{font-size:10.5px;color:var(--muted);font-weight:500}
 .convo .c-meta p{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+/* Беседа с непрочитанным: первая строка написана обычным цветом,
+   а не приглушённым, и чуть жирнее. Одного значка с числом мало —
+   глаз цепляется за текст раньше, чем за цифру у правого края.
+   Так же сделано в TrueConf и Telegram. */
+.convo.has-unread .c-meta p{color:var(--text);font-weight:600}
+.convo.has-unread .c-name{font-weight:800}
+
 .convo .unread{min-width:19px;height:19px;padding:0 5px;border-radius:10px;background:var(--accent);color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
 .chat-panel{background:var(--surface);border:1px solid var(--border);border-radius:15px;display:flex;flex-direction:column;min-height:0}
 .chat-head{display:flex;align-items:center;gap:11px;padding:13px 18px;border-bottom:1px solid var(--border)}
@@ -332,10 +339,10 @@ select.sel{appearance:none;border:1px solid var(--border);background:var(--surfa
 .msg.sys{margin:8px 0}
 .msg{display:flex;gap:9px;max-width:74%}
 .msg .avatar{width:30px;height:30px;font-size:10.5px;margin-top:2px}
-.msg .bubble{background:var(--surface2);border:1px solid var(--border);border-radius:4px 14px 14px 14px;padding:9px 13px}
+.msg .bubble{background:var(--surface2);border:1px solid var(--border);border-radius:4px 14px 14px 14px;padding:8px 12px 6px}
 .msg .b-name{font-size:11px;font-weight:700;color:var(--accent);margin-bottom:2px}
 .msg .b-text{font-size:13px;line-height:1.5;word-break:break-word;white-space:normal}
-.msg .b-time{font-size:10px;color:var(--muted);text-align:right;margin-top:3px}
+.msg .b-time{font-size:10px;color:var(--muted);text-align:right;margin-top:1px;line-height:1.2}
 .msg.mine{align-self:flex-end;flex-direction:row-reverse}
 /* Своё сообщение — бледная подложка цвета акцента, а не сам акцент.
    Яркой заливкой в портале отмечено ДЕЙСТВИЕ («Отправить», «Принять»),
@@ -1676,7 +1683,12 @@ button.pin-btn.on{opacity:1;color:var(--accent)}
 .msg.found .bubble{outline:2px solid var(--accent);outline-offset:2px}
 
 .msg .b-reacts{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
-.msg .b-reacts:empty{display:none}
+
+/* Полоска реакций прячется, пока реакций нет.
+   :empty для этого не годится: в разметке внутри блока остаются
+   переводы строк, и для браузера он не пустой — из-за этого под
+   каждым сообщением висела лишняя полоса в несколько точек. */
+.msg .b-reacts:not(:has(.react)){display:none;margin:0}
 
 .react{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border);
   background:var(--surface);border-radius:11px;padding:1px 7px;font-size:11.5px;

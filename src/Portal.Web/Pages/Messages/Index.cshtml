@@ -77,7 +77,7 @@
                 {
                     @* Данные для контекстного меню — в data-атрибутах: встроенные
                        скрипты запрещены политикой безопасности страницы. *@
-                    <a class="convo@(Model.Current?.Id == item.Id ? " active" : "")"
+                    <a class="convo@(Model.Current?.Id == item.Id ? " active" : "")@(item.Unread > 0 ? " has-unread" : "")"
                        asp-page="Index" asp-route-id="@item.Id"
                        data-convo="@item.Id" data-convo-title="@item.Title"
                        data-convo-group="@item.IsGroup.ToString().ToLowerInvariant()">
