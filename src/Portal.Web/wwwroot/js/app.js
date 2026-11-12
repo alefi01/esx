@@ -4273,9 +4273,11 @@
                     return;
                 }
 
+                // Многоточие в конце: оно и говорит, что человек
+                // ещё набирает, а не закончил.
                 $('#chTypingWho').textContent = who.length === 1
-                    ? who[0] + ' печатает'
-                    : who[0] + ' и ещё ' + (who.length - 1) + ' печатают';
+                    ? who[0] + ' печатает…'
+                    : who[0] + ' и ещё ' + (who.length - 1) + ' печатают…';
 
                 line.hidden = false;
                 presence.hidden = true;
@@ -4634,27 +4636,33 @@
                 chipBox.innerHTML = '';
 
                 chosen.forEach(person => {
-                    const chip = el('<span class="chip' +
-                        (person.control ? ' chip--ctrl' : '') + '">' +
+                    // Слово «контроль» у каждого превращало список имён
+                    // в частокол из одного и того же слова. Поэтому оно
+                    // всплывает при наведении — и остаётся у того, кому
+                    // контроль уже поручен.
+                    const chip = el('<button type="button" class="chip chip--pick' +
+                        (person.control ? ' chip--ctrl' : '') + '" ' +
+                        'title="Поручить этому исполнителю приёмку работы">' +
                         '<span class="chip-name">' + esc(person.displayName) + '</span>' +
-                        '<button type="button" class="chip-ctrl" ' +
-                        'title="Поручить этому исполнителю приёмку работы">контроль</button>' +
-                        '<button type="button" class="chip-x" title="Убрать">&times;</button>' +
-                        '</span>');
+                        '<span class="chip-ctrl">контроль</span>' +
+                        '<span class="chip-x" role="button" title="Убрать">&times;</span>' +
+                        '</button>');
 
                     // Контроль — одному: двое принимающих означают, что
                     // не отвечает никто.
-                    $('.chip-ctrl', chip).onclick = () => {
+                    chip.onclick = e => {
+                        if (e.target.closest('.chip-x')) {
+                            chosen.splice(chosen.indexOf(person), 1);
+                            paintChips();
+
+                            return;
+                        }
+
                         const was = person.control;
 
                         chosen.forEach(other => { other.control = false; });
                         person.control = !was;
 
-                        paintChips();
-                    };
-
-                    $('.chip-x', chip).onclick = () => {
-                        chosen.splice(chosen.indexOf(person), 1);
                         paintChips();
                     };
 
@@ -4670,6 +4678,21 @@
                     ctrlField.value = boss ? boss.userName : '';
                 }
             };
+
+            // Форму вернули с ошибкой — плашки восстанавливаем из того,
+            // что отдал сервер: человек выбирал исполнителей руками,
+            // и терять этот труд из-за незаполненного срока нельзя.
+            if (chipBox && chipBox.dataset.chosen) {
+                try {
+                    JSON.parse(chipBox.dataset.chosen).forEach(person => chosen.push({
+                        userName: person.userName,
+                        displayName: person.displayName,
+                        control: !!person.control
+                    }));
+
+                    paintChips();
+                } catch { /* испорченная строка — просто начинаем с пустого */ }
+            }
 
             const add = person => {
                 const already = chosen.some(p =>
@@ -4767,6 +4790,29 @@
 
             nameField.addEventListener('keydown', e => {
                 if (e.key === 'Escape') { hide(); }
+            });
+        }
+
+        // ---------- Не отправлять форму без исполнителя ----------
+        //
+        // У скрытого поля браузер подсказку не показывает, а уход
+        // на сервер и обратно стирает выбранный файл — вернуть его
+        // в поле не вправе никто, кроме человека. Поэтому проверяем
+        // здесь, до отправки.
+        const newForm = $('#newAssignedForm');
+
+        if (newForm) {
+            newForm.addEventListener('submit', e => {
+                const login = $('#assigneeLogin');
+                const name = $('#assigneeName');
+
+                if (login && login.value.trim() === '') {
+                    e.preventDefault();
+
+                    toast('Выберите, кому поставить задачу', 'err');
+
+                    if (name) { name.focus(); }
+                }
             });
         }
 

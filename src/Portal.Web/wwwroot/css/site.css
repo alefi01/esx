@@ -1879,9 +1879,12 @@ mark{background:color-mix(in srgb,var(--warn) 42%,transparent);color:inherit;
 /* «Важно» было чипом со словом — самым ярким пятном в строке,
    хотя важных задач в списке бывает половина. Теперь это значок
    перед названием: заметно, но не кричит. */
-.t-imp{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;
-  flex:none;border-radius:6px;background:color-mix(in srgb,var(--danger) 14%,transparent);
-  color:var(--danger)}
+/* Рядом с иконкой стоит само слово: значок без подписи читается
+   как «тут что-то не так», а не как «это важная задача». */
+.t-imp{display:inline-flex;align-items:center;justify-content:center;gap:3px;
+  height:18px;padding:0 6px;flex:none;border-radius:6px;
+  background:color-mix(in srgb,var(--danger) 14%,transparent);
+  color:var(--danger);font-size:11px;font-weight:600;white-space:nowrap}
 
 /* ---------- Кому поручено ----------
 
@@ -2069,7 +2072,7 @@ html[data-file-view="list"] .flist[hidden]{display:block !important}
 .tcol--submitted::before{background:var(--accent)}
 /* «Новые» — то, что человек ещё не брал в работу. Синим: это не
    тревога, а «посмотри, тут новое». */
-.tcol--fresh::before{background:color-mix(in srgb,var(--accent) 55%,transparent)}
+.tcol--fresh::before{background:var(--accent)}
 .tcol--returned::before{background:var(--warn)}
 .tcol--accepted::before,.tcol--done::before{background:var(--ok)}
 .tcol--cancelled::before,.tcol--archive::before{background:var(--border)}
@@ -2123,7 +2126,16 @@ html[data-file-view="list"] .flist[hidden]{display:block !important}
 .bcard .task-check svg{width:11px;height:11px}
 
 /* Строка сдачи внутри карточки — в столбик: вширь места нет. */
-.bcard .task-submit{margin-top:9px;padding-top:9px;border-top:1px solid var(--border);gap:7px}
+.bcard .task-submit{gap:7px}
+
+/* Действия по задаче — одной группой под общей чертой. Раньше «Взять
+   в работу» и сдача были двумя блоками со своими отступами и своими
+   линиями, и карточка читалась как склеенная из кусков. */
+.task-acts{display:flex;flex-direction:column;align-items:stretch;gap:7px;margin-top:9px}
+.task-acts .task-act{margin:0}
+.task-acts .btn{justify-content:center}
+.task-acts .file-pick{flex:1 1 auto;min-width:0}
+.task-acts .file-pick-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bcard-who{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
   font-size:12px;font-weight:600}
 
@@ -2371,8 +2383,18 @@ html.lite .main{background-image:none !important}
 
 .chip-name { white-space: nowrap; }
 
-/* «Контроль» — неяркая подпись, а не кнопка-акцент: это пометка
-   на одном из исполнителей, а не главное действие формы. */
+/* Плашка выбранного исполнителя — сама кнопка: щелчок по ней
+   поручает человеку приёмку работы. Слово «контроль» у каждого
+   превращало список имён в частокол из одного и того же слова,
+   поэтому оно всплывает при наведении и остаётся у того, кому
+   контроль уже поручен. */
+.chip--pick { cursor: pointer; font: inherit; font-size: 13px; }
+
+.chip--pick:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
 .chip-ctrl,
 .chip-x {
     border: 0;
@@ -2385,14 +2407,20 @@ html.lite .main{background-image:none !important}
     border-radius: 6px;
 }
 
-.chip-ctrl:hover,
 .chip-x:hover { color: var(--text); background: var(--surface-3); }
 
 .chip-x { font-size: 15px; line-height: 1; }
 
+/* Слово прячется, пока на плашку не навели и пока контроль
+   не поручен — место под него держится, чтобы имя не прыгало. */
+.chip--pick .chip-ctrl { display: none; }
+
+.chip--pick:hover .chip-ctrl { display: inline; color: var(--accent); }
+
 .chip--ctrl { border-color: var(--accent); }
 
 .chip--ctrl .chip-ctrl {
+    display: inline;
     color: var(--accent);
     font-weight: 600;
 }

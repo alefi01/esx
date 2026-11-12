@@ -25,9 +25,42 @@ public static class Log
 {
     private static readonly Lock Gate = new();
 
-    public static string Path => System.IO.Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PortalWidget", "widget.log");
+    /// <summary>
+    /// Куда писать.
+    ///
+    /// Обычно это профиль пользователя. Но профиль бывает
+    /// перенаправлен на сетевой диск, который в момент запуска
+    /// недоступен, — и тогда журнала не будет именно там, где он
+    /// нужнее всего. Поэтому есть запасной путь во временной папке:
+    /// она есть всегда.
+    ///
+    /// Путь выбирается один раз и дальше не меняется: журнал,
+    /// разбросанный по двум файлам, читать невозможно.
+    /// </summary>
+    public static string Path { get; } = ChoosePath();
+
+    private static string ChoosePath()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+        if (home.Length > 0)
+        {
+            try
+            {
+                var folder = System.IO.Path.Combine(home, "PortalWidget");
+
+                Directory.CreateDirectory(folder);
+
+                return System.IO.Path.Combine(folder, "widget.log");
+            }
+            catch (Exception)
+            {
+                // Профиль недоступен — пишем во временную папку.
+            }
+        }
+
+        return System.IO.Path.Combine(System.IO.Path.GetTempPath(), "portal-widget.log");
+    }
 
     public static void Write(string message)
     {

@@ -253,11 +253,51 @@ public class AssignedModel : PageModel
         });
     }
 
+    /// <summary>
+    /// Выбранные исполнители для повторной отрисовки формы — логин,
+    /// имя и пометка «контроль», одной строкой JSON.
+    ///
+    /// Если форму вернули с ошибкой, плашки должны остаться на месте:
+    /// человек выбирал их руками, и терять этот труд из-за незаполненного
+    /// срока — хамство. Имена хранятся здесь, потому что в самой форме
+    /// лежат только логины.
+    /// </summary>
+    public string ChosenJson { get; private set; } = "";
+
+    /// <summary>Запомнить выбранных перед тем, как показать форму заново.</summary>
+    private async Task KeepChosenAsync(CancellationToken cancellationToken)
+    {
+        var logins = (Input.Assignee ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (logins.Count == 0)
+        {
+            return;
+        }
+
+        var people = new List<object>();
+
+        foreach (var login in logins)
+        {
+            people.Add(new
+            {
+                userName = login,
+                displayName = await _directory.DisplayNameAsync(login, cancellationToken),
+                control = string.Equals(login, Input.Controller, StringComparison.OrdinalIgnoreCase)
+            });
+        }
+
+        ChosenJson = System.Text.Json.JsonSerializer.Serialize(people);
+    }
+
     public async Task<IActionResult> OnPostCreateAsync(
         List<IFormFile> attachments, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
         {
+            await KeepChosenAsync(cancellationToken);
             await LoadAsync(cancellationToken);
 
             return Page();
@@ -288,6 +328,7 @@ public class AssignedModel : PageModel
             {
                 ErrorMessage = $"Сотрудника «{login}» нет в списке доступа к порталу.";
 
+                await KeepChosenAsync(cancellationToken);
                 await LoadAsync(cancellationToken);
 
                 return Page();

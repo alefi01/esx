@@ -19,6 +19,12 @@
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
+    <!-- Сжатие внутри одного файла: без него программа весит 112 МБ.
+         Такой файл дольше скачивается по сети филиала, дольше
+         проверяется антивирусом и не помещается в хранилище исходников
+         (там предел 100 МБ на файл). Со сжатием — около сорока. -->
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+
     <!-- Сборка идёт и на машине разработчика без Windows: targeting pack
          для WinForms подтягивается пакетом. На самой программе это никак
          не сказывается — она всё равно только для Windows. -->

@@ -60,10 +60,15 @@ public static class Installer
     /// </summary>
     public static bool Run(string server)
     {
+        Log.Write("Установка: начало. Адрес портала: "
+            + (server.Length > 0 ? server : "неизвестен"));
+
         var current = Environment.ProcessPath;
 
         if (current is null)
         {
+            Log.Write("Установка: не удалось узнать путь к себе");
+
             return false;
         }
 
@@ -75,13 +80,20 @@ public static class Installer
 
         if (answer != DialogResult.OK)
         {
+            Log.Write("Установка: человек отказался");
+
             return false;
         }
 
         // 1. Компонент, на котором работает окно портала.
-        if (!WebView2Present() && !InstallWebView2(server))
+        if (!WebView2Present())
         {
-            return false;
+            Log.Write("Установка: WebView2 не найден, спрашиваем человека");
+
+            if (!InstallWebView2(server))
+            {
+                return false;
+            }
         }
 
         // 2. Сама программа.
@@ -176,6 +188,8 @@ public static class Installer
     {
         if (server.Length == 0)
         {
+            Log.Write("Установка: адрес портала неизвестен, качать компонент неоткуда");
+
             MessageBox.Show(
                 "На этом компьютере нет компонента Microsoft Edge WebView2 Runtime, "
                 + "а адрес портала неизвестен — скачать его неоткуда.\n\n"
@@ -186,79 +200,19 @@ public static class Installer
             return false;
         }
 
-        var temp = Path.Combine(Path.GetTempPath(), "PortalWidget");
+        // Окно с объяснением и кнопкой, а не тихое скачивание: раньше
+        // программа молча уходила за стомегабайтным файлом и минуту
+        // выглядела зависшей.
+        using var ask = new WebView2Prompt(server);
 
-        Directory.CreateDirectory(temp);
+        ask.ShowDialog();
 
-        var file = Path.Combine(temp, "webview2-runtime.exe");
-
-        try
+        if (!ask.Installed)
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
-
-            using var answer = http.GetAsync(
-                server + "/client/webview2",
-                HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult();
-
-            if (!answer.IsSuccessStatusCode)
-            {
-                MessageBox.Show(
-                    "На этом компьютере нет компонента Microsoft Edge WebView2 Runtime, "
-                    + "а на портале его установщик не выложен.\n\n"
-                    + "Передайте администратору: файл MicrosoftEdgeWebView2RuntimeInstallerX64.exe "
-                    + "нужно положить в папку App_Data\\client рядом с порталом.",
-                    "Портал", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-
-                return false;
-            }
-
-            using (var target = File.Create(file))
-            {
-                answer.Content.CopyTo(target, null, CancellationToken.None);
-            }
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(
-                "Не удалось скачать недостающий компонент с портала:\n\n" + ex.Message,
-                "Портал", MessageBoxButtons.OK, MessageBoxIcon.Error);
-
-            return false;
+            Log.Write("Установка: без WebView2 продолжать нельзя");
         }
 
-        try
-        {
-            // Без повышения прав рантайм ставится для текущего пользователя —
-            // администратор не нужен. С повышением встал бы на всю машину.
-            var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = file,
-                Arguments = "/silent /install",
-                UseShellExecute = false
-            });
-
-            process?.WaitForExit();
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(
-                "Не удалось установить компонент:\n\n" + ex.Message,
-                "Портал", MessageBoxButtons.OK, MessageBoxIcon.Error);
-
-            return false;
-        }
-
-        if (!WebView2Present())
-        {
-            MessageBox.Show(
-                "Компонент установить не удалось. Обратитесь к администратору: "
-                + "возможно, установку запрещает политика безопасности.",
-                "Портал", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-
-            return false;
-        }
-
-        return true;
+        return ask.Installed;
     }
 
     // ==================================================================

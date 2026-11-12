@@ -92,7 +92,7 @@
                        часто ставят нескольким, и список имён строкой
                        быстро перестаёт читаться — не видно, кого уже
                        выбрали и кого можно убрать. *@
-                    <div class="chips" id="assigneeChips"></div>
+                    <div class="chips" id="assigneeChips" data-chosen="@Model.ChosenJson"></div>
 
                     <div class="pick" data-pick>
                         <input type="text" id="assigneeName" autocomplete="off"
@@ -101,9 +101,9 @@
                         <div class="pick-list" id="assigneeList" hidden></div>
                     </div>
 
-                    <p class="hint">Можно выбрать нескольких. Щелчок по
-                       «контроль» поручает приёмку работы этому исполнителю —
-                       иначе принимаете вы.</p>
+                    <p class="hint">Можно выбрать нескольких. Щелчок по имени
+                       поручает приёмку работы этому исполнителю — иначе
+                       принимаете вы.</p>
 
                     <input type="hidden" asp-for="Input.Assignee" id="assigneeLogin" />
                     <input type="hidden" asp-for="Input.Controller" id="controllerLogin" />
@@ -124,7 +124,11 @@
                 <div class="row-form">
                     <div class="field">
                         <label asp-for="Input.DueOn">Срок</label>
-                        <input asp-for="Input.DueOn" type="date" />
+
+                        @* Обязательность проверяет браузер, не отправляя форму:
+                           уход на сервер и обратно стирал выбранный файл —
+                           вернуть его в поле не вправе никто, кроме человека. *@
+                        <input asp-for="Input.DueOn" type="date" required />
                         <span asp-validation-for="Input.DueOn" class="err"></span>
                     </div>
 
@@ -355,7 +359,7 @@
                                     @if (task.Important)
                                     {
                                         <span class="t-imp" title="Важная задача">
-                                            <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>
+                                            <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>Важно
                                         </span>
                                     }
 
@@ -501,7 +505,7 @@
                             @if (task.Important)
                             {
                                 <span class="t-imp" title="Важная задача">
-                                    <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>
+                                    <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>Важно
                                 </span>
                             }
 

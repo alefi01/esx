@@ -145,7 +145,7 @@
                                     @if (task.Important)
                                     {
                                         <span class="t-imp" title="Важная задача">
-                                            <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>
+                                            <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>Важно
                                         </span>
                                     }
 
@@ -161,14 +161,23 @@
                                     <p class="bcard-notes">@task.Notes</p>
                                 }
 
+                                @* Срок стоит один в строке, а кто поставил — внизу
+                                   карточки с аватаркой, как исполнитель на доске
+                                   начальника. В узком столбце оба на одной строке
+                                   переносились, и разделитель повисал в конце. *@
                                 <div class="task-meta-row">
                                     <span class="t-when@(card.Overdue ? " late" : "")@urgency">
                                         <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(item.DueAt, task.DueMinutes is not null)
                                     </span>
 
-                                    <span class="t-dot-sep"></span>
+                                    @if (task.Repeat != Portal.Web.Data.TaskRepeat.Once)
+                                    {
+                                        <span class="t-dot-sep"></span>
 
-                                    <span class="t-from">@task.AuthorDisplayName</span>
+                                        <span class="t-rep">
+                                            <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-restore" /></svg>@Portal.Web.Pages.Tasks.AssignedTaskText.RepeatFor(task)
+                                        </span>
+                                    }
                                 </div>
 
                                 @if (item.State == Portal.Web.Data.TaskState.Returned && item.ReturnReason is { } reason)
@@ -193,45 +202,61 @@
                                     </div>
                                 }
 
-                                @* Отметка «взял в работу»: до неё задача лежит
-                                   в столбце «Новые». Сдать можно и не беря —
-                                   отметка это сведения, а не пропуск: ставить
-                                   лишний шаг перед работой, сделанной за минуту,
-                                   было бы издевательством. *@
-                                @if (item is { IsClosed: false, TakenAt: null, State: Portal.Web.Data.TaskState.Open })
+                                <footer class="bcard-foot">
+                                    <span class="task-who-ava" title="@task.AuthorDisplayName">@Portal.Web.Pages.Shared.Avatars.Initials(task.AuthorDisplayName)</span>
+                                    <span class="bcard-who">@task.AuthorDisplayName</span>
+                                </footer>
+
+                                @* Все действия по задаче — одной группой под общей
+                                   чертой. Раньше «Взять в работу» и сдача были двумя
+                                   блоками с собственными отступами и линиями,
+                                   и карточка читалась как склеенная из кусков. *@
+                                @if (!item.IsClosed
+                                     && (item.State != Portal.Web.Data.TaskState.Submitted
+                                         || item.TakenAt is null))
                                 {
-                                    <form method="post" asp-page-handler="Take" asp-route-instanceId="@item.Id"
-                                          asp-route-scope="@Model.Scope" asp-route-view="@Model.View" class="head-form">
-                                        <button class="btn sm" type="submit">
-                                            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>Взять в работу
-                                        </button>
-                                    </form>
-                                }
-
-                                @if (!item.IsClosed && item.State != Portal.Web.Data.TaskState.Submitted)
-                                {
-                                    <form method="post" asp-page-handler="Submit" asp-route-instanceId="@item.Id"
-                                          asp-route-scope="@Model.Scope" asp-route-view="@Model.View"
-                                          enctype="multipart/form-data" class="task-submit">
-
-                                        <label class="file-pick">
-                                            <input type="file" name="attachments" multiple
-                                                   aria-label="Файл к задаче" data-file-pick />
-                                            <span class="file-pick-btn">
-                                                <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload" /></svg>Файл
-                                            </span>
-                                            <span class="file-pick-name" data-file-name>не выбран</span>
-                                        </label>
-
-                                        <button class="btn primary sm" type="submit">
-                                            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>@(task.NeedCheck ? "Сдать" : "Выполнено")
-                                        </button>
-
-                                        @if (task.NeedFile)
+                                    <div class="task-acts">
+                                        @* Отметка «взял в работу»: до неё задача лежит
+                                           в столбце «Новые». Сдать можно и не беря —
+                                           отметка это сведения, а не пропуск: ставить
+                                           лишний шаг перед работой, сделанной за минуту,
+                                           было бы издевательством. *@
+                                        @if (item is { TakenAt: null, State: Portal.Web.Data.TaskState.Open })
                                         {
-                                            <span class="hint">Нужен файл</span>
+                                            <form method="post" asp-page-handler="Take" asp-route-instanceId="@item.Id"
+                                                  asp-route-scope="@Model.Scope" asp-route-view="@Model.View" class="task-act">
+                                                <button class="btn sm" type="submit">
+                                                    <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>Взять в работу
+                                                </button>
+                                            </form>
                                         }
-                                    </form>
+
+                                        @if (item.State != Portal.Web.Data.TaskState.Submitted)
+                                        {
+                                            <form method="post" asp-page-handler="Submit" asp-route-instanceId="@item.Id"
+                                                  asp-route-scope="@Model.Scope" asp-route-view="@Model.View"
+                                                  enctype="multipart/form-data" class="task-act task-submit">
+
+                                                <label class="file-pick">
+                                                    <input type="file" name="attachments" multiple
+                                                           aria-label="Файл к задаче" data-file-pick />
+                                                    <span class="file-pick-btn">
+                                                        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload" /></svg>Файл
+                                                    </span>
+                                                    <span class="file-pick-name" data-file-name>не выбран</span>
+                                                </label>
+
+                                                <button class="btn primary sm" type="submit">
+                                                    <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>@(task.NeedCheck ? "Сдать" : "Выполнено")
+                                                </button>
+
+                                                @if (task.NeedFile)
+                                                {
+                                                    <span class="hint">Нужен файл</span>
+                                                }
+                                            </form>
+                                        }
+                                    </div>
                                 }
                             </article>
                         }
