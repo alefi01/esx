@@ -1518,10 +1518,11 @@ button.pin-btn.on{opacity:1;color:var(--accent)}
 .seg-btn.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 .seg-btn svg{flex:none}
 
-/* Второй переключатель в заголовке (какой список показывать) уезжает
-   к правому краю: слева — вкладки «чьи задачи», и путать их нельзя.
-   На узком экране строка переносится сама. */
+/* Переключатели в заголовке: слева вкладки «чьи задачи», у правого
+   края — «какой список» и «как показывать». Строка переносится сама,
+   когда места не хватает. */
 .view-head .seg--sub{margin-left:auto}
+.view-head .seg--view{margin-left:0}
 
 /* ---------- Лента объявлений ---------- */
 
@@ -1802,6 +1803,103 @@ mark{background:color-mix(in srgb,var(--warn) 42%,transparent);color:inherit;
 @media (max-width:720px){
   [data-assigned-tasks] .task-card{flex-wrap:wrap}
   [data-assigned-tasks] .task-tools{width:100%;justify-content:flex-start}
+}
+
+/* ---------- Выбор человека подсказкой в поле ----------
+
+   Раньше для этого открывалось второе окно. Но форма новой задачи
+   сама живёт в окне, а второе окно закрывает первое вместе
+   с набранным текстом. Подсказка короче на два нажатия
+   и ничего не закрывает. */
+.pick{position:relative}
+.pick > input[type=text]{width:100%;border:1px solid var(--border);background:var(--surface2);
+  border-radius:10px;padding:10px 12px;font-size:13.5px;outline:none;transition:.15s}
+.pick > input[type=text]:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);
+  background:var(--surface)}
+
+.pick-list{position:absolute;left:0;right:0;top:calc(100% + 5px);z-index:5;
+  max-height:232px;overflow-y:auto;padding:5px;border:1px solid var(--border);
+  border-radius:12px;background:var(--surface);box-shadow:var(--shadow-lg)}
+
+.pick-row{display:flex;align-items:center;gap:9px;width:100%;padding:7px 8px;border:0;
+  border-radius:9px;background:none;font:inherit;text-align:left;cursor:pointer;color:inherit}
+.pick-row:hover{background:var(--surface2)}
+.pick-name{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+  font-size:13px;font-weight:600}
+.pick-login{font-size:11.5px;color:var(--muted)}
+.pick-none{padding:8px 10px}
+
+.avatar.sm{width:26px;height:26px;font-size:10px}
+
+/* ======================================================================
+   Доска задач
+   ======================================================================
+
+   Столбец на каждое состояние: открыто, сдано на проверку, возвращено.
+   Списком видно, что горит; доской — где застряло: когда половина
+   карточек стоит в «Сдано на проверку», ждёт уже не исполнитель,
+   а сам начальник, и списком это незаметно.
+
+   Карточки не перетаскиваются мышью, и это намеренно: состояние задачи
+   меняет не раскладка на экране, а действие — «Принять», «Вернуть».
+   Перетаскивание, которое иногда меняет состояние, а иногда нет,
+   хуже его отсутствия. */
+
+.tboard{display:flex;gap:12px;align-items:flex-start;overflow-x:auto;padding-bottom:8px}
+
+.tcol{flex:1 1 0;min-width:240px;max-width:420px;background:var(--surface2);
+  border:1px solid var(--border);border-radius:14px;padding:10px}
+
+.tcol-head{display:flex;align-items:center;gap:8px;padding:0 4px 9px}
+.tcol-name{font-size:11.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
+  color:var(--muted)}
+.tcol-count{margin-left:auto;min-width:20px;padding:1px 7px;border-radius:999px;
+  background:var(--surface3);color:var(--muted);font-size:11px;font-weight:700;text-align:center}
+
+/* Полоска сверху столбца — единственное, чем столбцы отличаются цветом.
+   Красить карточки целиком незачем: тогда доска пестрит, а состояние
+   и так написано над ними словом. */
+.tcol::before{content:"";display:block;height:3px;border-radius:3px;margin:0 4px 8px}
+.tcol--open::before{background:var(--muted)}
+.tcol--submitted::before{background:var(--accent)}
+.tcol--returned::before{background:var(--warn)}
+.tcol--accepted::before,.tcol--done::before{background:var(--ok)}
+.tcol--cancelled::before{background:var(--border)}
+.tcol--missed::before{background:var(--danger)}
+
+.tcol-body{display:flex;flex-direction:column;gap:8px}
+.tcol-empty{padding:10px 4px;color:var(--muted);font-size:12px;text-align:center}
+
+/* Карточка доски: та же задача, что в списке, но сжатая до того,
+   что видно с двух шагов — название, срок, исполнитель. */
+.bcard{position:relative;overflow:hidden;background:var(--surface);border:1px solid var(--border);
+  border-radius:11px;padding:10px 11px;box-shadow:0 1px 2px rgba(23,28,38,.05);transition:.15s}
+.bcard:hover{box-shadow:var(--shadow);transform:translateY(-1px)}
+
+/* Полоса слева та же, что у строки списка: горящий срок виден
+   одинаково в обоих видах. */
+.bcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:transparent}
+.bcard.urgent-soon::before{background:var(--warn)}
+.bcard.urgent-close::before,.bcard.urgent-now::before,.bcard.overdue::before{background:var(--danger)}
+
+.bcard-top{display:flex;align-items:flex-start;gap:7px}
+.bcard-top b{font-size:13px;font-weight:700;line-height:1.35;overflow-wrap:anywhere}
+
+.bcard-notes{margin-top:5px;font-size:12px;line-height:1.5;color:var(--muted);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+.bcard .task-meta-row{margin-top:6px}
+
+.bcard-foot{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:9px;
+  padding-top:9px;border-top:1px solid var(--border)}
+.bcard-who{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+  font-size:12px;font-weight:600}
+
+/* На узком экране доска превращается в один столбец под другим:
+   горизонтальная прокрутка на ноутбуке с краю стола — мучение. */
+@media (max-width:900px){
+  .tboard{flex-direction:column;overflow-x:visible}
+  .tcol{width:100%;max-width:none}
 }
 
 /* ---------- Объявления в папке ----------

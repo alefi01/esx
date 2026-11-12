@@ -1004,6 +1004,9 @@ app.MapGet("/favicon.svg", (Microsoft.Extensions.Options.IOptions<BrandingOption
 // компонент WebView2. Подробности — в ClientDownloads.
 app.MapClientDownloads();
 
+// Данные для вкладки «Задачи» в виджете — подробности в WidgetApi.
+app.MapWidgetApi();
+
 app.Run();
 
 // Program при использовании «инструкций верхнего уровня» получается internal-классом.

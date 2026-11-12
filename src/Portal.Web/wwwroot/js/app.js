@@ -4250,17 +4250,90 @@
         }
 
         // ---------- Выбор исполнителя ----------
-        const pick = $('#pickAssignee');
+        // ---------- Кому поставить задачу ----------
+        //
+        // Подсказка прямо в поле, а не отдельным окном: форма сама
+        // открывается окном, а второе окно закрыло бы первое вместе
+        // с набранным текстом.
+        //
+        // В поле человек видит имя, а на сервер уходит логин скрытым
+        // полем. Пока имя не выбрано из списка, логин пуст — и сервер
+        // честно скажет «выберите, кому поставить задачу», вместо того
+        // чтобы угадывать по набранному.
+        const nameField = $('#assigneeName');
+        const loginField = $('#assigneeLogin');
+        const suggest = $('#assigneeList');
 
-        if (pick) {
-            pick.onclick = () => peoplePicker({
-                title: 'Кому поставить задачу',
-                label: 'Сотрудник',
-                url: '/Tasks/Assigned?handler=People',
-                onPick: (login, name) => {
-                    $('#assigneeLogin').value = login;
-                    $('#assigneeName').value = name;
+        if (nameField && loginField && suggest) {
+            let timer = 0;
+            let lastQuery = null;
+
+            const hide = () => { suggest.hidden = true; };
+
+            const show = people => {
+                suggest.innerHTML = '';
+
+                if (people.length === 0) {
+                    suggest.innerHTML = '<p class="hint pick-none">Никого не нашлось. ' +
+                        'Справочник сотрудников читается из Active Directory.</p>';
+                    suggest.hidden = false;
+
+                    return;
                 }
+
+                people.forEach(person => {
+                    const row = el('<button class="pick-row" type="button">' +
+                        '<span class="avatar sm">' + esc(initials(person.displayName)) + '</span>' +
+                        '<span class="pick-name">' + esc(person.displayName) + '</span>' +
+                        '<span class="pick-login">' + esc(person.userName) + '</span>' +
+                        '</button>');
+
+                    row.onclick = () => {
+                        loginField.value = person.userName;
+                        nameField.value = person.displayName;
+
+                        hide();
+                    };
+
+                    suggest.appendChild(row);
+                });
+
+                suggest.hidden = false;
+            };
+
+            const look = () => {
+                const query = nameField.value.trim();
+
+                if (query === lastQuery) { return; }
+
+                lastQuery = query;
+
+                fetch('/Tasks/Assigned?handler=People&q=' + encodeURIComponent(query), {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                    .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                    .then(show)
+                    .catch(() => hide());
+            };
+
+            nameField.addEventListener('input', () => {
+                // Набранное руками имя больше не соответствует выбранному
+                // человеку — выбор сбрасываем, иначе уйдёт не тот логин.
+                loginField.value = '';
+
+                clearTimeout(timer);
+                timer = setTimeout(look, 200);
+            });
+
+            nameField.addEventListener('focus', look);
+
+            // Прячем список не сразу: щелчок по строке приходит после
+            // потери фокуса, и без задержки выбор бы не срабатывал.
+            nameField.addEventListener('blur', () => setTimeout(hide, 160));
+
+            nameField.addEventListener('keydown', e => {
+                if (e.key === 'Escape') { hide(); }
             });
         }
 

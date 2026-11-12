@@ -43,6 +43,18 @@
             </a>
         </nav>
 
+        @* Список или доска. Список отвечает на вопрос «что горит»,
+           доска — «где это застряло»: видно, что половина задач висит
+           на проверке и ждёт уже не исполнителя, а самого начальника. *@
+        <nav class="seg seg--view" aria-label="Как показывать">
+            <a class="seg-btn@(Model.BoardView ? "" : " on")" asp-page="Assigned" asp-route-view="@Model.View" title="Списком">
+                <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-list" /></svg>Список
+            </a>
+            <a class="seg-btn@(Model.BoardView ? " on" : "")" asp-page="Assigned" asp-route-view="@Model.View" asp-route-mode="board" title="Доской по состояниям">
+                <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-grid" /></svg>Доска
+            </a>
+        </nav>
+
         @* Кнопка стоит в заголовке, а не отдельной карточкой над списком:
            карточка ради одной кнопки занимала целую полосу экрана
            и отодвигала вниз то, ради чего на страницу заходят. *@
@@ -76,13 +88,19 @@
                 <div class="field">
                     <label asp-for="Input.Assignee">Кому</label>
 
-                    @* Логин уходит скрытым полем, а человек выбирается
-                       в окне поиска по справочнику: набирать логин руками —
-                       верный способ поставить задачу не тому. *@
-                    <div class="inline-pair">
-                        <input type="text" id="assigneeName" readonly
-                               placeholder="Выберите сотрудника" value="" />
-                        <button class="btn" type="button" id="pickAssignee">Выбрать</button>
+                    @* Человек выбирается подсказкой прямо в поле, а логин
+                       уходит скрытым: набирать логин руками — верный способ
+                       поставить задачу не тому.
+
+                       Раньше для выбора открывалось второе окно. Но форма
+                       сама теперь живёт в окне, а второе окно закрывает
+                       первое — вместе с набранным текстом. Подсказка
+                       в поле короче на два нажатия и ничего не закрывает. *@
+                    <div class="pick" data-pick>
+                        <input type="text" id="assigneeName" autocomplete="off"
+                               placeholder="Фамилия или логин" value="" />
+
+                        <div class="pick-list" id="assigneeList" hidden></div>
                     </div>
 
                     <input type="hidden" asp-for="Input.Assignee" id="assigneeLogin" />
@@ -198,7 +216,109 @@
         </div>
     }
 
-    @if (Model.Items.Count == 0)
+    @if (Model.BoardView && Model.Items.Count > 0)
+    {
+        @* ---------- Доска ----------
+
+           Столбец на каждое состояние: сразу видно, чьего действия
+           ждёт задача — исполнителя, начальника или снова исполнителя.
+           Пустые столбцы остаются на месте: доска, у которой при каждом
+           движении меняется число колонок, перестаёт читаться
+           с одного взгляда. *@
+        <div class="tboard">
+            @foreach (var column in Model.Columns)
+            {
+                <section class="tcol tcol--@column.Key">
+                    <header class="tcol-head">
+                        <span class="tcol-name">@column.Title</span>
+                        <span class="tcol-count">@column.Cards.Count</span>
+                    </header>
+
+                    <div class="tcol-body">
+                        @foreach (var card in column.Cards)
+                        {
+                            var item = card.Instance;
+                            var task = card.Task;
+
+                            var urgency = card.Urgency switch
+                            {
+                                Portal.Web.Services.Tasks.TaskUrgency.Now => " urgent-now",
+                                Portal.Web.Services.Tasks.TaskUrgency.Close => " urgent-close",
+                                Portal.Web.Services.Tasks.TaskUrgency.Soon => " urgent-soon",
+                                _ => ""
+                            };
+
+                            <article class="bcard@(card.Overdue ? " overdue" : "")@urgency">
+                                <div class="bcard-top">
+                                    @if (task.Important)
+                                    {
+                                        <span class="t-imp" title="Важная задача">
+                                            <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>
+                                        </span>
+                                    }
+
+                                    <b>@task.Title</b>
+                                </div>
+
+                                @if (!string.IsNullOrWhiteSpace(task.Notes))
+                                {
+                                    <p class="bcard-notes">@task.Notes</p>
+                                }
+
+                                <div class="task-meta-row">
+                                    <span class="t-when@(card.Overdue ? " late" : "")@urgency">
+                                        <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-clock" /></svg>@Portal.Web.Pages.Tasks.IndexModel.DueText(item.DueAt, task.DueMinutes is not null)
+                                    </span>
+
+                                    @if (task.Repeat != TaskRepeat.Once)
+                                    {
+                                        <span class="t-dot-sep"></span>
+
+                                        <span class="t-rep">
+                                            <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-restore" /></svg>@Portal.Web.Pages.Tasks.AssignedTaskText.RepeatFor(task)
+                                        </span>
+                                    }
+
+                                    @if (task.Files.Count + item.Files.Count > 0)
+                                    {
+                                        <span class="t-dot-sep"></span>
+
+                                        <span class="t-rep" title="Файлов">
+                                            <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload" /></svg>@(task.Files.Count + item.Files.Count)
+                                        </span>
+                                    }
+                                </div>
+
+                                <footer class="bcard-foot">
+                                    <span class="task-who-ava" title="@task.AssigneeDisplayName">@Portal.Web.Pages.Shared.Avatars.Initials(task.AssigneeDisplayName)</span>
+                                    <span class="bcard-who">@task.AssigneeDisplayName</span>
+
+                                    @if (item.State == TaskState.Submitted)
+                                    {
+                                        <form method="post" asp-page-handler="Accept" asp-route-instanceId="@item.Id"
+                                              asp-route-view="@Model.View" asp-route-mode="@Model.Mode" class="head-form">
+                                            <button class="btn primary sm" type="submit">Принять</button>
+                                        </form>
+
+                                        <button class="btn sm" type="button"
+                                                data-return-task="@item.Id" data-task-title="@task.Title">
+                                            Вернуть
+                                        </button>
+                                    }
+                                </footer>
+                            </article>
+                        }
+
+                        @if (column.Cards.Count == 0)
+                        {
+                            <p class="tcol-empty">пусто</p>
+                        }
+                    </div>
+                </section>
+            }
+        </div>
+    }
+    else if (Model.Items.Count == 0)
     {
         <div class="empty">
             <svg class="ic" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>

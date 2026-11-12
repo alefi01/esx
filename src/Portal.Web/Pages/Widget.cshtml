@@ -7,15 +7,23 @@
 @*
     Страница для настольного виджета.
 
-    ЗАЧЕМ ОТДЕЛЬНАЯ СТРАНИЦА
+    УСТРОЕНА КАК ОКНО МЕССЕНДЖЕРА
 
-    Виджет — окно шириной в треть экрана, лежащее на рабочем столе.
-    Каркас портала в него не помещается: меню, поиск, заголовки заняли бы
-    всё место, а показать надо одно — что нового. Поэтому здесь своя
-    разметка без общего каркаса и свой маленький стиль.
+    Так, как привыкли: сверху шапка с названием, под ней вкладки,
+    ниже — список строк с кружком, именем, первой строкой текста,
+    временем справа и счётчиком непрочитанного. Этому виду людей
+    учить не надо, его знают по TrueConf и Telegram.
 
+    Плюс наше: вкладка «Задачи», которой у мессенджера нет. На ней
+    не «что нового», а что делать — задачи от начальника и свои
+    заметки, в том числе те, о которых колокольчик молчит.
+
+    ПОЧЕМУ ОТДЕЛЬНАЯ СТРАНИЦА
+
+    Виджет — окно шириной в треть экрана. Каркас портала в него
+    не помещается: меню, поиск и заголовки заняли бы всё место.
     Открывается и в браузере: тогда просто нет window.portalWidget,
-    и страница ведёт себя как обычная — это удобно для проверки.
+    и страница ведёт себя как обычная — так её удобно проверять.
 *@
 <!DOCTYPE html>
 <html lang="ru">
@@ -32,21 +40,20 @@
 <form id="wgForm" method="post"></form>
 
 @*
-    Заголовок — он же место, за которое виджет двигают мышью:
+    Шапка — она же место, за которое виджет двигают мышью:
     своей рамки у окна нет, иначе его было бы не сдвинуть.
 *@
 <header class="wg-head" data-drag>
-    @* Значок рисуется разметкой, а не картинкой: лишний запрос
-       в окне, которое должно открываться мгновенно, ни к чему. *@
     <span class="wg-mark">@Model.Letter</span>
 
     <strong class="wg-name">@Model.Title</strong>
 
-    <span class="wg-count" id="wgCount" hidden></span>
+    <button class="wg-btn" type="button" id="wgSeen" title="Отметить всё прочитанным" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12l5 5L13 8" /><path d="M11 15l2 2L23 7" />
+        </svg>
+    </button>
 
-    @* Кнопки крупнее подписей рядом: в виджет тычут мышью мимоходом,
-       не целясь, а раньше это были значки в 22 точки со значками
-       из текста — попасть можно было только внимательно. *@
     <a class="wg-btn" href="/" target="_blank" title="Открыть портал целиком">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 4h6v6" /><path d="M20 4l-9 9" />
@@ -62,47 +69,28 @@
 </header>
 
 @*
-    Полоска действий. Это и есть кнопки виджета: крупные, во всю
-    ширину окна, с числом справа — промахнуться мимо них нельзя.
+    Вкладки — как папки в мессенджере. Счётчик у вкладки показывает,
+    сколько там ждёт: непрочитанного в «Чате» и «Объявлениях»,
+    требующего внимания в «Задачах».
 *@
-<div class="wg-bar">
-    <a class="wg-act" href="/Tasks" target="_blank" id="wgTasks" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 11l3 3L22 4" />
-            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-        </svg>
-        <span>Задачи</span>
-        <b></b>
-    </a>
-
-    <a class="wg-act" href="/Tasks/Assigned" target="_blank" id="wgCheck" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" /><path d="M23 11l-3 3-2-2" />
-        </svg>
-        <span>На проверку</span>
-        <b></b>
-    </a>
-
-    <button class="wg-act wg-act--quiet" type="button" id="wgSeen" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" />
-        </svg>
-        <span>Прочитано</span>
-    </button>
-</div>
+<nav class="wg-tabs" id="wgTabs" aria-label="Что показывать">
+    <button class="wg-tab on" type="button" data-tab="all">Всё<b hidden></b></button>
+    <button class="wg-tab" type="button" data-tab="message">Чат<b hidden></b></button>
+    <button class="wg-tab" type="button" data-tab="announcement">Объявления<b hidden></b></button>
+    <button class="wg-tab" type="button" data-tab="task">Задачи<b hidden></b></button>
+</nav>
 
 <main class="wg-list" id="wgList"></main>
 
 @*
-    «Нового нет» лежит готовым в разметке, а не собирается кодом:
-    пустой список — самое частое состояние виджета, и рисовать его
-    кодом при каждом обновлении незачем. Значок нарисован прямо здесь:
-    общий набор значков портала в виджет не тянем, он тяжелее всего,
-    что есть на этой странице.
+    Пустое состояние лежит готовым в разметке, а не собирается кодом:
+    оно самое частое, и рисовать его заново при каждом обновлении
+    незачем. Значок нарисован прямо здесь — общий набор значков
+    портала в виджет не тянем, он тяжелее всего, что есть на этой
+    странице.
 *@
 <div class="wg-empty" id="wgEmpty" hidden>
-    <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M9 11l3 3L22 4" />
         <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
     </svg>
