@@ -30,7 +30,7 @@
 
         @{
             var tabs = new Portal.Web.Pages.Shared.TasksTabs(
-                Model.FromHeadView ? "head" : "own", Model.HeadCount, Model.WaitingCount);
+                Model.FromHeadView ? "head" : "own", Model.HeadCount, Model.WaitingCount, Model.HasHead);
         }
 
         <partial name="_TasksTabs" model="tabs" />
@@ -151,8 +151,8 @@
 
                                     <b>@task.Title</b>
 
-                                    <span class="task-state state-@item.State.ToString().ToLowerInvariant()">
-                                        @Portal.Web.Pages.Tasks.AssignedTaskText.StateFor(item.State)
+                                    <span class="task-state state-@(item is { State: Portal.Web.Data.TaskState.Open, TakenAt: null } ? "fresh" : item.State.ToString().ToLowerInvariant())">
+                                        @Portal.Web.Pages.Tasks.AssignedTaskText.StateFor(item)
                                     </span>
                                 </div>
 
@@ -191,6 +191,21 @@
                                             </a>
                                         }
                                     </div>
+                                }
+
+                                @* Отметка «взял в работу»: до неё задача лежит
+                                   в столбце «Новые». Сдать можно и не беря —
+                                   отметка это сведения, а не пропуск: ставить
+                                   лишний шаг перед работой, сделанной за минуту,
+                                   было бы издевательством. *@
+                                @if (item is { IsClosed: false, TakenAt: null, State: Portal.Web.Data.TaskState.Open })
+                                {
+                                    <form method="post" asp-page-handler="Take" asp-route-instanceId="@item.Id"
+                                          asp-route-scope="@Model.Scope" asp-route-view="@Model.View" class="head-form">
+                                        <button class="btn sm" type="submit">
+                                            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>Взять в работу
+                                        </button>
+                                    </form>
                                 }
 
                                 @if (!item.IsClosed && item.State != Portal.Web.Data.TaskState.Submitted)

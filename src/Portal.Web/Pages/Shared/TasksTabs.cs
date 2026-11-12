@@ -20,4 +20,10 @@ namespace Portal.Web.Pages.Shared;
 /// Сколько подчинённые сдали на проверку — это и есть работа
 /// начальника на его вкладке.
 /// </param>
-public sealed record TasksTabs(string Current, int HeadCount, int WaitingCount);
+/// <param name="HasHead">
+/// Человеку когда-либо что-то поручали. Начальник тоже бывает чьим-то
+/// подчинённым, поэтому убирать вкладку «От руководителя» по должности
+/// нельзя; но тому, кому никто ничего не поручал, она обещает раздел,
+/// которого нет.
+/// </param>
+public sealed record TasksTabs(string Current, int HeadCount, int WaitingCount, bool HasHead = true);

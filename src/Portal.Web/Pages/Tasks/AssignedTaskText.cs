@@ -24,6 +24,21 @@ public static class AssignedTaskText
         _ => ""
     };
 
+    /// <summary>
+    /// Слово состояния для КОНКРЕТНОГО экземпляра.
+    ///
+    /// Открытая задача бывает двух видов: только что поставленная
+    /// и взятая в работу. Для человека это разные вещи, хотя состояние
+    /// у них одно: по первой он ещё ничего не решил, по второй уже
+    /// взялся.
+    /// </summary>
+    public static string StateFor(AssignedTaskInstance instance) =>
+        instance is { State: TaskState.Open, TakenAt: null }
+            ? "Новая"
+            : instance.State == TaskState.Open && instance.TakenAt is not null
+                ? "В работе"
+                : StateFor(instance.State);
+
     /// <summary>Как часто повторяется — короткой строкой для карточки.</summary>
     public static string RepeatFor(AssignedTask task) => task.Repeat switch
     {

@@ -149,6 +149,9 @@ public class AssignedModel : PageModel
     /// </summary>
     public int MineAttention { get; private set; }
 
+    /// <summary>Самому начальнику тоже что-то поручали — тогда у него есть вкладка «От руководителя».</summary>
+    public bool HasHead { get; private set; }
+
     [TempData] public string? StatusMessage { get; set; }
     [TempData] public string? ErrorMessage { get; set; }
 
@@ -223,6 +226,7 @@ public class AssignedModel : PageModel
             .Count(t => t.DueOn!.Value.Date < DateTime.Now.Date);
 
         MineAttention = await _assigned.NeedsAttentionCountAsync(UserName, cancellationToken) + overdueOwn;
+        HasHead = await _assigned.HasAssignmentsAsync(UserName, cancellationToken);
     }
 
     /// <summary>

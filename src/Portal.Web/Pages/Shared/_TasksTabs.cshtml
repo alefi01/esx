@@ -8,7 +8,10 @@
 
     «Мои» — свои заметки, их человек ведёт сам.
     «От руководителя» — поручения: их сдают, и закрывает их тот, кто
-    поставил.
+    поставил. Вкладка есть у того, кому хоть раз что-то поручали:
+    начальник тоже бывает чьим-то подчинённым, так что убирать её
+    по должности нельзя, а обещать пустой раздел тому, кому никто
+    ничего не поручал, незачем.
     «Подчинённым» — то, что человек поручил другим. Видна только тем,
     кто вправе ставить задачи: у остальных этой половины раздела просто
     нет, и вкладка из воздуха сбивала бы с толку.
@@ -28,13 +31,16 @@
         <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check-square" /></svg>Мои
     </a>
 
-    <a class="seg-btn@(Model.Current == "head" ? " on" : "")" asp-page="/Tasks/Index" asp-route-scope="head">
-        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>От руководителя
-        @if (Model.HeadCount > 0)
-        {
-            <span class="side-count">@Model.HeadCount</span>
-        }
-    </a>
+    @if (Model.HasHead || Model.Current == "head")
+    {
+        <a class="seg-btn@(Model.Current == "head" ? " on" : "")" asp-page="/Tasks/Index" asp-route-scope="head">
+            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>От руководителя
+            @if (Model.HeadCount > 0)
+            {
+                <span class="side-count">@Model.HeadCount</span>
+            }
+        </a>
+    }
 
     @if (canAssign)
     {

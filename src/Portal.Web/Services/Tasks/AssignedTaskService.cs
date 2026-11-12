@@ -311,6 +311,53 @@ public sealed class AssignedTaskService
     // ==================================================================
 
     /// <summary>
+    /// Взять задачу в работу.
+    ///
+    /// ЗАЧЕМ ЭТО НУЖНО
+    ///
+    /// Поставленная задача и задача, которую человек увидел и взял, —
+    /// это разные вещи. Без отметки начальник не знает, дошло ли
+    /// поручение вообще, и спрашивает об этом в переписке; исполнитель
+    /// не видит, что в его списке новое, а что он уже разбирал.
+    ///
+    /// Сдать задачу можно и не беря её: отметка — это сведения,
+    /// а не пропуск. Ставить лишний шаг между человеком и работой
+    /// было бы издевательством над тем, кто сделал всё за минуту.
+    ///
+    /// Повторное нажатие ничего не меняет: время первой отметки
+    /// и есть ответ на вопрос «когда увидел».
+    /// </summary>
+    public async Task<string?> TakeAsync(
+        int instanceId, string userName, CancellationToken cancellationToken)
+    {
+        var instance = await _db.AssignedTaskInstances.AsTracking()
+            .Include(i => i.Task)!
+                .ThenInclude(t => t!.Assignees)
+            .FirstOrDefaultAsync(i => i.Id == instanceId, cancellationToken);
+
+        if (instance?.Task is null || !IsAssignee(instance, userName))
+        {
+            return "Задача не найдена.";
+        }
+
+        if (instance.IsClosed)
+        {
+            return "Задача уже закрыта.";
+        }
+
+        if (instance.TakenAt is not null)
+        {
+            return null;
+        }
+
+        instance.TakenAt = Now;
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return null;
+    }
+
+    /// <summary>
     /// Сдать задачу.
     ///
     /// Если проверка нужна — экземпляр уходит в «сдано на проверку»
@@ -553,6 +600,21 @@ public sealed class AssignedTaskService
                             && i.Task!.AssigneeUserName.ToLower() == userName.ToLower()))
             .CountAsync(i => i.State == TaskState.Open || i.State == TaskState.Returned, cancellationToken);
     }
+
+    /// <summary>
+    /// Поручали ли этому человеку хоть что-нибудь — когда-либо.
+    ///
+    /// По этому и решается, показывать ли вкладку «От руководителя».
+    /// Начальник тоже бывает чьим-то подчинённым, поэтому убирать
+    /// вкладку по должности нельзя; но тому, кому никто никогда
+    /// ничего не поручал, она обещает раздел, которого нет.
+    /// </summary>
+    public async Task<bool> HasAssignmentsAsync(string userName, CancellationToken cancellationToken) =>
+        await _db.AssignedTaskInstances
+            .AnyAsync(i => i.AssigneeUserName.ToLower() == userName.ToLower()
+                           || (i.AssigneeUserName == ""
+                               && i.Task!.AssigneeUserName.ToLower() == userName.ToLower()),
+                cancellationToken);
 
     /// <summary>Сколько сдано на проверку — число у пункта меню начальника.</summary>
     public async Task<int> WaitingCheckCountAsync(string userName, CancellationToken cancellationToken) =>

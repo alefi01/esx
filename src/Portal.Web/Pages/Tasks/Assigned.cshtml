@@ -30,7 +30,7 @@
 
         @{
             var tabs = new Portal.Web.Pages.Shared.TasksTabs(
-                "assigned", Model.MineAttention, Model.WaitingCount);
+                "assigned", Model.MineAttention, Model.WaitingCount, Model.HasHead);
         }
 
         <partial name="_TasksTabs" model="tabs" />
@@ -398,6 +398,14 @@
                                        что прочитал. Молча подменённый текст
                                        хуже отсутствия правки вовсе. *@
                                     <p class="bcard-edited">отредактировано @edited.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</p>
+                                }
+
+                                @if (item is { State: TaskState.Open, TakenAt: null })
+                                {
+                                    @* Ответ на вопрос «он её вообще видел?».
+                                       До сих пор его приходилось выяснять
+                                       в переписке. *@
+                                    <p class="t-fresh">исполнитель ещё не взял в работу</p>
                                 }
 
                                 <footer class="bcard-foot">

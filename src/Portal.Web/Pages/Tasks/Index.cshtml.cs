@@ -139,7 +139,10 @@ public class IndexModel : PageModel
         ]
         :
         [
-            new("В работе", "open", OfState(Portal.Web.Data.TaskState.Open), []),
+            new("Новые", "fresh", OfState(Portal.Web.Data.TaskState.Open)
+                .Where(card => card.Instance.TakenAt is null).ToList(), []),
+            new("В работе", "open", OfState(Portal.Web.Data.TaskState.Open)
+                .Where(card => card.Instance.TakenAt is not null).ToList(), []),
             new("Сдано на проверку", "submitted", OfState(Portal.Web.Data.TaskState.Submitted), []),
             new("На доработке", "returned", OfState(Portal.Web.Data.TaskState.Returned), [])
         ];
@@ -162,6 +165,9 @@ public class IndexModel : PageModel
     /// «От руководителя».
     /// </summary>
     public int HeadCount { get; private set; }
+
+    /// <summary>Человеку когда-либо что-то поручали — от этого зависит, есть ли вкладка.</summary>
+    public bool HasHead { get; private set; }
 
     /// <summary>Сколько подчинённые сдали на проверку — число на третьей вкладке.</summary>
     public int WaitingCount { get; private set; }
@@ -211,6 +217,7 @@ public class IndexModel : PageModel
         // Число на вкладке «От руководителя»: новые поручения,
         // возвращённые на доработку и просроченные.
         HeadCount = await _assigned.NeedsAttentionCountAsync(UserName, cancellationToken);
+        HasHead = HeadCount > 0 || await _assigned.HasAssignmentsAsync(UserName, cancellationToken);
 
         // Число на вкладке «Подчинённым» нужно только начальнику —
         // лишний запрос для остальных не делаем.
@@ -251,6 +258,25 @@ public class IndexModel : PageModel
     // ==================================================================
     // Задачи от начальника
     // ==================================================================
+
+    /// <summary>
+    /// Взять задачу в работу.
+    ///
+    /// Нужна, чтобы новое не терялось среди давно разобранного:
+    /// до отметки задача лежит в столбце «Новые», после — в «В работе».
+    /// Начальник при этом видит, дошло ли поручение вообще.
+    /// </summary>
+    public async Task<IActionResult> OnPostTakeAsync(int instanceId, CancellationToken cancellationToken)
+    {
+        var error = await _assigned.TakeAsync(instanceId, UserName, cancellationToken);
+
+        if (error is not null)
+        {
+            ErrorMessage = error;
+        }
+
+        return RedirectToPage(new { scope = Scope, view = View });
+    }
 
     /// <summary>
     /// Сдать задачу. Файл необязателен, если задача его не требует, —

@@ -343,6 +343,9 @@ namespace Portal.Web.Data.Migrations
                     b.Property<DateTime?>("SubmittedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("TakenAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("TaskId")
                         .HasColumnType("integer");
 

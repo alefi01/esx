@@ -2067,6 +2067,9 @@ html[data-file-view="list"] .flist[hidden]{display:block !important}
 .tcol--open::before{background:var(--muted)}
 .tcol--late::before{background:var(--danger)}
 .tcol--submitted::before{background:var(--accent)}
+/* «Новые» — то, что человек ещё не брал в работу. Синим: это не
+   тревога, а «посмотри, тут новое». */
+.tcol--fresh::before{background:color-mix(in srgb,var(--accent) 55%,transparent)}
 .tcol--returned::before{background:var(--warn)}
 .tcol--accepted::before,.tcol--done::before{background:var(--ok)}
 .tcol--cancelled::before,.tcol--archive::before{background:var(--border)}
@@ -2408,6 +2411,20 @@ html.lite .main{background-image:none !important}
    вчера и делать по тому, что прочитал. */
 .bcard-edited,
 .t-edited {
+    margin: 2px 0 0;
+    font-size: 11px;
+    color: var(--muted);
+}
+
+/* Новая задача — та, которую исполнитель ещё не брал в работу.
+   Синим, а не жёлтым: это не тревога, а «посмотри, тут новое». */
+.task-state.state-fresh {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--accent);
+}
+
+/* Начальнику — ответ на вопрос «он её вообще видел?». */
+.t-fresh {
     margin: 2px 0 0;
     font-size: 11px;
     color: var(--muted);
