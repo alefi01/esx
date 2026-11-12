@@ -32,6 +32,8 @@ public class PortalDbContext : DbContext
     /// <summary>Докуда человек дочитал объявления в каждой папке.</summary>
     public DbSet<FolderSeenState> FolderSeenStates => Set<FolderSeenState>();
 
+    public DbSet<AnnouncementView> AnnouncementViews => Set<AnnouncementView>();
+
     public DbSet<Favorite> Favorites => Set<Favorite>();
 
     public DbSet<Conversation> Conversations => Set<Conversation>();
@@ -277,6 +279,18 @@ public class PortalDbContext : DbContext
             // приходит из браузера, и два одновременных нажатия
             // не должны превращаться в две одинаковые отметки.
             entity.HasIndex(r => new { r.MessageId, r.UserName, r.Kind }).IsUnique();
+        });
+
+        modelBuilder.Entity<AnnouncementView>(entity =>
+        {
+            // Одна запись на человека и объявление: «посмотрел дважды» —
+            // сведения, которые никому не нужны.
+            entity.HasIndex(v => new { v.AnnouncementId, v.UserName }).IsUnique();
+
+            entity.HasOne(v => v.Announcement)
+                .WithMany()
+                .HasForeignKey(v => v.AnnouncementId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<FolderSeenState>(entity =>

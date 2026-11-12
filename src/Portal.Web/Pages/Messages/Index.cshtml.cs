@@ -119,7 +119,15 @@ public class IndexModel : PageModel
     public string OtherUserName { get; private set; } = "";
 
     /// <summary>Закреплённое сообщение беседы — полоска под шапкой.</summary>
-    public Message? PinnedMessage { get; private set; }
+    /// <summary>
+    /// Закреплённые сообщения беседы, в порядке закрепления.
+    ///
+    /// На виду всегда одно — полоска показывает текущее, а слева стоят
+    /// чёрточки по числу закреплённых. Щелчок переводит к следующему:
+    /// так второй список сообщений не появляется, а дотянуться можно
+    /// до любого.
+    /// </summary>
+    public IReadOnlyList<Message> PinnedMessages { get; private set; } = [];
 
     /// <summary>Собеседник (или хоть кто-то из группы) прямо сейчас в портале.</summary>
     public bool IsOnline { get; private set; }
@@ -252,15 +260,13 @@ public class IndexModel : PageModel
             .OrderBy(m => m.Id)
             .ToListAsync(cancellationToken);
 
-        // Закреплённое сообщение. Ищем среди уже загруженных реплик —
-        // лишнего запроса не нужно; если закреплено что-то давнее,
-        // спрашиваем отдельно.
-        if (conversation.PinnedMessageId is { } pinnedId)
-        {
-            PinnedMessage = Items.FirstOrDefault(m => m.Id == pinnedId)
-                ?? await _db.Messages.FirstOrDefaultAsync(
-                    m => m.Id == pinnedId && m.ConversationId == conversation.Id, cancellationToken);
-        }
+        // Закреплённые сообщения. Спрашиваем отдельным запросом:
+        // закрепить могли что-то давнее, чего в показанном куске ленты
+        // уже нет.
+        PinnedMessages = await _db.Messages
+            .Where(m => m.ConversationId == conversation.Id && m.IsPinned)
+            .OrderBy(m => m.PinnedAt ?? m.CreatedAt)
+            .ToListAsync(cancellationToken);
 
         // Кто из собеседников в сети и до какого сообщения они дочитали.
         var others = conversation.Participants
@@ -1232,15 +1238,17 @@ public class IndexModel : PageModel
             }
         }
 
-        var tracked = await _db.Conversations.AsTracking()
-            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+        var tracked = await _db.Messages.AsTracking()
+            .FirstOrDefaultAsync(
+                m => m.Id == messageId && m.ConversationId == id, cancellationToken);
 
         if (tracked is null)
         {
             return RedirectToPage(new { id });
         }
 
-        tracked.PinnedMessageId = on ? messageId : null;
+        tracked.IsPinned = on;
+        tracked.PinnedAt = on ? _time.GetUtcNow().UtcDateTime : null;
 
         await _db.SaveChangesAsync(cancellationToken);
 

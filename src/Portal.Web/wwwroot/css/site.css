@@ -1919,6 +1919,19 @@ mark{background:color-mix(in srgb,var(--warn) 42%,transparent);color:inherit;
 .pin-bar{display:flex;align-items:center;gap:9px;padding:9px 16px;
   border-bottom:1px solid var(--border);background:var(--surface2);color:var(--muted)}
 .pin-bar .ic{flex:none;color:var(--accent)}
+
+/* Чёрточки слева вместо иголки: сколько закреплённых — столько
+   и чёрточек, светлая та, на которой мы сейчас. Иголка говорила
+   «это закреплено», но не говорила «их три, ты видишь первое». */
+.pin-ticks{display:flex;flex-direction:column;gap:2px;flex:none;align-self:stretch;
+  justify-content:center;padding:2px 0;min-height:26px}
+.pin-tick{width:3px;border-radius:2px;flex:1 1 auto;min-height:4px;
+  background:color-mix(in srgb,var(--accent) 26%,transparent);transition:.15s}
+.pin-tick.on{background:var(--accent)}
+
+/* Закреплённые лежат друг на друге: на виду всегда одно. */
+.pin-one{display:none;align-items:baseline;gap:8px;min-width:0;flex:1}
+.pin-one.on{display:flex}
 .pin-text{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;
   background:none;border:0;padding:0;text-align:left;cursor:pointer;color:inherit;font:inherit}
 .pin-text b{flex:none;font-size:11.5px;color:var(--accent)}
@@ -2457,3 +2470,140 @@ html.lite .main{background-image:none !important}
     font-size: 11px;
     color: var(--muted);
 }
+
+/* ---------- «Внутренняя работа» ----------
+
+   Пунктир вместо сплошной рамки: сюда посторонним нельзя, и это
+   должно читаться раньше, чем человек прочтёт имя папки. Вместе
+   с замком вместо жёлтой папки получается понятно с одного взгляда. */
+.tile.inner,
+.frow.inner {
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--muted) 55%, transparent);
+}
+
+.tile.inner:hover,
+.frow.inner:hover { border-color: var(--muted); }
+
+/* ---------- Объявления в папке ----------
+
+   Сеткой, а не колонкой в одну ширину: на широком экране колонка
+   в 860 пикселей оставляла справа пустое поле в пол-экрана.
+   Сетка сама решает, сколько колонок помещается, а важное
+   и закреплённое занимает всю ширину — оно и должно бросаться
+   в глаза первым. */
+.folder-ann {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    align-items: start;
+    gap: 12px;
+    max-width: none;
+}
+
+.folder-ann .ann-card.pinned,
+.folder-ann .ann-card.important { grid-column: 1 / -1; }
+
+/* На узком экране колонка одна, и растягивать нечего. */
+@media (max-width: 760px) {
+    .folder-ann { grid-template-columns: 1fr; }
+}
+
+/* Контур — кому попадёт объявление. Написано словами: иначе это
+   знание держится на том, в какую папку человек случайно зашёл. */
+.chip.contour {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: transparent;
+    color: var(--accent);
+}
+
+.chip.contour.inner {
+    background: color-mix(in srgb, var(--muted) 16%, transparent);
+    color: var(--muted);
+}
+
+/* Сколько человек прочитало. Неяркой кнопкой: это сведения,
+   а не действие, за которым стоит гнаться. */
+.ann-views {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    border: 0;
+    background: none;
+    padding: 2px 6px;
+    border-radius: 7px;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.ann-views:hover { background: var(--surface-3); color: var(--text); }
+
+.viewers { display: flex; flex-direction: column; gap: 2px; max-height: 60vh; overflow: auto; }
+
+.viewer {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 6px 4px;
+    border-bottom: 1px solid var(--border);
+}
+
+.viewer:last-child { border-bottom: 0; }
+.viewer-name { flex: 1 1 auto; min-width: 0; font-size: 13px; }
+.viewer-at { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+/* Нового нет, но закреплённое есть: столбец ленты остаётся на месте,
+   иначе его заголовок уезжает наверх страницы, а «Закреплённое»
+   остаётся ниже — два заголовка лесенкой. */
+.feed-none {
+    font-size: 13px;
+    color: var(--muted);
+    padding: 10px 2px;
+}
+
+/* ---------- Номера страниц ----------
+
+   Со стрелками «новее / старее» до двадцатой страницы надо нажать
+   девятнадцать раз, и всё это время человек не знает, сколько ещё
+   осталось. Номера отвечают сразу. */
+.pager { gap: 4px; flex-wrap: wrap; }
+
+.pager-num,
+.pager-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    text-decoration: none;
+}
+
+.pager a.pager-num,
+.pager a.pager-step { text-decoration: none; }
+
+.pager-num:hover,
+.pager-step:hover { border-color: var(--accent); color: var(--accent); }
+
+.pager-num.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 600;
+}
+
+/* Край списка: стрелка остаётся на месте, но гаснет — иначе ряд
+   прыгает при переходе на первую и последнюю страницы. */
+.pager-step.off {
+    opacity: .4;
+    pointer-events: none;
+}
+
+.pager-gap { padding: 0 2px; color: var(--muted); }

@@ -1,0 +1,53 @@
+@model Portal.Web.Pages.Shared.Pager
+
+@*
+    Постраничник со списком номеров.
+
+    Со стрелками «новее / старее» до двадцатой страницы надо нажать
+    девятнадцать раз, и всё это время человек не знает, сколько ещё
+    осталось. Номера отвечают сразу: страниц столько-то, вы на такой-то,
+    прыгнуть можно куда угодно.
+
+    Фильтры едут в каждой ссылке: переход по страницам не должен
+    сбрасывать отбор, иначе человек начинает поиск заново.
+*@
+@if (Model.TotalPages > 1)
+{
+    <nav class="pager" aria-label="Страницы">
+        @if (Model.Page > 1)
+        {
+            <a class="pager-step" asp-all-route-data="Model.RouteFor(Model.Page - 1)"
+               rel="prev" title="Предыдущая страница">←</a>
+        }
+        else
+        {
+            <span class="pager-step off">←</span>
+        }
+
+        @foreach (var number in Model.Numbers)
+        {
+            @if (number == 0)
+            {
+                <span class="pager-gap">…</span>
+            }
+            else if (number == Model.Page)
+            {
+                <span class="pager-num on" aria-current="page">@number</span>
+            }
+            else
+            {
+                <a class="pager-num" asp-all-route-data="Model.RouteFor(number)">@number</a>
+            }
+        }
+
+        @if (Model.Page < Model.TotalPages)
+        {
+            <a class="pager-step" asp-all-route-data="Model.RouteFor(Model.Page + 1)"
+               rel="next" title="Следующая страница">→</a>
+        }
+        else
+        {
+            <span class="pager-step off">→</span>
+        }
+    </nav>
+}

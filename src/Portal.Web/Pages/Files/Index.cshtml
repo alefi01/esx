@@ -76,9 +76,14 @@
             </button>
         }
 
+        @* Остаётся ссылкой на отдельную страницу: без JavaScript окно
+           не откроется, а написать объявление человек должен мочь всегда.
+           Код страницы перехватывает нажатие и показывает ту же форму
+           окном — не уходя из папки, в которую вешают. *@
         @if (Model.CanPublishHere)
         {
-            <a class="btn" asp-page="/Announcements/Create" asp-route-folderId="@Model.Current!.Id">
+            <a class="btn" id="newAnnBtn"
+               asp-page="/Announcements/Create" asp-route-folderId="@Model.Current!.Id">
                 <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><use href="#i-mega" /></svg>Объявление
             </a>
         }
@@ -159,12 +164,83 @@
        Открытие папки отмечает её объявления прочитанными — см. LoadAsync. *@
     @if (Model.Announcements.Count > 0)
     {
+        @* Карточки стоят сеткой, а не колонкой в одну ширину: на широком
+           экране колонка в 860 пикселей оставляла справа пустое поле
+           в пол-экрана. Сетка сама решает, сколько колонок помещается,
+           а важное и закреплённое занимает всю ширину — оно и должно
+           бросаться в глаза первым. *@
         <div class="ann-list folder-ann">
             @foreach (var item in Model.Announcements)
             {
                 @await Html.PartialAsync("_Announcement",
-                    new AnnouncementCard(item, Model.CanModifyAnnouncement(item)))
+                    new AnnouncementCard(
+                        item,
+                        Model.CanModifyAnnouncement(item),
+                        Model.ViewsOf(item),
+                        Model.Current?.DepartmentRole))
             }
+        </div>
+    }
+
+    @* ---------- Новое объявление ----------
+
+       Форма настоящая и живёт на странице; окно её переносит, а не
+       пересобирает. Поэтому работают и проверка на сервере, и загрузка
+       файла, и защита от подделки запроса. *@
+    @if (Model.CanPublishHere)
+    {
+        <div id="newAnnHolder" hidden>
+            <form method="post" asp-page-handler="AnnCreate" enctype="multipart/form-data"
+                  id="newAnnForm" class="assigned-form">
+
+                <input type="hidden" name="folderId" value="@Model.Current!.Id" />
+
+                <p class="hint">
+                    @if (Model.Current.DepartmentRole == Portal.Web.Data.DepartmentRoles.Internal)
+                    {
+                        <b>Внутренний контур.</b> @:Объявление увидят только сотрудники отдела.
+                    }
+                    else
+                    {
+                        <b>Общий контур.</b> @:Объявление увидят все сотрудники портала.
+                    }
+                </p>
+
+                <div class="field">
+                    <label for="annTitle">Заголовок</label>
+                    <input type="text" id="annTitle" name="title" maxlength="200" required autocomplete="off" />
+                </div>
+
+                <div class="field">
+                    <label for="annBody">Текст</label>
+                    <textarea id="annBody" name="body" rows="8" maxlength="10000" required data-format></textarea>
+                    <span class="hint">
+                        Правое нажатие по тексту — выделение <strong>жирным</strong> и
+                        <mark>жёлтым</mark>. Разметка HTML не поддерживается намеренно.
+                    </span>
+                </div>
+
+                <div class="field">
+                    <label for="annFiles">Вложения</label>
+
+                    <label class="file-pick">
+                        <input type="file" name="attachments" id="annFiles" multiple data-file-pick />
+                        <span class="file-pick-btn">
+                            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload" /></svg>Выбрать файл
+                        </span>
+                        <span class="file-pick-name" data-file-name>не выбран</span>
+                    </label>
+
+                    <span class="hint">
+                        Картинки показываются прямо в объявлении, остальное — ссылкой.
+                    </span>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn primary" type="submit">Опубликовать</button>
+                    <button class="btn" type="button" id="cancelAnn">Отмена</button>
+                </div>
+            </form>
         </div>
     }
 

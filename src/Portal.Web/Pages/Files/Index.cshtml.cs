@@ -30,6 +30,7 @@ public class IndexModel : PageModel
     private readonly Departments _departments;
     private readonly Portal.Web.Services.Announcements.AnnouncementStorage _announcementStorage;
     private readonly Portal.Web.Services.Announcements.AnnouncementFeed _feed;
+    private readonly Portal.Web.Services.Announcements.AnnouncementPublisher _publisher;
     private readonly ActiveDirectoryOptions _ad;
     private readonly TimeProvider _time;
     private readonly ILogger<IndexModel> _logger;
@@ -46,6 +47,7 @@ public class IndexModel : PageModel
         Departments departments,
         Portal.Web.Services.Announcements.AnnouncementStorage announcementStorage,
         Portal.Web.Services.Announcements.AnnouncementFeed feed,
+        Portal.Web.Services.Announcements.AnnouncementPublisher publisher,
         IOptions<ActiveDirectoryOptions> ad,
         TimeProvider time,
         ILogger<IndexModel> logger)
@@ -61,6 +63,7 @@ public class IndexModel : PageModel
         _departments = departments;
         _announcementStorage = announcementStorage;
         _feed = feed;
+        _publisher = publisher;
         _ad = ad.Value;
         _time = time;
         _logger = logger;
@@ -87,6 +90,13 @@ public class IndexModel : PageModel
 
     /// <summary>Можно ли вешать объявления на текущую папку.</summary>
     public bool CanPublishHere { get; private set; }
+
+    /// <summary>Сколько человек прочитало каждое объявление папки.</summary>
+    public IReadOnlyDictionary<int, int> AnnouncementViews { get; private set; }
+        = new Dictionary<int, int>();
+
+    public int ViewsOf(Announcement announcement) =>
+        AnnouncementViews.TryGetValue(announcement.Id, out var count) ? count : 0;
 
     /// <summary>Правка конкретного объявления — та же проверка, что на сервере.</summary>
     public bool CanModifyAnnouncement(Announcement announcement) =>
@@ -1654,6 +1664,92 @@ public class IndexModel : PageModel
         }
     }
 
+    /// <summary>
+    /// Кто прочитал объявление — список для окна.
+    ///
+    /// Видит его любой, кому видно само объявление, а не только автор:
+    /// это не слежка за людьми, а ответ на вопрос «надо ли повторить
+    /// на планёрке». Право то же, что на чтение папки, — проверяет
+    /// <see cref="VisibleAnnouncementAsync"/>.
+    /// </summary>
+    public async Task<IActionResult> OnGetAnnViewersAsync(
+        int announcementId, CancellationToken cancellationToken)
+    {
+        var announcement = await VisibleAnnouncementAsync(announcementId, cancellationToken);
+
+        if (announcement is null)
+        {
+            return NotFound();
+        }
+
+        var viewers = await _feed.ViewersAsync(announcementId, cancellationToken);
+
+        return new JsonResult(new
+        {
+            people = viewers.Select(v => new
+            {
+                name = string.IsNullOrWhiteSpace(v.DisplayName) ? v.UserName : v.DisplayName,
+                at = v.At.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+            })
+        });
+    }
+
+    /// <summary>
+    /// Опубликовать объявление, не уходя со страницы папки.
+    ///
+    /// Та же проверка прав и та же служба, что на отдельной странице:
+    /// окно — это способ показать форму, а не вторая калитка в обход
+    /// первой.
+    /// </summary>
+    public async Task<IActionResult> OnPostAnnCreateAsync(
+        int folderId,
+        string title,
+        string body,
+        List<IFormFile> attachments,
+        CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        var folder = _tree.Get(folderId);
+
+        if (folder is null)
+        {
+            return NotFound();
+        }
+
+        if (!Portal.Web.Security.AnnouncementPermissions
+                .CanPublishIn(User, folder, _tree, _ad.AdminGroup))
+        {
+            return Forbid();
+        }
+
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(body))
+        {
+            ErrorMessage = "У объявления должны быть заголовок и текст.";
+
+            return RedirectToPage(new { id = folderId });
+        }
+
+        var result = await _publisher.PublishAsync(
+            folderId, title, body, User, attachments, cancellationToken);
+
+        if (result.Error is not null)
+        {
+            ErrorMessage = result.Error;
+        }
+        else if (result.Problems.Count > 0)
+        {
+            ErrorMessage = "Объявление опубликовано, но не приложены: "
+                + string.Join("; ", result.Problems);
+        }
+        else
+        {
+            StatusMessage = "Объявление опубликовано.";
+        }
+
+        return RedirectToPage(new { id = folderId });
+    }
+
     /// <summary>Закрепить объявление наверху папки или открепить.</summary>
     public Task<IActionResult> OnPostAnnPinAsync(int announcementId, CancellationToken cancellationToken) =>
         SwitchAnnouncementAsync(announcementId, a => a.IsPinned = !a.IsPinned, cancellationToken);
@@ -1915,6 +2011,19 @@ public class IndexModel : PageModel
             {
                 await _feed.MarkFolderSeenAsync(
                     User.Identity?.Name ?? "", folder.Id, cancellationToken);
+
+                // Тем же действием записываем, КТО прочитал: начальник
+                // вешает объявление и не знает, дошло ли оно. Заводить
+                // рядом второе, другое понятие «просмотрено» значило бы
+                // объяснять людям разницу между двумя числами.
+                await _feed.MarkViewedAsync(
+                    User.Identity?.Name ?? "",
+                    User.FindFirstValue(ClaimTypes.GivenName) ?? User.Identity?.Name ?? "",
+                    Announcements,
+                    cancellationToken);
+
+                AnnouncementViews = await _feed.ViewCountsAsync(
+                    Announcements.Select(a => a.Id).ToList(), cancellationToken);
             }
         }
 

@@ -14,7 +14,9 @@
         @* draggable — перетаскивание в другую папку. Ставится всем: право
            на перемещение проверяет сервер, а плитка, которую нельзя взять,
            выглядит как сломанная. *@
-        <div class="tile@(item.Pinned ? " pinned" : "")" draggable="true"
+        @* «Внутренняя работа» отдела обведена пунктиром: сюда посторонним
+           нельзя, и это должно читаться раньше, чем человек прочтёт имя. *@
+        <div class="tile@(item.Pinned ? " pinned" : "")@(item.IsInternal ? " inner" : "")" draggable="true"
              data-id="@item.Id"
              data-name="@item.Name"
              data-href="@item.Href"
@@ -55,7 +57,7 @@
             <div class="tile-icon">
                 @if (item.IsFolder)
                 {
-                    @FileIcons.Folder()
+                    @(item.IsInternal ? FileIcons.Locked() : FileIcons.Folder())
                 }
                 else
                 {

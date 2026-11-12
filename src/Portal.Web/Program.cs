@@ -361,6 +361,9 @@ builder.Services.AddScoped<FavoriteService>();
 // Хранилище вложений состояния не имеет, поэтому одно на всё приложение.
 builder.Services.AddSingleton<MessageStorage>();
 builder.Services.AddSingleton<Portal.Web.Services.Announcements.AnnouncementStorage>();
+
+// Публикация объявления: одна и та же из окна в папке и со страницы.
+builder.Services.AddScoped<Portal.Web.Services.Announcements.AnnouncementPublisher>();
 builder.Services.AddScoped<IUserDirectory, UserDirectory>();
 
 

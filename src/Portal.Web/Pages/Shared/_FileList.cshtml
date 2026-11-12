@@ -21,7 +21,7 @@
 
     @foreach (var item in Model)
     {
-        <div class="frow@(item.Pinned ? " pinned" : "")" draggable="true"
+        <div class="frow@(item.Pinned ? " pinned" : "")@(item.IsInternal ? " inner" : "")" draggable="true"
              data-id="@item.Id"
              data-name="@item.Name"
              data-href="@item.Href"
@@ -37,7 +37,7 @@
             <div class="ficon">
                 @if (item.IsFolder)
                 {
-                    @FileIcons.Folder(30)
+                    @(item.IsInternal ? FileIcons.Locked(30) : FileIcons.Folder(30))
                 }
                 else
                 {

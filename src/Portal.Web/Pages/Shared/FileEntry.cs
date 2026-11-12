@@ -44,8 +44,12 @@ public sealed record FileEntry(
     bool CanManage,
     string? Path = null,
     bool Pinned = false,
-    bool CanPin = false)
+    bool CanPin = false,
+    string? Role = null)
 {
+    /// <summary>Это «Внутренняя работа» отдела: рисуется замком и пунктиром.</summary>
+    public bool IsInternal => Role == Portal.Web.Data.DepartmentRoles.Internal;
+
     /// <summary>
     /// Папка в списке.
     ///
@@ -78,7 +82,8 @@ public sealed record FileEntry(
             CanManage: canManage,
             Path: path,
             Pinned: folder.IsPinned,
-            CanPin: canPin);
+            CanPin: canPin,
+            Role: folder.DepartmentRole);
 
     /// <summary>Файл в списке.</summary>
     public static FileEntry ForFile(

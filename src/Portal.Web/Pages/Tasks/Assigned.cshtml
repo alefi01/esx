@@ -385,15 +385,23 @@
                                         </span>
                                     }
 
-                                    @if (task.Files.Count + item.Files.Count > 0)
-                                    {
-                                        <span class="t-dot-sep"></span>
-
-                                        <span class="t-rep" title="Файлов">
-                                            <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload" /></svg>@(task.Files.Count + item.Files.Count)
-                                        </span>
-                                    }
                                 </div>
+
+                                @* Файлы ссылками, а не числом: начальник
+                                   открывает карточку именно затем, чтобы
+                                   посмотреть, что ему сдали. Число отвечало
+                                   «файл есть», но взять его было негде. *@
+                                @if (task.Files.Count + item.Files.Count > 0)
+                                {
+                                    <div class="task-files">
+                                        @foreach (var file in task.Files.Concat(item.Files))
+                                        {
+                                            <a class="chip" asp-page-handler="File" asp-route-fileId="@file.Id">
+                                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-file" /></svg>@file.OriginalName
+                                            </a>
+                                        }
+                                    </div>
+                                }
 
                                 @if (task.EditedAt is { } edited)
                                 {

@@ -243,28 +243,53 @@
                     </div>
                 }
 
-                @* ---------- Закреплённое сообщение ----------
+                @* ---------- Закреплённые сообщения ----------
 
                    Полоска под шапкой: в ней держат то, что должно быть
                    на виду у всех — адрес склада, номер заявки,
-                   расписание. Щелчок по ней прокручивает ленту
-                   к самому сообщению. *@
-                @if (Model.PinnedMessage is { } pinned)
-                {
-                    <div class="pin-bar">
-                        <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pin" /></svg>
+                   расписание.
 
-                        <button class="pin-text" type="button" data-goto="@pinned.Id">
-                            <b>@pinned.AuthorDisplayName</b>
-                            <span>@(pinned.DeletedAt is null
-                                ? (string.IsNullOrWhiteSpace(pinned.Body) ? "вложение" : pinned.Body)
-                                : "сообщение удалено")</span>
+                   Закреплённых может быть несколько, но на виду всегда
+                   одно. Слева — вертикальные чёрточки по числу
+                   закреплённых, светлая та, на которой мы сейчас.
+                   Щелчок по полоске переводит к следующему и прокручивает
+                   ленту к самому сообщению. Так второй список сообщений
+                   не появляется, а дотянуться можно до любого. *@
+                @if (Model.PinnedMessages.Count > 0)
+                {
+                    <div class="pin-bar" data-pins="@Model.PinnedMessages.Count">
+                        <div class="pin-ticks" aria-hidden="true">
+                            @for (var i = 0; i < Model.PinnedMessages.Count; i++)
+                            {
+                                <span class="pin-tick@(i == 0 ? " on" : "")"></span>
+                            }
+                        </div>
+
+                        <button class="pin-text" type="button" data-pin-next>
+                            @for (var i = 0; i < Model.PinnedMessages.Count; i++)
+                            {
+                                var pinned = Model.PinnedMessages[i];
+
+                                <span class="pin-one@(i == 0 ? " on" : "")"
+                                      data-goto="@pinned.Id" data-index="@i">
+                                    <b>Закреплённое@(Model.PinnedMessages.Count > 1 ? " " + (i + 1) : "")</b>
+                                    <span>@(pinned.DeletedAt is null
+                                        ? (string.IsNullOrWhiteSpace(pinned.Body) ? "вложение" : pinned.Body)
+                                        : "сообщение удалено")</span>
+                                </span>
+                            }
                         </button>
 
                         @if (Model.CanWrite)
                         {
+                            @* Снимает закрепление с того, что сейчас показано:
+                               кнопка знает номер из разметки, а какое показано —
+                               из кода страницы. *@
                             <form method="post" asp-page-handler="PinMessage" asp-route-id="@Model.Current.Id"
-                                  asp-route-messageId="@pinned.Id" asp-route-on="false" class="head-form">
+                                  asp-route-on="false" class="head-form" data-pin-off>
+                                <input type="hidden" name="messageId"
+                                       value="@Model.PinnedMessages[0].Id" data-pin-current />
+
                                 <button class="icon-btn" type="submit" title="Снять закрепление">
                                     <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-x" /></svg>
                                 </button>
@@ -334,7 +359,7 @@
                                 текст» в меню по правой кнопке его копировал.
                                 Удаление, которое ничего не удаляет, — не удаление. *@
                              data-body="@(message.DeletedAt is null ? message.Body : "")"
-                             data-pinned="@((Model.Current.PinnedMessageId == message.Id).ToString().ToLowerInvariant())">
+                             data-pinned="@message.IsPinned.ToString().ToLowerInvariant()">
                             @if (!mine)
                             {
                                 @* У продолжения серии кружок не рисуется,

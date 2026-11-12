@@ -14,6 +14,11 @@
 *@
 <div class="ann-card@(Model.Item.IsPinned ? " pinned" : "")@(Model.Item.IsImportant ? " important" : "")">
 
+    @* Контур («общий» или «внутренний») здесь не пишется: одна и та же
+       плашка на каждой карточке в папке — это строка, повторённая
+       столько раз, сколько объявлений, и прочитанная ноль раз.
+       Человек и так знает, в какой папке стоит, а тот, кто ПИШЕТ
+       объявление, видит контур в окне создания — там это и нужно. *@
     @if (Model.Item.IsPinned || Model.Item.IsImportant)
     {
         <div class="ann-tags">
@@ -100,6 +105,16 @@
         {
             <span>· изменено</span>
         }
+
+        @* Сколько человек прочитало. Начальник вешает объявление
+           и не знает, дошло ли оно: в переписке на это отвечают
+           галочки, а объявление уходило в пустоту. Список имён открыт
+           всем, кому видно объявление, — это не слежка за людьми,
+           а ответ на вопрос «надо ли повторить на планёрке». *@
+        <button class="ann-views" type="button" data-ann-views="@Model.Item.Id"
+                title="Кто прочитал">
+            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-eye" /></svg>@Model.Views
+        </button>
 
         @if (Model.CanModify)
         {

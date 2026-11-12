@@ -135,6 +135,38 @@ namespace Portal.Web.Data.Migrations
                     b.ToTable("AnnouncementFiles");
                 });
 
+            modelBuilder.Entity("Portal.Web.Data.AnnouncementView", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AnnouncementId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AnnouncementId", "UserName")
+                        .IsUnique();
+
+                    b.ToTable("AnnouncementViews");
+                });
+
             modelBuilder.Entity("Portal.Web.Data.AssignedTask", b =>
                 {
                     b.Property<int>("Id")
@@ -446,9 +478,6 @@ namespace Portal.Web.Data.Migrations
                         .HasMaxLength(520)
                         .HasColumnType("character varying(520)");
 
-                    b.Property<int?>("PinnedMessageId")
-                        .HasColumnType("integer");
-
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(120)
@@ -745,10 +774,16 @@ namespace Portal.Web.Data.Migrations
                     b.Property<Guid>("GlobalId")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("IsPinned")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("OriginBranch")
                         .IsRequired()
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime?>("PinnedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("ReplyToAuthor")
                         .HasMaxLength(256)
@@ -1283,6 +1318,17 @@ namespace Portal.Web.Data.Migrations
                 {
                     b.HasOne("Portal.Web.Data.Announcement", "Announcement")
                         .WithMany("Files")
+                        .HasForeignKey("AnnouncementId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Announcement");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.AnnouncementView", b =>
+                {
+                    b.HasOne("Portal.Web.Data.Announcement", "Announcement")
+                        .WithMany()
                         .HasForeignKey("AnnouncementId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

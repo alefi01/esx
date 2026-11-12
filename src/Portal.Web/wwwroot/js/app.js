@@ -3751,6 +3751,45 @@
             if (quote) { gotoMessage(quote.dataset.goto); }
         });
 
+        // ---------- Переход по закреплённым ----------
+        //
+        // Закреплённых может быть несколько, но на виду всегда одно:
+        // полоска показывает текущее, чёрточки слева — сколько их всего
+        // и где мы сейчас. Щелчок переводит к следующему по кругу
+        // и прокручивает ленту к самому сообщению — как в привычных
+        // мессенджерах.
+        const pinBar = $('.pin-bar');
+
+        if (pinBar) {
+            const ones = $$('.pin-one', pinBar);
+            const ticks = $$('.pin-tick', pinBar);
+            const current = $('[data-pin-current]', pinBar);
+
+            let at = 0;
+
+            const showPin = index => {
+                at = (index + ones.length) % ones.length;
+
+                ones.forEach((one, i) => one.classList.toggle('on', i === at));
+                ticks.forEach((tick, i) => tick.classList.toggle('on', i === at));
+
+                // Кнопка «снять» должна снимать ровно то, что показано.
+                if (current) { current.value = ones[at].dataset.goto; }
+            };
+
+            const nextPin = $('[data-pin-next]', pinBar);
+
+            if (nextPin && ones.length > 0) {
+                nextPin.addEventListener('click', () => {
+                    // Сначала ведём к тому, что сейчас показано: человек
+                    // нажал, чтобы увидеть его, а не следующее.
+                    gotoMessage(ones[at].dataset.goto);
+
+                    if (ones.length > 1) { showPin(at + 1); }
+                });
+            }
+        }
+
         // ---------- Файлы из буфера обмена ----------
         //
         // Ctrl+V с картинкой или файлом. Снимок экрана — самый частый
@@ -4429,11 +4468,16 @@
 
         if (!shown) { return; }
 
+        // Что написано, пока файла нет, задаёт разметка: на узкой
+        // карточке задачи это сама кнопка («Файл не выбран»), в широкой
+        // форме — подпись рядом с кнопкой («не выбран»).
+        const idle = shown.textContent;
+
         input.addEventListener('change', () => {
             const picked = [...(input.files || [])];
 
             shown.textContent = picked.length === 0
-                ? 'не выбран'
+                ? idle
                 : (picked.length === 1 ? picked[0].name : picked.length + ' файлов');
 
             label.classList.toggle('has-file', picked.length > 0);
@@ -4538,6 +4582,72 @@
         title: 'Новая задача',
         focus: '#Input_Title',
         cancel: '#cancelOwn'
+    });
+
+    // ---------- Новое объявление окном ----------
+    //
+    // Кнопка остаётся ссылкой на отдельную страницу: без JavaScript
+    // окно не откроется, а написать объявление человек должен мочь
+    // всегда. Здесь мы только перехватываем нажатие.
+    const annBtn = $('#newAnnBtn');
+    const annForm = $('#newAnnForm');
+    const annHolder = $('#newAnnHolder');
+
+    if (annBtn && annForm && annHolder) {
+        annBtn.addEventListener('click', e => {
+            e.preventDefault();
+
+            showFormWindow(annForm, annHolder, 'Новое объявление', '#annTitle');
+        });
+
+        const cancelAnn = $('#cancelAnn');
+
+        if (cancelAnn) { cancelAnn.onclick = closeModal; }
+
+        // Форма вернулась с ошибкой — показываем её сразу открытой,
+        // иначе человек видит страницу папки и не понимает, что не так.
+        if ($('.alert.err', annForm)) {
+            showFormWindow(annForm, annHolder, 'Новое объявление', '#annTitle');
+        }
+    }
+
+    // ---------- Кто прочитал объявление ----------
+    //
+    // Список открыт всем, кому видно само объявление: это не слежка
+    // за людьми, а ответ на вопрос «надо ли повторить на планёрке».
+    document.addEventListener('click', e => {
+        const button = e.target.closest('[data-ann-views]');
+
+        if (!button) { return; }
+
+        const id = button.dataset.annViews;
+
+        fetch('/Files?handler=AnnViewers&announcementId=' + encodeURIComponent(id), {
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+            .then(answer => {
+                const people = answer.people || [];
+
+                const body = people.length === 0
+                    ? '<p class="hint">Пока никто не открывал эту папку после того, ' +
+                      'как объявление появилось.</p>'
+                    : '<div class="viewers">' + people.map(person =>
+                        '<div class="viewer">' +
+                        '<span class="avatar sm">' + esc(initials(person.name)) + '</span>' +
+                        '<span class="viewer-name">' + esc(person.name) + '</span>' +
+                        '<span class="viewer-at">' + esc(person.at) + '</span>' +
+                        '</div>').join('') + '</div>';
+
+                openModal({
+                    title: people.length === 0
+                        ? 'Ещё никто не прочитал'
+                        : 'Прочитали: ' + people.length,
+                    body
+                });
+            })
+            .catch(() => toast('Не удалось получить список', 'err'));
     });
 
     // ---------- Правка своей задачи ----------

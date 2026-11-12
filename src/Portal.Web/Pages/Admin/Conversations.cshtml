@@ -93,23 +93,18 @@
     }
 </div>
 
-@if (Model.TotalPages > 1)
-{
-    <nav class="pager">
-        @if (Model.PageNumber > 1)
+@{
+    var convoPager = new Portal.Web.Pages.Shared.Pager(
+        Model.PageNumber,
+        Model.TotalPages,
+        "page",
+        new Dictionary<string, string?>
         {
-            <a asp-page="Conversations" asp-route-page="@(Model.PageNumber - 1)"
-               asp-route-who="@Model.Who" asp-route-kind="@Model.Kind">← Свежее</a>
-        }
-
-        <span class="hint">Страница @Model.PageNumber из @Model.TotalPages</span>
-
-        @if (Model.PageNumber < Model.TotalPages)
-        {
-            <a asp-page="Conversations" asp-route-page="@(Model.PageNumber + 1)"
-               asp-route-who="@Model.Who" asp-route-kind="@Model.Kind">Давнее →</a>
-        }
-    </nav>
+            ["who"] = Model.Who,
+            ["kind"] = Model.Kind
+        });
 }
+
+<partial name="_Pager" model="convoPager" />
 
 </section>

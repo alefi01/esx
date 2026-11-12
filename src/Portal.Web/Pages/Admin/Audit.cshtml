@@ -132,24 +132,20 @@
     }
 </div>
 
-@if (Model.TotalPages > 1)
-{
-    <nav class="pager">
-        @if (Model.PageNumber > 1)
+@{
+    @* Фильтры едут в каждой ссылке: переход по страницам не должен
+       сбрасывать отбор, иначе человек начинает поиск заново. *@
+    var auditPager = new Portal.Web.Pages.Shared.Pager(
+        Model.PageNumber,
+        Model.TotalPages,
+        "pageNumber",
+        new Dictionary<string, string?>
         {
-            <a asp-page="Audit" asp-route-pageNumber="@(Model.PageNumber - 1)"
-               asp-route-userFilter="@Model.UserFilter" asp-route-actionFilter="@Model.ActionFilter"
-               asp-route-targetFilter="@Model.TargetFilter">← Новее</a>
-        }
-
-        <span class="hint">Страница @Model.PageNumber из @Model.TotalPages</span>
-
-        @if (Model.PageNumber < Model.TotalPages)
-        {
-            <a asp-page="Audit" asp-route-pageNumber="@(Model.PageNumber + 1)"
-               asp-route-userFilter="@Model.UserFilter" asp-route-actionFilter="@Model.ActionFilter"
-               asp-route-targetFilter="@Model.TargetFilter">Старее →</a>
-        }
-    </nav>
+            ["userFilter"] = Model.UserFilter,
+            ["actionFilter"] = Model.ActionFilter?.ToString(),
+            ["targetFilter"] = Model.TargetFilter
+        });
 }
+
+<partial name="_Pager" model="auditPager" />
 </section>

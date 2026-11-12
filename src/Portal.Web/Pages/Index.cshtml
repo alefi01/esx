@@ -61,14 +61,20 @@
            часы, поиск и белое поле под ними и не понимал, то ли портал
            не догрузился, то ли показывать действительно нечего. Строка
            «новых объявлений нет» отвечает на этот вопрос за него. *@
-        <div class="side-head feed-head">
-            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
-            Лента
-            @if (Model.UnreadCount > 0)
-            {
-                <span class="unread-count">@Model.UnreadCount</span>
-            }
-        </div>
+        @* Заголовок ленты стоит над своим столбцом — на одной линии
+           с «Закреплённым». Раньше он висел над всей сеткой, и два
+           заголовка шли лесенкой: один выше, другой ниже.
+
+           Когда лента пуста, столбца нет вовсе, и заголовок показывается
+           здесь — чтобы человек видел, что портал загрузился и показывать
+           действительно нечего. *@
+        @if (Model.NothingToShow)
+        {
+            <div class="side-head feed-head">
+                <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
+                Лента
+            </div>
+        }
     }
 
     @if (!Model.DatabaseUnavailable && Model.NothingToShow)
@@ -88,18 +94,36 @@
            половина пустого экрана рядом с единственным списком читается
            как незагрузившаяся страница. Карточки при этом не растягиваются
            на всю строку, колонок в сетке столько, сколько влезает. *@
-        <div class="home-cols@(Model.Items.Count == 0 || Model.Pinned.Count == 0 ? " home-cols--one" : "")">
+        <div class="home-cols@(Model.Pinned.Count == 0 ? " home-cols--one" : "")">
 
             @* Пустого блока «новые объявления» на главной нет вовсе:
                строка «новых нет» — это сообщение ни о чём, занимающее
                половину экрана. Нечего показать — столбца просто не будет,
                и закреплённое займёт всю ширину сеткой карточек. *@
-            @if (Model.Items.Count > 0)
+            @* Столбец ленты стоит и когда нового нет: иначе заголовок
+               «Лента» уезжал наверх страницы, а «Закреплённое» оставалось
+               ниже, и два заголовка шли лесенкой. Пустой столбец говорит
+               прямо: нового нет, а закреплённое — вот оно, справа. *@
+            @if (Model.Items.Count > 0 || Model.Pinned.Count > 0)
             {
                 <div class="home-col-main">
+                    <div class="side-head">
+                        <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mega" /></svg>
+                        Лента
+                        @if (Model.UnreadCount > 0)
+                        {
+                            <span class="unread-count">@Model.UnreadCount</span>
+                        }
+                    </div>
+
                     @foreach (var item in Model.Items)
                     {
                         @await Html.PartialAsync("_HomeCard", item)
+                    }
+
+                    @if (Model.Items.Count == 0)
+                    {
+                        <p class="feed-none">Новых объявлений нет</p>
                     }
 
                     @if (Model.HasMore)

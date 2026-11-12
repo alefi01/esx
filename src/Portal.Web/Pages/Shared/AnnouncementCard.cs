@@ -9,8 +9,31 @@ namespace Portal.Web.Pages.Shared;
 /// </summary>
 /// <param name="Item">Само объявление вместе с вложениями.</param>
 /// <param name="CanModify">Показывать ли кнопки правки и удаления.</param>
-public sealed record AnnouncementCard(Announcement Item, bool CanModify)
+/// <param name="Views">Сколько человек прочитало. Ноль — значок всё равно показываем.</param>
+/// <param name="Role">
+/// Роль папки: «общая» или «внутренняя работа». От неё зависит подпись
+/// контура — круг читателей у объявления задаётся именно папкой.
+/// </param>
+public sealed record AnnouncementCard(
+    Announcement Item, bool CanModify, int Views = 0, string? Role = null)
 {
+    /// <summary>
+    /// В каком контуре висит объявление.
+    ///
+    /// Автор должен видеть, кому он пишет, а читатель — понимать,
+    /// можно ли пересказывать прочитанное за пределами отдела.
+    /// Без подписи это знание держится на том, в какую папку человек
+    /// случайно зашёл.
+    /// </summary>
+    public string? Contour => Role switch
+    {
+        DepartmentRoles.Public => "Общий контур — видят все сотрудники",
+        DepartmentRoles.Internal => "Внутренний контур — видит только отдел",
+        _ => null
+    };
+
+    public bool IsInternal => Role == DepartmentRoles.Internal;
+
     /// <summary>
     /// Буквы для кружка вместо фотографии. Фотографий в Active Directory
     /// обычно нет, а кружок с инициалами читается лучше, чем безликий значок.

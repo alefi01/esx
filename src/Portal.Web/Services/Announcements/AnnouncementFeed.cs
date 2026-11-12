@@ -195,6 +195,106 @@ public sealed class AnnouncementFeed
         await _db.SaveChangesAsync(cancellationToken);
     }
 
+    // ==================================================================
+    // Кто прочитал объявление
+    // ==================================================================
+
+    /// <summary>
+    /// Записать, что человек видел эти объявления.
+    ///
+    /// Вызывается при открытии папки: там объявление показано целиком,
+    /// вместе с текстом. Отдельного, другого понятия «просмотрено»
+    /// у портала нет — иначе пришлось бы объяснять людям разницу
+    /// между двумя числами.
+    ///
+    /// Своё собственное объявление автору не засчитывается: «прочитал
+    /// сам себя» в списке выглядит издевательством над смыслом списка.
+    /// </summary>
+    public async Task MarkViewedAsync(
+        string userName,
+        string displayName,
+        IReadOnlyList<Announcement> announcements,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(userName) || announcements.Count == 0)
+        {
+            return;
+        }
+
+        var ids = announcements
+            .Where(a => !string.Equals(a.AuthorUserName, userName, StringComparison.OrdinalIgnoreCase))
+            .Select(a => a.Id)
+            .ToList();
+
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        // Уже записанное не трогаем: время первого прочтения и есть ответ
+        // на вопрос «когда увидел».
+        var known = await _db.AnnouncementViews
+            .Where(v => ids.Contains(v.AnnouncementId)
+                        && v.UserName.ToLower() == userName.ToLower())
+            .Select(v => v.AnnouncementId)
+            .ToListAsync(cancellationToken);
+
+        var fresh = ids.Except(known).ToList();
+
+        if (fresh.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var id in fresh)
+        {
+            _db.AnnouncementViews.Add(new AnnouncementView
+            {
+                AnnouncementId = id,
+                UserName = userName,
+                DisplayName = string.IsNullOrWhiteSpace(displayName) ? userName : displayName,
+                At = _time.GetUtcNow().UtcDateTime
+            });
+        }
+
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // Две вкладки открыли папку разом — вторая наткнулась
+            // на уникальный указатель. Это не ошибка: запись уже есть,
+            // а ради неё ронять страницу нельзя.
+        }
+    }
+
+    /// <summary>Сколько человек прочитало каждое из этих объявлений.</summary>
+    public async Task<IReadOnlyDictionary<int, int>> ViewCountsAsync(
+        IReadOnlyList<int> announcementIds, CancellationToken cancellationToken)
+    {
+        if (announcementIds.Count == 0)
+        {
+            return new Dictionary<int, int>();
+        }
+
+        var rows = await _db.AnnouncementViews
+            .Where(v => announcementIds.Contains(v.AnnouncementId))
+            .GroupBy(v => v.AnnouncementId)
+            .Select(g => new { Id = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(row => row.Id, row => row.Count);
+    }
+
+    /// <summary>Кто прочитал это объявление — для окна со списком.</summary>
+    public async Task<IReadOnlyList<AnnouncementView>> ViewersAsync(
+        int announcementId, CancellationToken cancellationToken) =>
+        await _db.AnnouncementViews
+            .Where(v => v.AnnouncementId == announcementId)
+            .OrderByDescending(v => v.At)
+            .ToListAsync(cancellationToken);
+
     /// <summary>Отметить прочитанным всё, что человеку видно, — кнопкой «Прочитать все».</summary>
     public async Task MarkAllSeenAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
     {

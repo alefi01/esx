@@ -184,7 +184,11 @@
                                 {
                                     <p class="task-return">
                                         <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-restore" /></svg>
-                                        Возвращено: @reason
+                                        @* Слово «Возвращено» уже стоит бейджем в шапке
+                                           карточки, и повторять его здесь значит
+                                           занимать строку тем, что человек прочитал
+                                           секунду назад. Здесь — только замечание. *@
+                                        Причина: @reason
                                     </p>
                                 }
 
@@ -196,6 +200,7 @@
                                         @foreach (var file in task.Files.Concat(item.Files))
                                         {
                                             <a class="chip" asp-page-handler="File" asp-route-fileId="@file.Id">
+                                                <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-file" /></svg>
                                                 @file.OriginalName
                                             </a>
                                         }
@@ -237,23 +242,28 @@
                                                   asp-route-scope="@Model.Scope" asp-route-view="@Model.View"
                                                   enctype="multipart/form-data" class="task-act task-submit">
 
-                                                <label class="file-pick">
+                                                @* Одна кнопка вместо кнопки и подписи рядом:
+                                                   пока файла нет, на ней написано «Файл
+                                                   не выбран», а после выбора — его имя.
+                                                   Два элемента на узкой карточке вставали
+                                                   лесенкой и занимали строку впустую. *@
+                                                <label class="file-pick file-pick--one">
                                                     <input type="file" name="attachments" multiple
                                                            aria-label="Файл к задаче" data-file-pick />
                                                     <span class="file-pick-btn">
-                                                        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload" /></svg>Файл
+                                                        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload" /></svg><span class="file-pick-name" data-file-name>Файл не выбран</span>
                                                     </span>
-                                                    <span class="file-pick-name" data-file-name>не выбран</span>
                                                 </label>
 
+                                                @* «Нужен файл» написано на самой кнопке,
+                                                   а не подписью рядом: подпись читалась
+                                                   как замечание к чему-то постороннему,
+                                                   а на кнопке это условие действия. *@
                                                 <button class="btn primary sm" type="submit">
-                                                    <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>@(task.NeedCheck ? "Сдать" : "Выполнено")
+                                                    <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>@(task.NeedCheck
+                                                        ? (task.NeedFile ? "Сдать с файлом" : "Сдать")
+                                                        : (task.NeedFile ? "Выполнено, с файлом" : "Выполнено"))
                                                 </button>
-
-                                                @if (task.NeedFile)
-                                                {
-                                                    <span class="hint">Нужен файл</span>
-                                                }
                                             </form>
                                         }
                                     </div>

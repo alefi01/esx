@@ -301,7 +301,7 @@ public class IndexModel : PageModel
         {
             ErrorMessage = error;
 
-            return RedirectToPage(new { view = View });
+            return RedirectToPage(new { scope = Scope, view = View });
         }
 
         // Будим страницу того, кто поставил: ему пришла работа — проверить.
@@ -311,7 +311,7 @@ public class IndexModel : PageModel
             ? "Задача сдана, но не приложены: " + string.Join("; ", problems)
             : instance.Task.NeedCheck ? "Задача сдана на проверку." : "Задача отмечена выполненной.";
 
-        return RedirectToPage(new { view = View });
+        return RedirectToPage(new { scope = Scope, view = View });
     }
 
     /// <summary>Скачать файл задачи — свой сданный или приложенный автором.</summary>
@@ -447,7 +447,7 @@ public class IndexModel : PageModel
 
         StatusMessage = "Задача добавлена.";
 
-        return RedirectToPage(new { view = View });
+        return RedirectToPage(new { scope = Scope, view = View });
     }
 
     public async Task<IActionResult> OnPostDoneAsync(int id, CancellationToken cancellationToken)
@@ -457,7 +457,7 @@ public class IndexModel : PageModel
             ErrorMessage = "Отмечать выполненной может только тот, чья это задача.";
         }
 
-        return RedirectToPage(new { view = View });
+        return RedirectToPage(new { scope = Scope, view = View });
     }
 
     public async Task<IActionResult> OnPostArchiveAsync(int id, CancellationToken cancellationToken)
@@ -467,7 +467,7 @@ public class IndexModel : PageModel
             ErrorMessage = "Убирать в архив может только тот, чья это задача.";
         }
 
-        return RedirectToPage(new { view = View });
+        return RedirectToPage(new { scope = Scope, view = View });
     }
 
     public async Task<IActionResult> OnPostDeleteAsync(int id, CancellationToken cancellationToken)
@@ -481,7 +481,7 @@ public class IndexModel : PageModel
             StatusMessage = "Задача удалена.";
         }
 
-        return RedirectToPage(new { view = View });
+        return RedirectToPage(new { scope = Scope, view = View });
     }
 
     public async Task<IActionResult> OnPostShareAsync(
@@ -506,7 +506,7 @@ public class IndexModel : PageModel
             ErrorMessage = problem;
         }
 
-        return RedirectToPage(new { view = View });
+        return RedirectToPage(new { scope = Scope, view = View });
     }
 
     public async Task<IActionResult> OnPostUnshareAsync(
@@ -514,7 +514,7 @@ public class IndexModel : PageModel
     {
         await _tasks.UnshareAsync(id, UserName, login, cancellationToken);
 
-        return RedirectToPage(new { view = View });
+        return RedirectToPage(new { scope = Scope, view = View });
     }
 
     /// <summary>
