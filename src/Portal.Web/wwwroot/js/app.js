@@ -4169,14 +4169,90 @@
             // сразу, а не на следующем такте.
             if (window.portalNotify) { window.portalNotify.onPing(checkNew); }
 
+            const text = $('#chatText');
+
+            // ---------- Кнопка отправки и значки ----------
+            //
+            // Кнопка серая, пока отправлять нечего: яркая кнопка над
+            // пустым полем выглядит как действие, которое вот-вот
+            // произойдёт, и её жмут впустую.
+            const sendBtn = $('#sendBtn');
+            const emojiBtn = $('#emojiBtn');
+            const emojiPop = $('#emojiPop');
+
+            // Полтора десятка значков, которые действительно идут в ход
+            // в рабочей переписке. Системные, поэтому выглядят так, как
+            // человек привык у себя в Windows.
+            const EMOJI = [
+                '👍', '👌', '🙏', '🤝', '👏', '💪', '✅', '❗',
+                '🙂', '😄', '😉', '😅', '🤔', '😐', '😔', '😮',
+                '🔥', '⚡', '⏰', '📌', '📎', '📄', '📊', '🗓',
+                '❤️', '🎉', '☕', '🚀', '✍️', '👀', '❓', '➕'
+            ];
+
+            const paintSend = () => {
+                if (!sendBtn || !text) { return; }
+
+                const ready = text.value.trim().length > 0
+                    || ($('#chatFiles') || {}).files && $('#chatFiles').files.length > 0;
+
+                sendBtn.classList.toggle('ready', !!ready);
+            };
+
+            if (sendBtn && text) {
+                text.addEventListener('input', paintSend);
+
+                const files = $('#chatFiles');
+
+                if (files) { files.addEventListener('change', paintSend); }
+
+                paintSend();
+            }
+
+            if (emojiBtn && emojiPop && text) {
+                EMOJI.forEach(sign => {
+                    const b = el('<button type="button"></button>');
+
+                    b.textContent = sign;
+
+                    b.onclick = () => {
+                        // Вставляем в то место, где стоит курсор, а не
+                        // в конец: иначе значок в середине фразы поставить
+                        // нельзя, и человек каждый раз правит текст руками.
+                        const at = text.selectionStart || text.value.length;
+                        const to = text.selectionEnd || at;
+
+                        text.value = text.value.slice(0, at) + sign + text.value.slice(to);
+                        text.focus();
+                        text.selectionStart = text.selectionEnd = at + sign.length;
+
+                        paintSend();
+                    };
+
+                    emojiPop.appendChild(b);
+                });
+
+                emojiBtn.onclick = e => {
+                    e.stopPropagation();
+                    emojiPop.hidden = !emojiPop.hidden;
+                };
+
+                // Щелчок мимо панели закрывает её — как любое меню.
+                document.addEventListener('click', e => {
+                    if (!emojiPop.hidden && !emojiPop.contains(e.target)) { emojiPop.hidden = true; }
+                });
+
+                document.addEventListener('keydown', e => {
+                    if (e.key === 'Escape') { emojiPop.hidden = true; }
+                });
+            }
+
             // ---------- «Печатает…» ----------
             //
             // Собеседник видит, что ответ уже набирают, и не уходит,
             // решив, что его не читают. Отметка уходит на сервер не чаще
             // раза в три секунды: она живёт шесть, и слать её на каждое
             // нажатие клавиши незачем.
-            const text = $('#chatText');
-
             if (text) {
                 let lastTyping = 0;
 

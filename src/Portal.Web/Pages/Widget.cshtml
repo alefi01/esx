@@ -46,7 +46,14 @@
 <header class="wg-head" data-drag>
     <span class="wg-mark">@Model.Letter</span>
 
-    <strong class="wg-name">@Model.Title</strong>
+    @* Название портала здесь не пишется: в окне программы оно и так
+       известно — программа одна и портал один, а место в шапке узкое.
+       Вместо него — название открытой вкладки, как в мессенджере.
+
+       В браузере наоборот: страницу могли открыть где угодно, и там
+       название портала остаётся. Подменяет их код страницы: он один
+       знает, запущено это в виджете или нет. *@
+    <strong class="wg-name" id="wgName" data-portal="@Model.Title">@Model.Title</strong>
 
     <button class="wg-btn" type="button" id="wgSeen" title="Отметить всё прочитанным" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

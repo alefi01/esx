@@ -37,6 +37,7 @@
     var tabsBar = document.getElementById('wgTabs');
     var seen = document.getElementById('wgSeen');
     var hide = document.getElementById('wgHide');
+    var name = document.getElementById('wgName');
     var empty = document.getElementById('wgEmpty');
     var emptyText = document.getElementById('wgEmptyText');
 
@@ -313,8 +314,24 @@
         seen.hidden = (last.unread || 0) === 0;
     }
 
+    /** Названия вкладок — они же заголовок окна в программе. */
+    var TAB_NAMES = {
+        all: 'Всё новое',
+        message: 'Чат',
+        announcement: 'Объявления',
+        task: 'Задачи'
+    };
+
     /** Счётчики на вкладках. */
     function paintTabs() {
+        // В окне программы в шапке название вкладки, в браузере —
+        // название портала: там страницу могли открыть где угодно.
+        if (name) {
+            name.textContent = bridge
+                ? (TAB_NAMES[tab] || '')
+                : (name.dataset.portal || 'Портал');
+        }
+
         count('all', last.unread);
         count('message', last.messages);
         count('announcement', last.announcements);
