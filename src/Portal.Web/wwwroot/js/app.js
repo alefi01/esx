@@ -2232,7 +2232,262 @@
                     'warn'));
         }
 
+        /**
+         * Подсказка по сотрудникам в поле ввода.
+         *
+         * Та же, что при выборе исполнителя задачи: человек набирает
+         * фамилию и выбирает из списка, а на сервер уходит логин.
+         * Набирать логин руками — верный способ вписать не того.
+         */
+        function staffPicker(field, list, folderId, pick) {
+            let timer = 0;
+            let last = null;
+
+            const hide = () => { list.hidden = true; };
+
+            const look = () => {
+                const query = field.value.trim();
+
+                if (query === last) { return; }
+
+                last = query;
+
+                fetch('/Files?handler=Staff&folderId=' + folderId
+                      + '&q=' + encodeURIComponent(query), {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                    .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                    .then(answer => {
+                        const people = answer.people || [];
+
+                        list.innerHTML = '';
+
+                        if (people.length === 0) {
+                            list.innerHTML = '<p class="hint pick-none">Никого не нашлось.</p>';
+                            list.hidden = false;
+
+                            return;
+                        }
+
+                        people.forEach(person => {
+                            const row = el('<button class="pick-row" type="button">' +
+                                '<span class="avatar sm">' + esc(initials(person.displayName)) + '</span>' +
+                                '<span class="pick-name">' + esc(person.displayName) + '</span>' +
+                                '<span class="pick-login">' + esc(person.userName) + '</span>' +
+                                '</button>');
+
+                            row.onclick = () => {
+                                pick(person);
+
+                                field.value = '';
+                                last = null;
+
+                                hide();
+                            };
+
+                            list.appendChild(row);
+                        });
+
+                        list.hidden = false;
+                    })
+                    .catch(() => hide());
+            };
+
+            field.addEventListener('input', () => {
+                clearTimeout(timer);
+                timer = setTimeout(look, 200);
+            });
+
+            field.addEventListener('focus', look);
+
+            // Прячем не сразу: щелчок по строке приходит после потери
+            // фокуса, и без задержки выбор бы не срабатывал.
+            field.addEventListener('blur', () => setTimeout(hide, 160));
+
+            field.addEventListener('keydown', e => {
+                if (e.key === 'Escape') { hide(); }
+            });
+        }
+
+        /**
+         * Окно папки, лежащей в отделе.
+         *
+         * Прав здесь нет вовсе: кому видна папка, решает устройство
+         * отдела — «Общая» открыта всем сотрудникам портала,
+         * «Внутренняя работа» только составу отдела. Это не настройка,
+         * и менять её не вправе никто, включая администратора.
+         *
+         * Начальнику оставлено то, чем он действительно распоряжается:
+         * состав своего отдела, запрет правки, срок уборки и список тех,
+         * кому разрешено менять содержимое.
+         */
+        function showDepartmentFolder(data) {
+            const members = (data.members || []).slice();
+            const editors = (data.editors || []).slice();
+
+            const heads = (data.heads || []).map(h => h.userName.toLowerCase());
+
+            const chip = (person, kind) =>
+                '<span class="chip staff" data-' + kind + '="' + esc(person.userName) + '">' +
+                '<span class="chip-name">' + esc(person.displayName) + '</span>' +
+                (kind === 'member' && heads.includes(person.userName.toLowerCase())
+                    ? '<span class="chip-note">начальник</span>'
+                    : '<span class="chip-x" role="button" title="Убрать">&times;</span>') +
+                '</span>';
+
+            // ---------- Папка самого отдела: только состав ----------
+            if (data.isDepartmentRoot) {
+                const m = openModal({
+                    title: 'Отдел «' + esc(data.name) + '»',
+                    body:
+                        '<p class="hint">В отделе две части, и менять их устройство нельзя: ' +
+                        '<b>«Общая»</b> открыта всем сотрудникам портала, ' +
+                        '<b>«Внутренняя работа»</b> — только сотрудникам этого отдела. ' +
+                        'Новые папки заводятся внутри них.</p>' +
+
+                        '<h4>Сотрудники отдела</h4>' +
+                        '<p class="hint">От этого списка зависит, кто видит «Внутреннюю работу».</p>' +
+                        '<div class="chips" id="dpMembers">' +
+                        members.map(x => chip(x, 'member')).join('') +
+                        '</div>' +
+
+                        '<div class="pick" data-pick>' +
+                        '<input type="text" id="dpAdd" autocomplete="off" ' +
+                        'placeholder="Фамилия или логин — добавить сотрудника" />' +
+                        '<div class="pick-list" id="dpList" hidden></div>' +
+                        '</div>',
+
+                    foot: (data.isAdmin
+                        ? '<a class="btn" href="/Files/Settings/' + data.id +
+                          '">Ограничения и хранение</a>'
+                        : '') +
+                        '<button class="btn" type="button" data-mclose>Закрыть</button>'
+                });
+
+                $$('[data-mclose]', m).forEach(b => { b.onclick = closeModal; });
+
+                const url = '/Files?handler=Member';
+
+                staffPicker($('#dpAdd', m), $('#dpList', m), data.id, person =>
+                    submit(url, { folderId: data.id, login: person.userName, on: 'true' }));
+
+                $('#dpMembers', m).addEventListener('click', e => {
+                    const x = e.target.closest('.chip-x');
+
+                    if (!x) { return; }
+
+                    const login = x.closest('[data-member]').dataset.member;
+
+                    confirmDlg('Убрать из отдела?',
+                        'Сотрудник перестанет видеть «Внутреннюю работу» отдела.',
+                        'Убрать',
+                        () => submit(url, { folderId: data.id, login, on: 'false' }));
+                });
+
+                return;
+            }
+
+            // ---------- Папка внутри отдела: правила ----------
+            const m = openModal({
+                title: 'Папка «' + esc(data.name) + '»',
+                body:
+                    '<p class="hint fs-path">' + esc(data.path) + '</p>' +
+
+                    '<p class="hint">Кто видит: <b>' +
+                    (data.inPublicPart
+                        ? 'все сотрудники портала'
+                        : 'только сотрудники отдела «' + esc(data.departmentName || '') + '»') +
+                    '</b>. Это задано устройством отдела и не меняется.</p>' +
+
+                    '<label class="fs-check"><input type="checkbox" id="dpRead"' +
+                    (data.readOnly ? ' checked' : '') + ' />' +
+                    '<span>Только для чтения</span></label>' +
+                    '<p class="hint">Готовые документы — бланки, инструкции, приказы: ' +
+                    'их видно всем, но менять не может никто, кроме вас.</p>' +
+
+                    '<h4>Кто может менять</h4>' +
+                    '<p class="hint">Пусто — меняют все, кому папка видна. ' +
+                    'Вписан хоть один — остальные только смотрят.</p>' +
+                    '<div class="chips" id="dpEditors">' +
+                    editors.map(x => chip(x, 'editor')).join('') +
+                    '</div>' +
+
+                    '<div class="pick" data-pick>' +
+                    '<input type="text" id="dpEdAdd" autocomplete="off" ' +
+                    'placeholder="Фамилия или логин" />' +
+                    '<div class="pick-list" id="dpEdList" hidden></div>' +
+                    '</div>' +
+
+                    '<h4>Уборка</h4>' +
+                    '<div class="field"><label for="dpDays">Удалять файлы старше, дней</label>' +
+                    '<input type="number" id="dpDays" min="0" value="' +
+                    (data.retentionDays ?? '') + '" placeholder="не удалять" />' +
+                    '<p class="hint">Файлы уходят в корзину, а не стираются сразу — ' +
+                    'ошибку в сроке можно заметить. На вложенные папки срок ' +
+                    'не распространяется: у каждой свой.</p></div>' +
+
+                    '<label class="fs-check"><input type="checkbox" id="dpDrop"' +
+                    (data.retentionDropsFolder ? ' checked' : '') + ' />' +
+                    '<span>Удалять и саму папку, когда опустеет</span></label>' +
+                    '<p class="hint">Для временных папок: «Сверка за ноябрь», ' +
+                    '«Заявки на пропуск». Иначе после уборки остаётся дерево пустых папок.</p>',
+
+                foot: (data.isAdmin
+                    ? '<a class="btn" href="/Files/Settings/' + data.id +
+                      '">Ограничения и хранение</a>'
+                    : '') +
+                    '<button class="btn" type="button" data-mclose>Отмена</button>' +
+                    '<button class="btn primary" type="button" id="dpSave">Сохранить</button>'
+            });
+
+            $$('[data-mclose]', m).forEach(b => { b.onclick = closeModal; });
+
+            const box = $('#dpEditors', m);
+
+            const paintEditors = () => {
+                box.innerHTML = editors.map(x => chip(x, 'editor')).join('');
+            };
+
+            box.addEventListener('click', e => {
+                const x = e.target.closest('.chip-x');
+
+                if (!x) { return; }
+
+                const login = x.closest('[data-editor]').dataset.editor;
+
+                editors.splice(editors.findIndex(p => p.userName === login), 1);
+                paintEditors();
+            });
+
+            staffPicker($('#dpEdAdd', m), $('#dpEdList', m), data.id, person => {
+                if (!editors.some(p => p.userName.toLowerCase() === person.userName.toLowerCase())) {
+                    editors.push(person);
+                }
+
+                paintEditors();
+            });
+
+            $('#dpSave', m).onclick = () => {
+                submit('/Files?handler=FolderRules', {
+                    folderId: data.id,
+                    readOnly: $('#dpRead', m).checked ? 'true' : 'false',
+                    retentionDays: $('#dpDays', m).value,
+                    retentionDropsFolder: $('#dpDrop', m).checked ? 'true' : 'false',
+                    editors: editors.map(p => p.userName).join(',')
+                });
+            };
+        }
+
         function showFolderSettings(data) {
+            // Папки отдела настраиваются иначе: прав на них нет вовсе,
+            // а есть состав отдела и правила самой папки.
+            if (data.inDepartment) {
+                showDepartmentFolder(data);
+
+                return;
+            }
+
             const save = '/Files/Settings/' + data.id + '?handler=Save&returnTo=files';
             const add = '/Files/Settings/' + data.id + '?handler=AddPermission&returnTo=files';
 

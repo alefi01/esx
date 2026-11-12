@@ -25,6 +25,10 @@ public class PortalDbContext : DbContext
     public DbSet<StorageFolder> Folders => Set<StorageFolder>();
     public DbSet<FolderPermission> FolderPermissions => Set<FolderPermission>();
     public DbSet<FolderHead> FolderHeads => Set<FolderHead>();
+
+    public DbSet<DepartmentMember> DepartmentMembers => Set<DepartmentMember>();
+
+    public DbSet<FolderEditor> FolderEditors => Set<FolderEditor>();
     public DbSet<StoredFile> Files => Set<StoredFile>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<UserSeenState> SeenStates => Set<UserSeenState>();
@@ -318,6 +322,32 @@ public class PortalDbContext : DbContext
 
             // «Начальник ли я хоть где-нибудь» — запрос на каждой странице задач.
             entity.HasIndex(head => head.UserName);
+        });
+
+        modelBuilder.Entity<DepartmentMember>(entity =>
+        {
+            entity.HasOne(member => member.Folder)
+                .WithMany(folder => folder.Members)
+                .HasForeignKey(member => member.FolderId)
+                // Состав — свойство отдела: нет отдела, нет и состава.
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Один человек в отделе один раз.
+            entity.HasIndex(member => new { member.FolderId, member.UserName }).IsUnique();
+
+            // «В каких отделах я состою» — спрашивается при каждой проверке
+            // доступа к внутренней части.
+            entity.HasIndex(member => member.UserName);
+        });
+
+        modelBuilder.Entity<FolderEditor>(entity =>
+        {
+            entity.HasOne(editor => editor.Folder)
+                .WithMany(folder => folder.Editors)
+                .HasForeignKey(editor => editor.FolderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(editor => new { editor.FolderId, editor.UserName }).IsUnique();
         });
 
         modelBuilder.Entity<AssignedTask>(entity =>

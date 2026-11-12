@@ -12,7 +12,14 @@
     // папки нет, и одно общее значение здесь давало бы ложный ответ.
     var canManageCurrent = Model.Current is not null && Model.Access >= FolderAccess.Manage;
 
-    var canCreateFolder = Model.Current is null ? Model.IsAdmin : canWrite;
+    @* В самой папке отдела папок не заводят: в нём ровно две части,
+       и смысл отдела в том, что у каждой свой понятный круг читателей.
+       Третья папка рядом с ними сразу ставит вопрос «а эту кто видит?».
+       Администратору кнопку оставляем — ему чинить последствия, если
+       отдел завели не так. *@
+    var canCreateFolder = Model.Current is null
+        ? Model.IsAdmin
+        : canWrite && (!Model.Current.IsDepartment || Model.IsAdmin);
 
     var empty = Model.IsSearching
         ? Model.FoundCount == 0
@@ -69,7 +76,11 @@
             </button>
         }
 
-        @if (canWrite && Model.StorageConfigured)
+        @* В самой папке отдела не заводят ни папок, ни файлов: работают
+           внутри «Общей» и «Внутренней работы», у которых понятно, кто
+           их видит. Файл, лежащий между ними, этого ответа не имеет. *@
+        @if (canWrite && Model.StorageConfigured
+             && (Model.Current is not { IsDepartment: true } || Model.IsAdmin))
         {
             <button class="btn primary" type="button" id="uploadBtn">
                 <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload" /></svg>Загрузить

@@ -541,6 +541,45 @@ namespace Portal.Web.Data.Migrations
                     b.ToTable("Participants");
                 });
 
+            modelBuilder.Entity("Portal.Web.Data.DepartmentMember", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("AddedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AddedByUserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("FolderId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserName");
+
+                    b.HasIndex("FolderId", "UserName")
+                        .IsUnique();
+
+                    b.ToTable("DepartmentMembers");
+                });
+
             modelBuilder.Entity("Portal.Web.Data.Favorite", b =>
                 {
                     b.Property<int>("Id")
@@ -578,6 +617,35 @@ namespace Portal.Web.Data.Migrations
                         .HasFilter("\"FolderId\" IS NOT NULL");
 
                     b.ToTable("Favorites");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.FolderEditor", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("FolderId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FolderId", "UserName")
+                        .IsUnique();
+
+                    b.ToTable("FolderEditors");
                 });
 
             modelBuilder.Entity("Portal.Web.Data.FolderHead", b =>
@@ -974,8 +1042,14 @@ namespace Portal.Web.Data.Migrations
                     b.Property<int?>("QuotaMb")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("ReadOnly")
+                        .HasColumnType("boolean");
+
                     b.Property<int?>("RetentionDays")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("RetentionDropsFolder")
+                        .HasColumnType("boolean");
 
                     b.Property<DateTime?>("RetentionLastRunAt")
                         .HasColumnType("timestamp with time zone");
@@ -1386,6 +1460,17 @@ namespace Portal.Web.Data.Migrations
                     b.Navigation("Conversation");
                 });
 
+            modelBuilder.Entity("Portal.Web.Data.DepartmentMember", b =>
+                {
+                    b.HasOne("Portal.Web.Data.StorageFolder", "Folder")
+                        .WithMany("Members")
+                        .HasForeignKey("FolderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Folder");
+                });
+
             modelBuilder.Entity("Portal.Web.Data.Favorite", b =>
                 {
                     b.HasOne("Portal.Web.Data.StoredFile", "File")
@@ -1399,6 +1484,17 @@ namespace Portal.Web.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("File");
+
+                    b.Navigation("Folder");
+                });
+
+            modelBuilder.Entity("Portal.Web.Data.FolderEditor", b =>
+                {
+                    b.HasOne("Portal.Web.Data.StorageFolder", "Folder")
+                        .WithMany("Editors")
+                        .HasForeignKey("FolderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Folder");
                 });
@@ -1538,9 +1634,13 @@ namespace Portal.Web.Data.Migrations
                 {
                     b.Navigation("Children");
 
+                    b.Navigation("Editors");
+
                     b.Navigation("Files");
 
                     b.Navigation("Heads");
+
+                    b.Navigation("Members");
 
                     b.Navigation("Permissions");
                 });

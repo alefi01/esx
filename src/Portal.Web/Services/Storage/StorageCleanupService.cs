@@ -149,6 +149,36 @@ public sealed class StorageCleanupService : BackgroundService
             folder.RetentionLastRunAt = now;
             total += expired.Count;
 
+            // Папку, которая опустела, убираем следом — если так велено.
+            //
+            // Для временных папок («Сверка за ноябрь», «Заявки на пропуск»)
+            // без этого после уборки остаётся дерево пустых папок, которое
+            // никто не разбирает: файлов нет, а список захламлён.
+            //
+            // Удаляем только ПУСТУЮ и только после того, как из неё что-то
+            // убрали: папка, в которую ещё ничего не клали, не должна
+            // исчезать сама по себе.
+            if (folder.RetentionDropsFolder && expired.Count > 0)
+            {
+                var hasFiles = await db.Files
+                    .AnyAsync(f => f.FolderId == folder.Id && f.DeletedAt == null, cancellationToken);
+
+                var hasChildren = await db.Folders
+                    .AnyAsync(f => f.ParentId == folder.Id, cancellationToken);
+
+                if (!hasFiles && !hasChildren)
+                {
+                    db.Folders.Remove(folder);
+
+                    db.AuditEntries.Add(AuditLog.SystemEntry(
+                        now, AuditAction.RetentionCleanup, folder.Name,
+                        "папка удалена: опустела после автоочистки"));
+
+                    _logger.LogInformation(
+                        "Автоочистка: папка «{Folder}» удалена, так как опустела.", folder.Name);
+                }
+            }
+
             if (expired.Count > 0)
             {
                 _logger.LogInformation(

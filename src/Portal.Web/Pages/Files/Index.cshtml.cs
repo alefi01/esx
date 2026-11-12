@@ -28,6 +28,7 @@ public class IndexModel : PageModel
     private readonly AuditLog _audit;
     private readonly FavoriteService _favorites;
     private readonly Departments _departments;
+    private readonly Portal.Web.Services.ActiveDirectory.IUserDirectory _people;
     private readonly Portal.Web.Services.Announcements.AnnouncementStorage _announcementStorage;
     private readonly Portal.Web.Services.Announcements.AnnouncementFeed _feed;
     private readonly Portal.Web.Services.Announcements.AnnouncementPublisher _publisher;
@@ -45,6 +46,7 @@ public class IndexModel : PageModel
         AuditLog audit,
         FavoriteService favorites,
         Departments departments,
+        Portal.Web.Services.ActiveDirectory.IUserDirectory people,
         Portal.Web.Services.Announcements.AnnouncementStorage announcementStorage,
         Portal.Web.Services.Announcements.AnnouncementFeed feed,
         Portal.Web.Services.Announcements.AnnouncementPublisher publisher,
@@ -61,6 +63,7 @@ public class IndexModel : PageModel
         _audit = audit;
         _favorites = favorites;
         _departments = departments;
+        _people = people;
         _announcementStorage = announcementStorage;
         _feed = feed;
         _publisher = publisher;
@@ -1457,6 +1460,24 @@ public class IndexModel : PageModel
             return Forbid();
         }
 
+        // В САМОЙ ПАПКЕ ОТДЕЛА ПАПОК НЕ ЗАВОДЯТ.
+        //
+        // В отделе ровно две части — «Общая» и «Внутренняя работа», —
+        // и смысл отдела в том, что у каждой из них свой, понятный круг
+        // читателей. Третья папка рядом с ними этого круга не имеет
+        // и сразу ставит вопрос «а эту кто видит?». Работают внутри
+        // двух частей: там подпапок сколько угодно.
+        //
+        // Администратору оставлено: ему чинить последствия, если
+        // отдел завели не так.
+        if (Current is { IsDepartment: true } && !IsAdmin)
+        {
+            ErrorMessage = "В отделе есть «Общая» и «Внутренняя работа» — "
+                + "новые папки заводятся внутри них.";
+
+            return RedirectToPage(new { id = parentId });
+        }
+
         if (!ModelState.IsValid)
         {
             ErrorMessage = "Введите название папки (не длиннее 100 символов).";
@@ -2615,6 +2636,7 @@ public class IndexModel : PageModel
 
         var effectiveMax = _tree.EffectiveMaxFileSizeBytes(folder);
         var effectiveQuota = _tree.EffectiveQuotaBytes(folder);
+        var department = _tree.DepartmentOf(folder);
 
         return new JsonResult(new
         {
@@ -2636,8 +2658,216 @@ public class IndexModel : PageModel
             defaultMaxMb = _storageOptions.DefaultMaxFileSizeMb,
             absoluteMaxMb = _storageOptions.FileSizeUnlimited ? 0 : _storageOptions.AbsoluteMaxFileSizeMb,
             isAdmin = IsAdmin,
-            permissions
+            permissions,
+
+            // Папки отдела живут по своим правилам, и окно у них другое:
+            // вместо прав и наследования — то, чем начальник действительно
+            // распоряжается. Остальное решает устройство отдела.
+            inDepartment = department is not null,
+            isDepartmentRoot = folder.IsDepartment,
+            departmentName = department?.Name,
+            inPublicPart = department is not null && _tree.IsInPublicPart(folder),
+            readOnly = folder.ReadOnly,
+            retentionDropsFolder = folder.RetentionDropsFolder,
+            editors = folder.Editors
+                .OrderBy(e => e.DisplayName)
+                .Select(e => new { e.UserName, e.DisplayName })
+                .ToList(),
+            members = department is null
+                ? null
+                : department.Members
+                    .OrderBy(m => m.DisplayName)
+                    .Select(m => new { m.UserName, m.DisplayName })
+                    .ToList(),
+            heads = department?.Heads
+                .Select(h => new { h.UserName, h.DisplayName })
+                .ToList()
         });
+    }
+
+    /// <summary>
+    /// Сотрудники для подсказки в поле: состав отдела и те, кому
+    /// разрешено менять папку.
+    ///
+    /// Отдаётся тому, кто управляет папкой: кого он может вписать,
+    /// того и показываем.
+    /// </summary>
+    public async Task<IActionResult> OnGetStaffAsync(
+        int folderId, string? q, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        var folder = _tree.Get(folderId);
+
+        if (folder is null || !_tree.CanManage(User, folder))
+        {
+            return NotFound();
+        }
+
+        var people = await _people.SearchAsync(q, "", 50, cancellationToken);
+
+        return new JsonResult(new
+        {
+            people = people.Select(x => new { userName = x.UserName, displayName = x.DisplayName })
+        });
+    }
+
+    /// <summary>
+    /// Добавить сотрудника в отдел или убрать его оттуда.
+    ///
+    /// Состав ведут начальник отдела и администратор портала. От состава
+    /// зависит, кому видна «Внутренняя работа», — это единственное,
+    /// чем круг её читателей задаётся.
+    /// </summary>
+    public async Task<IActionResult> OnPostMemberAsync(
+        int folderId, string login, bool on, CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        var folder = _tree.Get(folderId);
+        var department = folder is null ? null : _tree.DepartmentOf(folder);
+
+        if (department is null || !_tree.CanManage(User, department))
+        {
+            return NotFound();
+        }
+
+        login = (login ?? "").Trim();
+
+        if (login.Length == 0)
+        {
+            return RedirectToPage(new { id = folderId });
+        }
+
+        var existing = await _db.DepartmentMembers.AsTracking()
+            .FirstOrDefaultAsync(
+                m => m.FolderId == department.Id && m.UserName.ToLower() == login.ToLower(),
+                cancellationToken);
+
+        if (on && existing is null)
+        {
+            if (!await _people.ExistsAsync(login, cancellationToken))
+            {
+                ErrorMessage = $"Сотрудника «{login}» нет в списке доступа к порталу.";
+
+                return RedirectToPage(new { id = folderId });
+            }
+
+            _db.DepartmentMembers.Add(new DepartmentMember
+            {
+                FolderId = department.Id,
+                UserName = login,
+                DisplayName = await _people.DisplayNameAsync(login, cancellationToken),
+                AddedAt = _time.GetUtcNow().UtcDateTime,
+                AddedByUserName = User.Identity?.Name ?? ""
+            });
+
+            _audit.Add(AuditAction.ChangeFolderSettings, department.Name,
+                "в отдел добавлен сотрудник: " + login);
+        }
+        else if (!on && existing is not null)
+        {
+            _db.DepartmentMembers.Remove(existing);
+
+            _audit.Add(AuditAction.ChangeFolderSettings, department.Name,
+                "из отдела убран сотрудник: " + login);
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        StatusMessage = on ? "Сотрудник добавлен в отдел." : "Сотрудник убран из отдела.";
+
+        return RedirectToPage(new { id = folderId });
+    }
+
+    /// <summary>
+    /// Правила папки внутри отдела: «только для чтения», срок удаления
+    /// файлов и список тех, кому разрешено менять содержимое.
+    ///
+    /// Это то, чем начальник отдела распоряжается сам. Прав на папку
+    /// он не выдаёт вовсе: круг читателей задан устройством отдела
+    /// и настройке не подлежит.
+    /// </summary>
+    public async Task<IActionResult> OnPostFolderRulesAsync(
+        int folderId,
+        bool readOnly,
+        int? retentionDays,
+        bool retentionDropsFolder,
+        string? editors,
+        CancellationToken cancellationToken)
+    {
+        await _tree.LoadAsync(cancellationToken);
+
+        var folder = _tree.Get(folderId);
+
+        if (folder is null || _tree.DepartmentOf(folder) is null || !_tree.CanManage(User, folder))
+        {
+            return NotFound();
+        }
+
+        var tracked = await _db.Folders.AsTracking()
+            .Include(f => f.Editors)
+            .FirstOrDefaultAsync(f => f.Id == folderId, cancellationToken);
+
+        if (tracked is null)
+        {
+            return NotFound();
+        }
+
+        tracked.ReadOnly = readOnly;
+        tracked.RetentionDays = retentionDays is > 0 ? retentionDays : null;
+        tracked.RetentionDropsFolder = retentionDropsFolder;
+
+        // Список приходит строкой логинов через запятую — так его собирает
+        // подсказка в поле. Разбираем здесь: сервер всё равно проверяет
+        // каждого заново.
+        var wanted = (editors ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var gone in tracked.Editors
+                     .Where(e => !wanted.Contains(e.UserName, StringComparer.OrdinalIgnoreCase))
+                     .ToList())
+        {
+            _db.FolderEditors.Remove(gone);
+        }
+
+        foreach (var login in wanted)
+        {
+            if (tracked.Editors.Any(e => string.Equals(e.UserName, login, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            if (!await _people.ExistsAsync(login, cancellationToken))
+            {
+                ErrorMessage = $"Сотрудника «{login}» нет в списке доступа к порталу.";
+
+                return RedirectToPage(new { id = folderId });
+            }
+
+            _db.FolderEditors.Add(new FolderEditor
+            {
+                FolderId = folderId,
+                UserName = login,
+                DisplayName = await _people.DisplayNameAsync(login, cancellationToken)
+            });
+        }
+
+        _audit.Add(AuditAction.ChangeFolderSettings, tracked.Name,
+            (readOnly ? "только для чтения; " : "")
+            + (retentionDays is > 0
+                ? $"удалять файлы старше {retentionDays} дн."
+                  + (retentionDropsFolder ? " вместе с папкой; " : "; ")
+                : "")
+            + (wanted.Count > 0 ? "меняют: " + string.Join(", ", wanted) : "меняют все, кому видно"));
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        StatusMessage = "Правила папки сохранены.";
+
+        return RedirectToPage(new { id = folderId });
     }
 
     /// <summary>

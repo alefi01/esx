@@ -53,6 +53,11 @@ public sealed class FolderTree
             // Начальники отдела читаются вместе с деревом: от них зависит
             // уровень доступа, то есть вопрос возникает на каждой папке.
             .Include(f => f.Heads)
+            // Состав отдела и список тех, кому разрешено менять:
+            // от них зависит доступ к каждой папке внутри отдела,
+            // то есть вопрос возникает на каждой папке.
+            .Include(f => f.Members)
+            .Include(f => f.Editors)
             .ToListAsync(cancellationToken);
 
         _folders = list.ToDictionary(f => f.Id);
@@ -104,6 +109,23 @@ public sealed class FolderTree
         if (user.IsInRole(_ad.AdminGroup))
         {
             return FolderAccess.Manage;
+        }
+
+        // ПАПКИ ОТДЕЛА ЖИВУТ ПО СВОИМ ПРАВИЛАМ.
+        //
+        // Они не настраиваются правами вовсе — ни начальником,
+        // ни администратором:
+        //
+        //   «Общая» и всё в ней        — видят ВСЕ сотрудники портала;
+        //   «Внутренняя работа» и всё  — видят ТОЛЬКО сотрудники отдела.
+        //
+        // Это не настройка, а устройство: отдел заводят ровно затем,
+        // чтобы у него были эти две части. Будь это галочкой, «внутреннее»
+        // однажды перестало бы быть внутренним — а человек, который туда
+        // писал, узнал бы об этом последним.
+        if (DepartmentAccess(user, folder) is { } inDepartment)
+        {
+            return inDepartment;
         }
 
         // Начальник отдела управляет своей папкой и всем, что в ней.
@@ -211,6 +233,145 @@ public sealed class FolderTree
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Доступ к папке, лежащей в отделе. null — папка не в отделе,
+    /// решают обычные правила.
+    ///
+    /// КТО ВИДИТ
+    ///
+    /// «Общая» — все сотрудники портала. «Внутренняя работа» — только
+    /// состав отдела (и его начальники). Правило жёсткое: прав на эти
+    /// папки не существует, менять его некому.
+    ///
+    /// КТО МЕНЯЕТ
+    ///
+    /// Тот, кто видит, — если папка не помечена «только для чтения»
+    /// и если у неё не задан список тех, кому разрешено менять.
+    /// Как только список задан, остальные папку видят, но не трогают:
+    /// это мягче, чем закрыть её совсем, — документ остаётся на виду
+    /// у отдела, даже если ведёт его один человек.
+    ///
+    /// Начальник отдела и администратор портала не ограничиваются
+    /// ни тем, ни другим: иначе папку, помеченную «только для чтения»,
+    /// не мог бы поправить уже никто.
+    /// </summary>
+    private FolderAccess? DepartmentAccess(ClaimsPrincipal user, StorageFolder folder)
+    {
+        var department = DepartmentOf(folder);
+
+        if (department is null)
+        {
+            return null;
+        }
+
+        // Сама папка отдела: внутри неё только две заготовленные части,
+        // и распоряжается ими администратор. Начальник видит её, чтобы
+        // пройти внутрь и вести состав.
+        if (folder.Id == department.Id)
+        {
+            return IsHead(user, folder) ? FolderAccess.Manage : FolderAccess.Read;
+        }
+
+        var inPublic = IsInPublicPart(folder);
+        var member = IsMemberOf(user, department);
+
+        // Внутренняя часть — только своим.
+        if (!inPublic && !member && !IsHead(user, folder))
+        {
+            return FolderAccess.None;
+        }
+
+        if (IsHead(user, folder))
+        {
+            return FolderAccess.Manage;
+        }
+
+        // Папка только для чтения — меняет её лишь начальник отдела.
+        if (IsReadOnly(folder))
+        {
+            return FolderAccess.Read;
+        }
+
+        // Список тех, кому разрешено менять, действует и на вложенное:
+        // поручили человеку папку — поручили и всё, что он в ней заведёт.
+        return CanEditHere(user, folder) ? FolderAccess.Write : FolderAccess.Read;
+    }
+
+    /// <summary>Человек состоит в этом отделе.</summary>
+    public bool IsMemberOf(ClaimsPrincipal user, StorageFolder department)
+    {
+        var userName = user.Identity?.Name;
+
+        if (string.IsNullOrEmpty(userName))
+        {
+            return false;
+        }
+
+        return department.Members
+            .Any(m => string.Equals(m.UserName, userName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Папка только для чтения — сама или потому, что такова папка выше.
+    /// Запрет идёт вниз: внутри закрытой на правку папки правка
+    /// невозможна и в подпапках.
+    /// </summary>
+    public bool IsReadOnly(StorageFolder folder)
+    {
+        var current = folder;
+        var guard = 0;
+
+        while (current is not null && guard++ < 64)
+        {
+            if (current.ReadOnly)
+            {
+                return true;
+            }
+
+            if (current.IsDepartment)
+            {
+                break;
+            }
+
+            current = current.Parent;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Человеку разрешено менять содержимое этой папки.
+    ///
+    /// Список ищется снизу вверх: у самой папки, потом у той, что выше.
+    /// Пустые списки пропускаются — «не задано» означает «меняют все,
+    /// кому видно», а не «никто».
+    /// </summary>
+    private bool CanEditHere(ClaimsPrincipal user, StorageFolder folder)
+    {
+        var userName = user.Identity?.Name;
+        var current = folder;
+        var guard = 0;
+
+        while (current is not null && guard++ < 64)
+        {
+            if (current.Editors.Count > 0)
+            {
+                return !string.IsNullOrEmpty(userName)
+                       && current.Editors.Any(e =>
+                           string.Equals(e.UserName, userName, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (current.IsDepartment)
+            {
+                break;
+            }
+
+            current = current.Parent;
+        }
+
+        return true;
     }
 
     /// <summary>
