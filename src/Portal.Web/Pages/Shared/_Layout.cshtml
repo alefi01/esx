@@ -213,7 +213,14 @@
             </div>
 
             <div class="user-chip" id="userChip">
-                <div class="avatar" data-av="@Portal.Web.Pages.Shared.Avatars.ColorIndex(displayName)">@initials</div>
+                @* Кружок на своей аватарке — то, каким человека сейчас видят
+                   коллеги. Пока страница открыта, портал отмечает активность
+                   сам (при каждом опросе колокольчика), поэтому здесь
+                   всегда «в сети». *@
+                <div class="avatar" data-av="@Portal.Web.Pages.Shared.Avatars.ColorIndex(displayName)">
+                    @initials
+                    <span class="dot dot--online" title="в сети"></span>
+                </div>
                 <div class="u-meta">
                     <b>@displayName</b>
                     <span>@(isAdmin ? "Администратор" : "Пользователь")</span>

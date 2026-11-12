@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Portal.Web.Services.Notifications;
 
 namespace Portal.Web.Pages.Account;
 
@@ -14,9 +15,14 @@ namespace Portal.Web.Pages.Account;
 /// </summary>
 public class LogoutModel : PageModel
 {
+    private readonly PresenceService _presence;
     private readonly ILogger<LogoutModel> _logger;
 
-    public LogoutModel(ILogger<LogoutModel> logger) => _logger = logger;
+    public LogoutModel(PresenceService presence, ILogger<LogoutModel> logger)
+    {
+        _presence = presence;
+        _logger = logger;
+    }
 
     // Заход по адресу выхода вручную не должен ничего ломать — просто вернём на главную.
     public IActionResult OnGet() => RedirectToPage("/Index");
@@ -24,6 +30,15 @@ public class LogoutModel : PageModel
     public async Task<IActionResult> OnPostAsync()
     {
         var userName = User.Identity?.Name;
+
+        // Снимаем «в сети» сразу, не дожидаясь, пока истекут пять минут
+        // с последнего действия: про вышедшего точно известно, что его
+        // здесь больше нет. Иначе на сменном компьютере в сети числятся
+        // сразу двое — ушедший и только что вошедший.
+        if (!string.IsNullOrEmpty(userName))
+        {
+            await _presence.MarkOfflineAsync(userName, HttpContext.RequestAborted);
+        }
 
         // Удаляет cookie аутентификации у браузера.
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);

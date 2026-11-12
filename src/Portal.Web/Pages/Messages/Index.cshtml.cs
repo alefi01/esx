@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
@@ -33,6 +34,7 @@ public class IndexModel : PageModel
     private readonly UploadValidator _validator;
     private readonly AuditLog _audit;
     private readonly PresenceService _presence;
+    private readonly IMemoryCache _cache;
     private readonly Portal.Web.Services.Notifications.NotificationHub _hub;
     private readonly StorageOptions _storageOptions;
     private readonly ActiveDirectoryOptions _ad;
@@ -47,6 +49,7 @@ public class IndexModel : PageModel
         UploadValidator validator,
         AuditLog audit,
         PresenceService presence,
+        IMemoryCache cache,
         Portal.Web.Services.Notifications.NotificationHub hub,
         IOptions<StorageOptions> storageOptions,
         IOptions<ActiveDirectoryOptions> ad,
@@ -60,6 +63,7 @@ public class IndexModel : PageModel
         _validator = validator;
         _audit = audit;
         _presence = presence;
+        _cache = cache;
         _hub = hub;
         _storageOptions = storageOptions.Value;
         _ad = ad.Value;
@@ -107,6 +111,9 @@ public class IndexModel : PageModel
 
     /// <summary>Подпись под именем собеседника в шапке беседы.</summary>
     public string PresenceCaption { get; private set; } = "";
+
+    /// <summary>Кружок на аватарке в шапке беседы: online, away, offline.</summary>
+    public string HeadStatus { get; private set; } = "";
 
     /// <summary>Собеседник (или хоть кто-то из группы) прямо сейчас в портале.</summary>
     public bool IsOnline { get; private set; }
@@ -159,9 +166,40 @@ public class IndexModel : PageModel
         return Page();
     }
 
+    /// <summary>
+    /// Кто из собеседников в списке слева сейчас в сети: логин → состояние
+    /// кружка на аватарке (online, away, offline).
+    ///
+    /// Одним запросом на весь список, а не по запросу на строку: двадцать
+    /// бесед — двадцать запросов, и список начинает заметно думать.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> ListStatus { get; private set; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Кружок для строки списка: пусто, если это группа.</summary>
+    public string StatusOf(ConversationSummary item) =>
+        item.OtherUserName.Length == 0 ? "" : ListStatus.GetValueOrDefault(item.OtherUserName, "offline");
+
     private async Task LoadAsync(int? id, CancellationToken cancellationToken)
     {
         Conversations = await _conversations.ListAsync(UserName, cancellationToken);
+
+        var logins = Conversations
+            .Where(c => c.OtherUserName.Length > 0)
+            .Select(c => c.OtherUserName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (logins.Count > 0)
+        {
+            var now = DateTime.Now;
+
+            ListStatus = (await _presence.ForAsync(logins, cancellationToken))
+                .ToDictionary(
+                    pair => pair.Key,
+                    pair => PresenceService.StatusOf(pair.Value, now),
+                    StringComparer.OrdinalIgnoreCase);
+        }
 
         if (IsSearching)
         {
@@ -230,6 +268,7 @@ public class IndexModel : PageModel
             var single = Presence.GetValueOrDefault(others[0].UserName, new Presence(false, null));
 
             IsOnline = single.Online;
+            HeadStatus = PresenceService.StatusOf(single, DateTime.Now);
             PresenceCaption = PresenceService.Describe(single, DateTime.Now);
         }
         else if (conversation.IsGroup)
@@ -260,9 +299,23 @@ public class IndexModel : PageModel
         }
         else
         {
-            await _conversations.MarkReadAsync(conversation.Id, UserName, cancellationToken);
+            // Прочитали — будим собеседника: у него должна сразу
+            // загореться вторая галочка. Будим только если отметка
+            // действительно сдвинулась, иначе каждое открытие беседы
+            // дёргало бы чужие страницы впустую.
+            if (await _conversations.MarkReadAsync(conversation.Id, UserName, cancellationToken))
+            {
+                NotifyOthers(conversation);
+            }
         }
     }
+
+    /// <summary>Разбудить страницы остальных участников беседы.</summary>
+    private void NotifyOthers(Conversation conversation) =>
+        _hub.Notify(conversation.Participants
+            .Select(p => p.UserName)
+            .Where(name => !string.Equals(name, UserName, StringComparison.OrdinalIgnoreCase))
+            .ToList());
 
     private string DisplayName =>
         User.FindFirstValue(ClaimTypes.GivenName) ?? UserName;
@@ -1216,6 +1269,65 @@ public class IndexModel : PageModel
     /// Есть ли в беседе что-то новее указанного сообщения.
     /// Страница спрашивает об этом раз в несколько секунд, пока открыта.
     /// </summary>
+    /// <summary>
+    /// «Я сейчас пишу в этой беседе».
+    ///
+    /// ЗАЧЕМ
+    ///
+    /// Собеседник видит, что ответ уже набирают, и не уходит, решив,
+    /// что его не читают. В мессенджерах это есть везде, и люди этого
+    /// ждут — без такой строки переписка кажется мёртвой.
+    ///
+    /// ПОЧЕМУ В ПАМЯТИ, А НЕ В БАЗЕ
+    ///
+    /// Отметка живёт несколько секунд и никому не нужна после. Писать
+    /// её в базу — это запись на каждое нажатие клавиши у каждого
+    /// сотрудника; на одном сервере память процесса для такого годится
+    /// ровно настолько, насколько нужно.
+    /// </summary>
+    public IActionResult OnPostTyping(int id)
+    {
+        if (string.IsNullOrEmpty(UserName))
+        {
+            return Unauthorized();
+        }
+
+        _cache.Set(
+            TypingKey(id, UserName),
+            User.FindFirstValue(ClaimTypes.GivenName) ?? UserName,
+            TimeSpan.FromSeconds(6));
+
+        // Будим страницы собеседников, чтобы подпись появилась сразу,
+        // а не на следующем такте их опроса. Отметка уходит не чаще
+        // раза в три секунды на человека (см. страницу), так что
+        // разбудить этим кого-то лишний раз не страшно.
+        _hub.Notify(Participants(id));
+
+        return new NoContentResult();
+    }
+
+    private static string TypingKey(int conversationId, string userName) =>
+        $"typing:{conversationId}:{userName.ToLowerInvariant()}";
+
+    /// <summary>Логины остальных участников беседы — кого будить.</summary>
+    private IReadOnlyList<string> Participants(int conversationId) =>
+        _db.Participants
+            .Where(p => p.ConversationId == conversationId
+                        && p.UserName.ToLower() != UserName.ToLower())
+            .Select(p => p.UserName)
+            .ToList();
+
+    /// <summary>Кто из собеседников набирает сообщение прямо сейчас.</summary>
+    private List<string> TypingNow(Conversation conversation) =>
+        conversation.Participants
+            .Where(p => !string.Equals(p.UserName, UserName, StringComparison.OrdinalIgnoreCase))
+            .Select(p => _cache.TryGetValue(TypingKey(conversation.Id, p.UserName), out var who)
+                ? who as string
+                : null)
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Select(name => name!)
+            .ToList();
+
     public async Task<IActionResult> OnGetNewAsync(
         int id, int afterId, CancellationToken cancellationToken)
     {
@@ -1244,9 +1356,10 @@ public class IndexModel : PageModel
         // Пришедшее СРАЗУ считается прочитанным: человек смотрит на беседу,
         // сообщение появилось у него на глазах. Иначе собеседник видел бы
         // одну галочку, пока страницу не перезагрузят.
-        if (!observer && fresh.Count > 0)
+        if (!observer && fresh.Count > 0
+            && await _conversations.MarkReadAsync(id, UserName, cancellationToken))
         {
-            await _conversations.MarkReadAsync(id, UserName, cancellationToken);
+            NotifyOthers(conversation);
         }
 
         // До какого сообщения дочитали ОСТАЛЬНЫЕ — по нему обновляются
@@ -1291,6 +1404,11 @@ public class IndexModel : PageModel
         {
             hasNew = fresh.Count > 0,
             readUpTo,
+
+            // Кто набирает ответ прямо сейчас. Приходит вместе с проверкой
+            // новых сообщений — отдельный опрос ради одной строки был бы
+            // вторым запросом в секунду на каждую открытую беседу.
+            typing = TypingNow(conversation),
             reactions,
             reacted = recent,
             messages = fresh.Select(m => new

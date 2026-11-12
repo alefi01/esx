@@ -15,8 +15,14 @@ namespace Portal.Web.Services.Messaging;
 /// <param name="LastAt">Когда пришло последнее сообщение.</param>
 /// <param name="Unread">Сколько непрочитанных.</param>
 /// <param name="People">Сколько участников — показывается у групп.</param>
+/// <param name="OtherUserName">
+/// Логин собеседника в переписке двоих — по нему строка списка узнаёт,
+/// в сети он или нет. У группы пусто: кружок на групповой аватарке
+/// означал бы «в сети вся группа», а это ничего не значит.
+/// </param>
 public sealed record ConversationSummary(
-    int Id, string Title, bool IsGroup, string Preview, DateTime LastAt, int Unread, int People);
+    int Id, string Title, bool IsGroup, string Preview, DateTime LastAt, int Unread, int People,
+    string OtherUserName = "");
 
 /// <summary>Найденное сообщение: где, кто, когда и кусок текста.</summary>
 /// <param name="ConversationId">В какой беседе.</param>
@@ -140,7 +146,16 @@ public sealed class ConversationService
 
         var previews = await _db.Messages
             .Where(m => lastIds.Contains(m.Id))
-            .Select(m => new { m.Id, m.ConversationId, m.Body, m.DeletedAt, m.AuthorDisplayName, HasFiles = m.Files.Count > 0 })
+            .Select(m => new
+            {
+                m.Id,
+                m.ConversationId,
+                m.Body,
+                m.DeletedAt,
+                m.AuthorDisplayName,
+                m.AuthorUserName,
+                HasFiles = m.Files.Count > 0
+            })
             .ToListAsync(cancellationToken);
 
         // Непрочитанное: сообщения новее отметки и написанные не мной.
@@ -164,11 +179,27 @@ public sealed class ConversationService
                 conversation.Id,
                 TitleFor(conversation, userName),
                 conversation.IsGroup,
-                PreviewText(preview?.Body, preview?.DeletedAt is not null, preview?.HasFiles ?? false,
-                    conversation.IsGroup ? preview?.AuthorDisplayName : null),
+                PreviewText(
+                    preview?.Body,
+                    preview?.DeletedAt is not null,
+                    preview?.HasFiles ?? false,
+
+                    // Своё последнее сообщение подписываем «Вы» — и в группе,
+                    // и в переписке двоих. Так сделано во всех мессенджерах,
+                    // и не зря: без этого непонятно, ждёт ли ответа собеседник
+                    // или мяч на твоей стороне.
+                    string.Equals(preview?.AuthorUserName, userName, StringComparison.OrdinalIgnoreCase)
+                        ? "Вы"
+                        : conversation.IsGroup ? preview?.AuthorDisplayName : null),
                 conversation.LastMessageAt,
                 unread.Count(u => u.ConversationId == conversation.Id && u.Id > mark),
-                conversation.Participants.Count));
+                conversation.Participants.Count,
+                conversation.IsGroup
+                    ? ""
+                    : conversation.Participants
+                        .FirstOrDefault(p => !string.Equals(
+                            p.UserName, userName, StringComparison.OrdinalIgnoreCase))
+                        ?.UserName ?? ""));
         }
 
         return result;
@@ -342,7 +373,16 @@ public sealed class ConversationService
     }
 
     /// <summary>Отметить всё прочитанным в этой беседе.</summary>
-    public async Task MarkReadAsync(int conversationId, string userName, CancellationToken cancellationToken)
+    /// <summary>
+    /// Отметить беседу прочитанной до последнего сообщения.
+    ///
+    /// Возвращает true, если отметка сдвинулась. По этому признаку
+    /// вызывающий будит страницы собеседников: вторая галочка
+    /// у отправителя должна загораться в тот момент, когда его
+    /// прочитали, а не на следующем такте опроса.
+    /// </summary>
+    public async Task<bool> MarkReadAsync(
+        int conversationId, string userName, CancellationToken cancellationToken)
     {
         var participant = await _db.Participants.AsTracking()
             .FirstOrDefaultAsync(
@@ -351,7 +391,7 @@ public sealed class ConversationService
 
         if (participant is null)
         {
-            return;
+            return false;
         }
 
         var newest = await _db.Messages
@@ -360,12 +400,16 @@ public sealed class ConversationService
 
         // Отметку двигаем только вперёд: в соседней вкладке могли прочитать
         // больше, и откатывать её назад нельзя.
-        if (newest > participant.LastReadMessageId)
+        if (newest <= participant.LastReadMessageId)
         {
-            participant.LastReadMessageId = newest;
-
-            await _db.SaveChangesAsync(cancellationToken);
+            return false;
         }
+
+        participant.LastReadMessageId = newest;
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return true;
     }
 
     /// <summary>

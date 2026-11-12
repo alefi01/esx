@@ -82,6 +82,10 @@
                        data-convo="@item.Id" data-convo-title="@item.Title"
                        data-convo-group="@item.IsGroup.ToString().ToLowerInvariant()">
 
+                        @{
+                            var itemStatus = Model.StatusOf(item);
+                        }
+
                         <div class="avatar" data-av="@Avatars.ColorIndex(item.Title)">
                             @if (item.IsGroup)
                             {
@@ -90,6 +94,14 @@
                             else
                             {
                                 @Avatars.Initials(item.Title)
+                            }
+
+                            @* Кружок состояния — только у переписки двоих:
+                               на групповой аватарке он означал бы «в сети
+                               вся группа», а это ничего не значит. *@
+                            @if (itemStatus.Length > 0)
+                            {
+                                <span class="dot dot--@itemStatus" title="@Portal.Web.Services.Notifications.PresenceService.StatusWord(itemStatus)"></span>
                             }
                         </div>
 
@@ -152,6 +164,11 @@
                         {
                             @Avatars.Initials(Model.Title)
                         }
+
+                        @if (Model.HeadStatus.Length > 0)
+                        {
+                            <span class="dot dot--@Model.HeadStatus" title="@Portal.Web.Services.Notifications.PresenceService.StatusWord(Model.HeadStatus)"></span>
+                        }
                     </div>
 
                     <div class="ch-meta">
@@ -160,7 +177,15 @@
                            недавно»: портал засекает время при каждом запросе
                            страницы, а страница раз в минуту сама спрашивает
                            про уведомления. Подробности — в PresenceService. *@
-                        <span class="ch-presence@(Model.IsOnline ? " online" : "")">@Model.PresenceCaption</span>
+                        <span class="ch-presence@(Model.IsOnline ? " online" : "")" id="chPresence">@Model.PresenceCaption</span>
+
+                        @* «…печатает» подменяет собой строку состояния,
+                           а не встаёт рядом: две подписи под именем
+                           занимают место и спорят друг с другом. *@
+                        <span class="ch-typing" id="chTyping" hidden>
+                            <i></i><i></i><i></i>
+                            <span id="chTypingWho"></span>
+                        </span>
                     </div>
 
                     @if (Model.Current.IsGroup)

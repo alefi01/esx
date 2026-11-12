@@ -7,7 +7,8 @@ namespace Portal.Web.Services.Notifications;
 /// <summary>Кто в сети и когда его видели в последний раз.</summary>
 /// <param name="Online">Человек шевелился только что.</param>
 /// <param name="LastActiveAt">Когда видели в последний раз, местное время. null — не заходил ни разу.</param>
-public sealed record Presence(bool Online, DateTime? LastActiveAt);
+/// <param name="SignedOut">Человек вышел из портала сам — значит его точно нет.</param>
+public sealed record Presence(bool Online, DateTime? LastActiveAt, bool SignedOut = false);
 
 /// <summary>
 /// Кто сейчас в портале.
@@ -36,6 +37,49 @@ public sealed class PresenceService
 {
     /// <summary>Сколько человек считается «в сети» после последнего действия.</summary>
     public static readonly TimeSpan OnlineFor = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Сколько после этого человек считается «нет на месте».
+    ///
+    /// Между «в сети» и «не в сети» есть середина, и она самая частая:
+    /// портал открыт, но человек вышел с чайником. Зелёный кружок в этот
+    /// момент обманывает — написавший ждёт ответа «сейчас». Серый тоже
+    /// обманывает — человек за столом через минуту. Поэтому третий цвет.
+    /// </summary>
+    public static readonly TimeSpan AwayFor = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// Состояние для кружка на аватарке: online, away, offline.
+    ///
+    /// Строкой, а не перечислением: это значение идёт прямо в разметку
+    /// классом (dot--online), и превращать его там обратно в строку
+    /// пришлось бы в каждом месте, где рисуется аватарка.
+    /// </summary>
+    public static string StatusOf(Presence presence, DateTime nowLocal)
+    {
+        // Вышел сам — значит его точно нет, и «нет на месте» здесь
+        // неуместно: это состояние для того, кто отошёл, не закрывая
+        // портал.
+        if (presence.SignedOut)
+        {
+            return "offline";
+        }
+
+        if (presence.Online)
+        {
+            return "online";
+        }
+
+        return presence.LastActiveAt is { } at && nowLocal - at < AwayFor ? "away" : "offline";
+    }
+
+    /// <summary>Подпись к кружку — для подсказки при наведении.</summary>
+    public static string StatusWord(string status) => status switch
+    {
+        "online" => "в сети",
+        "away" => "нет на месте",
+        _ => "не в сети"
+    };
 
     /// <summary>Как часто отметка доходит до базы.</summary>
     private static readonly TimeSpan WriteEvery = TimeSpan.FromMinutes(1);
@@ -68,7 +112,12 @@ public sealed class PresenceService
             return;
         }
 
-        var key = "presence:" + userName.ToLowerInvariant();
+        // Человек снова что-то делает — значит он вернулся: отметка
+        // о выходе больше не действует. Снимаем её ДО проверки частоты
+        // записи, иначе вернувшийся целую минуту числился бы ушедшим.
+        _cache.Remove(SignedOutKey(userName));
+
+        var key = TouchKey(userName);
 
         if (_cache.TryGetValue(key, out _))
         {
@@ -111,6 +160,50 @@ public sealed class PresenceService
         }
     }
 
+    /// <summary>
+    /// «Этот человек больше не в портале»: вызывается при выходе и когда
+    /// на той же машине входит кто-то другой.
+    ///
+    /// ЗАЧЕМ ЭТО ВООБЩЕ НУЖНО
+    ///
+    /// «В сети» означает «что-то делал в последние пять минут». Без этой
+    /// отметки вышедший человек ещё пять минут числится в сети — и на
+    /// сменном компьютере, где сотрудники входят друг за другом, в сети
+    /// оказываются сразу оба: тот, кто только что вышел, и тот, кто
+    /// вошёл. Выглядит как ошибка, и по сути ею и является: про первого
+    /// порталу ТОЧНО известно, что он уже не здесь.
+    ///
+    /// Отметка не стирается, а отодвигается на границу: «последний раз
+    /// в сети» должно остаться — это полезнее пустоты.
+    /// </summary>
+    public Task MarkOfflineAsync(string userName, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(userName))
+        {
+            return Task.CompletedTask;
+        }
+
+        // Снимаем запрет на запись: иначе следующий вход в течение минуты
+        // не обновил бы время активности, и вернувшийся человек остался бы
+        // «не в сети».
+        _cache.Remove(TouchKey(userName));
+
+        // Сам факт выхода держим в памяти, а не в базе, и ВРЕМЯ АКТИВНОСТИ
+        // не трогаем: «последний раз в сети в 17:40» должно остаться правдой.
+        // Если двигать его назад, подпись начнёт врать на пять минут.
+        //
+        // Памяти для этого достаточно: портал живёт одним процессом
+        // (см. docs/13), а сама отметка нужна ровно до тех пор, пока
+        // человек не перестал бы считаться «в сети» и без неё.
+        _cache.Set(SignedOutKey(userName), true, AwayFor);
+
+        return Task.CompletedTask;
+    }
+
+    private static string TouchKey(string userName) => "presence:" + userName.ToLowerInvariant();
+
+    private static string SignedOutKey(string userName) => "signedout:" + userName.ToLowerInvariant();
+
     /// <summary>Присутствие нескольких человек одним запросом.</summary>
     public async Task<IReadOnlyDictionary<string, Presence>> ForAsync(
         IReadOnlyCollection<string> userNames, CancellationToken cancellationToken = default)
@@ -135,9 +228,12 @@ public sealed class PresenceService
 
             foreach (var state in states)
             {
+                var signedOut = _cache.TryGetValue(SignedOutKey(state.UserName), out _);
+
                 result[state.UserName] = new Presence(
-                    state.LastActiveAt is { } at && at >= border,
-                    state.LastActiveAt?.ToLocalTime());
+                    !signedOut && state.LastActiveAt is { } at && at >= border,
+                    state.LastActiveAt?.ToLocalTime(),
+                    signedOut);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -162,7 +258,7 @@ public sealed class PresenceService
     /// </summary>
     public static string Describe(Presence presence, DateTime now)
     {
-        if (presence.Online)
+        if (presence.Online && !presence.SignedOut)
         {
             return "в сети";
         }

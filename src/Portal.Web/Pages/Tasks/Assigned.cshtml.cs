@@ -76,22 +76,20 @@ public class AssignedModel : PageModel
     public string ViewMode => View == "done" ? "done" : "active";
 
     /// <summary>
-    /// Как показывать: «list» — списком, «board» — доской по состояниям.
+    /// Как сортировать карточки в столбцах доски.
     ///
-    /// ЗАЧЕМ ДВА ВИДА
+    /// «due» — по сроку, сначала то, что горит. «important» — важные
+    /// наверх, внутри них снова по сроку. Больше ничего: сортировка
+    /// по названию или по исполнителю звучит разумно, пока не
+    /// попробуешь ею пользоваться.
     ///
-    /// Список отвечает на вопрос «что горит»: он отсортирован по сроку,
-    /// и сверху то, чем заняться сейчас. Доска отвечает на другой —
-    /// «где это всё застряло»: сразу видно, что половина задач висит
-    /// на проверке и ждёт уже не исполнителя, а самого начальника.
-    ///
-    /// Вид живёт в адресе, а не в настройках: тогда он не слетает
-    /// при перезагрузке и его можно просто положить в закладку.
+    /// Живёт в адресе, а не в настройках: тогда не слетает при
+    /// перезагрузке и кладётся в закладку.
     /// </summary>
-    [BindProperty(SupportsGet = true, Name = "mode")]
-    public string? Mode { get; set; }
+    [BindProperty(SupportsGet = true, Name = "sort")]
+    public string? Sort { get; set; }
 
-    public bool BoardView => Mode == "board";
+    public bool ImportantFirst => Sort == "important";
 
     /// <summary>Столбец доски: заголовок, признак для цвета и карточки.</summary>
     public sealed record Column(string Title, string Key, IReadOnlyList<AssignedCard> Cards);
@@ -120,8 +118,21 @@ public class AssignedModel : PageModel
             new("Возвращено", "returned", Of(TaskState.Returned))
         ];
 
-    private IReadOnlyList<AssignedCard> Of(TaskState state) =>
-        Items.Where(card => card.Instance.State == state).ToList();
+    /// <summary>
+    /// Карточки одного состояния в выбранном порядке.
+    ///
+    /// Список приходит уже отсортированным по сроку — это порядок
+    /// по умолчанию. «Важные сверху» не ломает его, а добавляет первый
+    /// ключ: внутри важных и внутри обычных срок по-прежнему решает.
+    /// </summary>
+    private IReadOnlyList<AssignedCard> Of(TaskState state)
+    {
+        var cards = Items.Where(card => card.Instance.State == state);
+
+        return ImportantFirst
+            ? cards.OrderByDescending(card => card.Task.Important).ToList()
+            : cards.ToList();
+    }
 
     public IReadOnlyList<AssignedCard> Items { get; private set; } = [];
 
@@ -278,7 +289,7 @@ public class AssignedModel : PageModel
             ? "Задача поставлена, но не приложены: " + string.Join("; ", problems)
             : $"Задача поставлена: {task.AssigneeDisplayName}.";
 
-        return RedirectToPage(new { view = View, mode = Mode });
+        return RedirectToPage(new { view = View, sort = Sort });
     }
 
     public async Task<IActionResult> OnPostAcceptAsync(int instanceId, CancellationToken cancellationToken)
@@ -287,14 +298,14 @@ public class AssignedModel : PageModel
         {
             ErrorMessage = "Принять задачу может только тот, кто её поставил.";
 
-            return RedirectToPage(new { view = View, mode = Mode });
+            return RedirectToPage(new { view = View, sort = Sort });
         }
 
         await NotifyAssigneeAsync(instanceId, cancellationToken);
 
         StatusMessage = "Принято.";
 
-        return RedirectToPage(new { view = View, mode = Mode });
+        return RedirectToPage(new { view = View, sort = Sort });
     }
 
     public async Task<IActionResult> OnPostReturnAsync(
@@ -304,14 +315,14 @@ public class AssignedModel : PageModel
         {
             ErrorMessage = "Вернуть задачу может только тот, кто её поставил.";
 
-            return RedirectToPage(new { view = View, mode = Mode });
+            return RedirectToPage(new { view = View, sort = Sort });
         }
 
         await NotifyAssigneeAsync(instanceId, cancellationToken);
 
         StatusMessage = "Возвращено на доработку.";
 
-        return RedirectToPage(new { view = View, mode = Mode });
+        return RedirectToPage(new { view = View, sort = Sort });
     }
 
     /// <summary>Снять задачу на этот раз. Повторение продолжается.</summary>
@@ -321,14 +332,14 @@ public class AssignedModel : PageModel
         {
             ErrorMessage = "Снять задачу может только тот, кто её поставил.";
 
-            return RedirectToPage(new { view = View, mode = Mode });
+            return RedirectToPage(new { view = View, sort = Sort });
         }
 
         await NotifyAssigneeAsync(instanceId, cancellationToken);
 
         StatusMessage = "Задача снята.";
 
-        return RedirectToPage(new { view = View, mode = Mode });
+        return RedirectToPage(new { view = View, sort = Sort });
     }
 
     /// <summary>Прекратить задачу совсем: больше она не повторится.</summary>
@@ -343,7 +354,7 @@ public class AssignedModel : PageModel
             StatusMessage = "Задача прекращена: новых сроков не будет.";
         }
 
-        return RedirectToPage(new { view = View, mode = Mode });
+        return RedirectToPage(new { view = View, sort = Sort });
     }
 
     /// <summary>Скачать файл задачи: приложенный автором или сданный исполнителем.</summary>

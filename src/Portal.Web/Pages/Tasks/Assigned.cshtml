@@ -43,18 +43,6 @@
             </a>
         </nav>
 
-        @* Список или доска. Список отвечает на вопрос «что горит»,
-           доска — «где это застряло»: видно, что половина задач висит
-           на проверке и ждёт уже не исполнителя, а самого начальника. *@
-        <nav class="seg seg--view" aria-label="Как показывать">
-            <a class="seg-btn@(Model.BoardView ? "" : " on")" asp-page="Assigned" asp-route-view="@Model.View" title="Списком">
-                <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-list" /></svg>Список
-            </a>
-            <a class="seg-btn@(Model.BoardView ? " on" : "")" asp-page="Assigned" asp-route-view="@Model.View" asp-route-mode="board" title="Доской по состояниям">
-                <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-grid" /></svg>Доска
-            </a>
-        </nav>
-
         @* Кнопка стоит в заголовке, а не отдельной карточкой над списком:
            карточка ради одной кнопки занимала целую полосу экрана
            и отодвигала вниз то, ради чего на страницу заходят. *@
@@ -216,7 +204,7 @@
         </div>
     }
 
-    @if (Model.BoardView && Model.Items.Count > 0)
+    @if (Model.Items.Count > 0)
     {
         @* ---------- Доска ----------
 
@@ -231,6 +219,20 @@
                 <section class="tcol tcol--@column.Key">
                     <header class="tcol-head">
                         <span class="tcol-name">@column.Title</span>
+
+                        @* Порядок карточек. Кнопка проявляется при наведении
+                           на столбец: нужна она изредка, а висеть на виду
+                           в каждом столбце — значит отвлекать постоянно.
+                           Выбранный порядок виден всегда: он общий
+                           для доски, и человек должен понимать, почему
+                           карточки лежат именно так. *@
+                        <a class="tcol-sort@(Model.ImportantFirst ? " on" : "")"
+                           asp-page="Assigned" asp-route-view="@Model.View"
+                           asp-route-sort="@(Model.ImportantFirst ? null : "important")"
+                           title="@(Model.ImportantFirst ? "Сейчас: важные сверху. Вернуть порядок по сроку" : "Поднять важные наверх")">
+                            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>
+                        </a>
+
                         <span class="tcol-count">@column.Cards.Count</span>
                     </header>
 
@@ -296,7 +298,7 @@
                                     @if (item.State == TaskState.Submitted)
                                     {
                                         <form method="post" asp-page-handler="Accept" asp-route-instanceId="@item.Id"
-                                              asp-route-view="@Model.View" asp-route-mode="@Model.Mode" class="head-form">
+                                              asp-route-view="@Model.View" asp-route-sort="@Model.Sort" class="head-form">
                                             <button class="btn primary sm" type="submit">Принять</button>
                                         </form>
 
@@ -421,7 +423,7 @@
                         @if (item.State == TaskState.Submitted)
                         {
                             <form method="post" asp-page-handler="Accept" asp-route-instanceId="@item.Id"
-                                  asp-route-view="@Model.View" class="head-form">
+                                  asp-route-view="@Model.View" asp-route-sort="@Model.Sort" class="head-form">
                                 <button class="btn primary sm" type="submit">Принять</button>
                             </form>
 
@@ -434,7 +436,7 @@
                         @if (!item.IsClosed)
                         {
                             <form method="post" asp-page-handler="Cancel" asp-route-instanceId="@item.Id"
-                                  asp-route-view="@Model.View" class="head-form">
+                                  asp-route-view="@Model.View" asp-route-sort="@Model.Sort" class="head-form">
                                 <button class="btn sm" type="submit" data-confirm-action
                                         data-confirm-text="Снять задачу «@task.Title» на этот раз? Повторение, если оно есть, продолжится."
                                         data-confirm-ok="Снять">
@@ -445,7 +447,7 @@
                             @if (task.Repeat != TaskRepeat.Once && !task.Stopped)
                             {
                                 <form method="post" asp-page-handler="Stop" asp-route-taskId="@task.Id"
-                                      asp-route-view="@Model.View" class="head-form">
+                                      asp-route-view="@Model.View" asp-route-sort="@Model.Sort" class="head-form">
                                     <button class="btn sm danger" type="submit" data-confirm-action
                                             data-confirm-text="Прекратить задачу «@task.Title»? Новых сроков больше не будет, история останется."
                                             data-confirm-ok="Прекратить">
