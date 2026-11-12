@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -106,6 +107,23 @@ public sealed class MainForm : Form
 
         core.WebMessageReceived += OnWebMessage;
         core.NewWindowRequested += OnNewWindow;
+
+        // ---------- Перетаскивание файлов снаружи ----------
+        //
+        // Файл из «Проводника» можно бросить прямо в окно: страница
+        // переписки это умеет, и в программе должно работать так же,
+        // как в браузере. Свойство выставляем явно — значение
+        // по умолчанию у разных версий WebView2 разное, и молча
+        // зависеть от него нельзя.
+        _web.AllowExternalDrop = true;
+
+        // ---------- Скачивание ----------
+        //
+        // Щелчок по файлу в переписке должен ОТКРЫВАТЬ файл, а не
+        // оставлять его где-то в «Загрузках». Поэтому полосу скачивания
+        // прячем, файл кладём в свою папку и открываем сами —
+        // см. OnDownload.
+        core.DownloadStarting += OnDownload;
 
         // Мостик, через который страница портала управляет окном.
         // Вызовы уходят сообщением, а не вызовом объекта: так страница
@@ -301,6 +319,119 @@ public sealed class MainForm : Form
         _web.CoreWebView2.Navigate(e.Uri);
     }
 
+    // ==================================================================
+    // Скачанные файлы
+    // ==================================================================
+
+    /// <summary>Куда складываются файлы, открытые из переписки.</summary>
+    private static string DownloadsFolder => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "PortalWidget", "Файлы");
+
+    /// <summary>
+    /// Расширения, которые открываются сразу.
+    ///
+    /// ПОЧЕМУ СПИСОК, А НЕ «ОТКРЫВАТЬ ВСЁ»
+    ///
+    /// Открыть документ по щелчку — удобно. Открыть по щелчку .exe,
+    /// .bat или .ps1, пришедший в переписке, — это запустить чужую
+    /// программу на рабочем ПК одним нажатием. Поэтому всё, чего нет
+    /// в списке, не открывается: вместо этого показывается папка
+    /// с файлом, и человек решает сам.
+    /// </summary>
+    private static readonly HashSet<string> OpenRightAway = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".pdf", ".doc", ".docx", ".rtf", ".odt", ".txt", ".csv",
+        ".xls", ".xlsx", ".ods", ".ppt", ".pptx", ".odp",
+        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg",
+        ".mp3", ".wav", ".mp4", ".avi", ".mkv", ".zip", ".7z", ".rar"
+    };
+
+    private void OnDownload(object? sender, CoreWebView2DownloadStartingEventArgs e)
+    {
+        // Полоса скачивания внизу окна — часть браузера, а здесь окно
+        // программы: человек нажал на файл и ждёт файл, а не полосу.
+        e.Handled = true;
+
+        var name = SafeName(Path.GetFileName(e.ResultFilePath));
+        var target = Path.Combine(DownloadsFolder, name);
+
+        try
+        {
+            Directory.CreateDirectory(DownloadsFolder);
+        }
+        catch (Exception)
+        {
+            // Папку не создать — пусть сохраняется туда, куда сам решил.
+            target = e.ResultFilePath;
+        }
+
+        e.ResultFilePath = target;
+
+        var operation = e.DownloadOperation;
+
+        operation.StateChanged += (_, _) =>
+        {
+            if (operation.State != CoreWebView2DownloadState.Completed)
+            {
+                if (operation.State == CoreWebView2DownloadState.Interrupted)
+                {
+                    BeginInvoke(() => _tray.Balloon("Портал", "Файл скачать не удалось: " + name));
+                }
+
+                return;
+            }
+
+            BeginInvoke(() => Open(operation.ResultFilePath));
+        };
+    }
+
+    /// <summary>Открыть скачанное — или показать папку, если открывать опасно.</summary>
+    private void Open(string path)
+    {
+        var extension = Path.GetExtension(path);
+
+        try
+        {
+            if (OpenRightAway.Contains(extension))
+            {
+                Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
+
+                return;
+            }
+
+            // Не из списка: показываем в «Проводнике» выделенным.
+            // Так человек видит, что именно пришло, и запускает сам,
+            // если действительно этого хочет.
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = "/select,\"" + path + "\"",
+                UseShellExecute = true
+            });
+
+            _tray.Balloon("Портал", "Файл сохранён: " + Path.GetFileName(path));
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                "Файл скачан, но открыть его не получилось:\n\n" + ex.Message +
+                "\n\nОн лежит здесь:\n" + path,
+                "Портал", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    /// <summary>Имя файла без того, чем можно увести сохранение в другую папку.</summary>
+    private static string SafeName(string name)
+    {
+        foreach (var bad in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(bad, '_');
+        }
+
+        return string.IsNullOrWhiteSpace(name) ? "файл" : name;
+    }
+
     private void SetServer(string url)
     {
         var address = Settings.NormalizeServer(url);
@@ -441,6 +572,16 @@ public sealed class MainForm : Form
         Activate();
     }
 
+    /// <summary>
+    /// Убрать окно к часам.
+    ///
+    /// Окно именно ПРЯЧЕТСЯ, а не усыпляется: страница внутри продолжает
+    /// работать, держит соединение с порталом и сообщает о новом окошками
+    /// Windows. Если когда-нибудь появится соблазн сэкономить здесь
+    /// память (TrySuspend, MemoryUsageTargetLevel), помните: вместе
+    /// с памятью пропадут и уведомления из трея — ради которых
+    /// программа и существует.
+    /// </summary>
     public void HideWidget()
     {
         if (_alert)

@@ -314,6 +314,23 @@
         seen.hidden = (last.unread || 0) === 0;
     }
 
+    /** Заголовок окошка Windows для задачи — по тому, что с ней случилось. */
+    function taskWord(task) {
+        if (task.kind !== 'head') {
+            return task.late ? 'Своя задача просрочена' : 'Своя задача';
+        }
+
+        if (task.state === 'Возвращено') {
+            return 'Задача возвращена на доработку';
+        }
+
+        if (task.late) {
+            return 'Задача просрочена';
+        }
+
+        return 'Новая задача от ' + (text(task.who) || 'начальника');
+    }
+
     /** Названия вкладок — они же заголовок окна в программе. */
     var TAB_NAMES = {
         all: 'Всё новое',
@@ -378,7 +395,26 @@
 
         bridge.alert(unread > 0);
 
-        var items = last.items || [];
+        // Окошком Windows сообщаем обо ВСЁМ, что появилось: о сообщении,
+        // об объявлении и о задаче. Задача в этом смысле ничем не хуже
+        // сообщения — её точно так же ждут и точно так же пропускают,
+        // если о ней не сказать.
+        //
+        // У задачи в ключ входит ещё и состояние: возвращённая
+        // на доработку — это новое событие, хотя задача та же.
+        var fresh = (last.items || []).map(function (item) {
+            return {
+                key: item.kind + item.id,
+                title: text(item.title) || 'Портал',
+                body: text(item.preview) || text(item.author)
+            };
+        }).concat((last.tasks || []).map(function (task) {
+            return {
+                key: 'task' + task.kind + task.id + task.state,
+                title: taskWord(task),
+                body: text(task.title) + (text(task.due) ? ' — ' + task.due : '')
+            };
+        }));
 
         // Первый ответ после открытия окна только запоминаем: сообщать
         // окошками о том, что лежало и до запуска программы, — значит
@@ -386,21 +422,19 @@
         if (known === null) {
             known = {};
 
-            items.forEach(function (item) { known[item.kind + item.id] = true; });
+            fresh.forEach(function (item) { known[item.key] = true; });
 
             return;
         }
 
-        items.slice().reverse().forEach(function (item) {
-            var key = item.kind + item.id;
-
-            if (known[key]) {
+        fresh.slice().reverse().forEach(function (item) {
+            if (known[item.key]) {
                 return;
             }
 
-            known[key] = true;
+            known[item.key] = true;
 
-            bridge.notify(text(item.title) || 'Портал', text(item.preview) || text(item.author));
+            bridge.notify(item.title, item.body);
         });
     }
 

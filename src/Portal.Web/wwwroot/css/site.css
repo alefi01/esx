@@ -335,8 +335,17 @@ select.sel{appearance:none;border:1px solid var(--border);background:var(--surfa
 /* Подряд идущие реплики одного человека стоят ещё плотнее: это один
    поток мысли, а не отдельные события. Так же сделано в мессенджерах,
    и из-за этого переписка читается как разговор, а не как список. */
-.msg + .msg{margin-top:0}
+.msg.same{margin-top:-4px}
 .msg.sys{margin:8px 0}
+
+/* Продолжение серии: кружка нет, но место под него остаётся — иначе
+   пузырьки поехали бы влево и лесенка была бы заметнее сообщений. */
+.avatar-gap{width:30px;flex:none}
+
+/* У продолжения срезается «хвостик» пузырька: он показывает, от кого
+   реплика, и рисовать его у каждой строки серии незачем. */
+.msg.same .bubble{border-top-left-radius:14px}
+.msg.same.mine .bubble{border-top-left-radius:14px;border-top-right-radius:14px}
 .msg{display:flex;gap:9px;max-width:74%}
 .msg .avatar{width:30px;height:30px;font-size:10.5px;margin-top:2px}
 .msg .bubble{background:var(--surface2);border:1px solid var(--border);border-radius:4px 14px 14px 14px;padding:8px 12px 6px}

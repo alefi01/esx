@@ -915,6 +915,51 @@
             });
         }
 
+        // Что программа-виджет уже показывала окошком: иначе при каждом
+        // опросе она сообщала бы об одном и том же.
+        let widgetKnown = null;
+
+        /** Рассказать программе-виджету о числе и о новых событиях. */
+        function tellWidget(data) {
+            const bridge = window.portalWidget;
+
+            if (!bridge) { return; }
+
+            const unread = data.unread || 0;
+            const waiting = (data.tasks || 0) + (data.assignedWaiting || 0);
+
+            bridge.status(
+                unread,
+                unread > 0 ? 'alert' : 'calm',
+                unread > 0
+                    ? 'Непрочитанных: ' + unread
+                    : (waiting > 0 ? 'Задач ждёт: ' + waiting : 'Портал'));
+
+            bridge.alert(unread > 0);
+
+            const items = data.items || [];
+
+            // Первый ответ только запоминаем: сообщать окошками о том,
+            // что лежало и до открытия страницы, — значит засыпать
+            // человека уведомлениями на каждом переходе.
+            if (widgetKnown === null) {
+                widgetKnown = {};
+                items.forEach(n => { widgetKnown[n.kind + n.id] = true; });
+
+                return;
+            }
+
+            items.slice().reverse().forEach(n => {
+                const key = n.kind + n.id;
+
+                if (widgetKnown[key]) { return; }
+
+                widgetKnown[key] = true;
+
+                bridge.notify(n.title || 'Портал', n.preview || n.author || '');
+            });
+        }
+
         function render(data) {
             const unread = data.unread || 0;
 
@@ -936,6 +981,19 @@
             // позвать человека, когда окошки системы недоступны (их не даёт
             // открытое соединение), и он работает всегда.
             if (window.portalSound) { window.portalSound.unread(data.unread || 0); }
+
+            // ---------- Значок у часов, когда портал открыт в виджете ----------
+            //
+            // Страницу портала смотрят и в окне виджета: человек развернул
+            // его до мессенджера и свернул в трей, не возвращаясь на
+            // страницу /Widget. Без этого значок у часов застыл бы
+            // на числе, которое было в момент разворачивания,
+            // и уведомления перестали бы приходить вовсе.
+            //
+            // Поэтому ЛЮБАЯ страница портала, открытая в виджете, сама
+            // сообщает программе число и новые события. В браузере
+            // window.portalWidget просто нет, и всё это пропускается.
+            tellWidget(data);
 
             const items = data.items || [];
 
@@ -3985,7 +4043,23 @@
             let busy = false;
 
             function bubble(msg) {
-                const box = el('<div class="msg' + (msg.mine ? ' mine' : '') + '"></div>');
+                // Продолжение серии того же человека — как на странице,
+                // пришедшей с сервера (см. Messages/Index.cshtml): кружок
+                // только у первой реплики, остальные встают под неё.
+                // Решаем это здесь, а не на сервере, потому что сюда
+                // сообщения приходят по одному и склеивать их надо на месте.
+                const previous = msgs && msgs.lastElementChild;
+
+                const sameAuthor = !!previous
+                    && previous.classList.contains('msg')
+                    && !previous.classList.contains('sys')
+                    && previous.dataset.author === (msg.author || '')
+                    && previous.dataset.mine === String(msg.mine);
+
+                const box = el('<div class="msg'
+                    + (msg.mine ? ' mine' : '')
+                    + (sameAuthor ? ' same' : '')
+                    + '"></div>');
 
                 box.dataset.message = msg.id;
                 box.id = 'msg-' + msg.id;
@@ -3995,7 +4069,9 @@
                 box.dataset.body = msg.body || '';
 
                 if (!msg.mine) {
-                    box.appendChild(el(`<div class="avatar">${esc(initials(msg.author))}</div>`));
+                    box.appendChild(sameAuthor
+                        ? el('<div class="avatar-gap"></div>')
+                        : el(`<div class="avatar">${esc(initials(msg.author))}</div>`));
                 }
 
                 const files = (msg.files || []).map(f =>
@@ -4003,7 +4079,7 @@
                     `<span class="b-fname">${esc(f.name)}</span>` +
                     `<span class="b-fsize">${esc(f.size)}</span></a>`).join('');
 
-                const name = (!msg.mine && settings.isGroup === 'true') || isAdminObserver
+                const name = ((!msg.mine && settings.isGroup === 'true' && !sameAuthor) || isAdminObserver)
                     ? `<div class="b-name">${esc(msg.author)}` +
                       (msg.ip ? `<span class="b-ip">${esc(msg.ip)}</span>` : '') + '</div>'
                     : '';

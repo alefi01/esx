@@ -230,6 +230,11 @@
                     @{
                         var today = DateTime.Now.Date;
                         var lastDay = default(DateTime?);
+
+                        // Кто писал предыдущую реплику и когда — по ним
+                        // решается, продолжение это серии или новая реплика.
+                        var lastAuthor = "";
+                        var lastAt = default(DateTime);
                     }
 
                     @foreach (var message in Model.Items)
@@ -242,11 +247,27 @@
                         if (lastDay != at.Date)
                         {
                             lastDay = at.Date;
+                            lastAuthor = "";
 
                             <div class="day-sep"><span>@Portal.Web.Pages.Messages.IndexModel.DayLabel(at.Date, today)</span></div>
                         }
 
-                        <div class="msg@(mine ? " mine" : "")" data-message="@message.Id"
+                        @* Подряд идущие реплики одного человека — одна серия:
+                           аватарка только у первой, остальные встают под неё.
+                           Так в мессенджерах, и не из экономии места: три
+                           одинаковых кружка подряд читаются как три разных
+                           события, хотя это один человек договорил мысль.
+
+                           Серия рвётся сменой автора, сменой дня и большим
+                           перерывом: после получаса молчания это уже новая
+                           реплика, а не продолжение. *@
+                        var sameAuthor = lastAuthor == message.AuthorUserName
+                            && at - lastAt < TimeSpan.FromMinutes(30);
+
+                        lastAuthor = message.AuthorUserName;
+                        lastAt = at;
+
+                        <div class="msg@(mine ? " mine" : "")@(sameAuthor ? " same" : "")" data-message="@message.Id"
                              id="msg-@message.Id"
                              data-mine="@mine.ToString().ToLowerInvariant()"
                              data-deleted="@((message.DeletedAt is not null).ToString().ToLowerInvariant())"
@@ -260,7 +281,18 @@
                              data-body="@(message.DeletedAt is null ? message.Body : "")">
                             @if (!mine)
                             {
-                                <div class="avatar" data-av="@Avatars.ColorIndex(message.AuthorDisplayName)">@Avatars.Initials(message.AuthorDisplayName)</div>
+                                @* У продолжения серии кружок не рисуется,
+                                   но место под него остаётся: иначе пузырьки
+                                   поедут влево и лесенка будет заметнее
+                                   самих сообщений. *@
+                                if (sameAuthor)
+                                {
+                                    <div class="avatar-gap"></div>
+                                }
+                                else
+                                {
+                                    <div class="avatar" data-av="@Avatars.ColorIndex(message.AuthorDisplayName)">@Avatars.Initials(message.AuthorDisplayName)</div>
+                                }
                             }
 
                             <div class="bubble">
@@ -276,7 +308,7 @@
                                         <span class="b-ip">@(string.IsNullOrEmpty(message.AuthorIp) ? "адрес не записан" : message.AuthorIp)</span>
                                     </div>
                                 }
-                                else if (!mine && Model.Current.IsGroup)
+                                else if (!mine && Model.Current.IsGroup && !sameAuthor)
                                 {
                                     <div class="b-name">@message.AuthorDisplayName</div>
                                 }
