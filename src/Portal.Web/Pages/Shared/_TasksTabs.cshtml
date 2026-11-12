@@ -6,9 +6,12 @@
 @*
     Вкладки раздела «Задачи».
 
-    Показываются только тем, кто вправе ставить задачи: у остальных
-    второй половины раздела просто нет, и переключатель из одной
-    вкладки — это мусор в заголовке.
+    «Мои» — свои заметки, их человек ведёт сам.
+    «От руководителя» — поручения: их сдают, и закрывает их тот, кто
+    поставил.
+    «Подчинённым» — то, что человек поручил другим. Видна только тем,
+    кто вправе ставить задачи: у остальных этой половины раздела просто
+    нет, и вкладка из воздуха сбивала бы с толку.
 
     Право то же, что у политики AssignTasks: членство в группе
     начальников или администратор. Считается здесь так же, как в меню,
@@ -20,23 +23,27 @@
                     || User.IsInRole(AdOptions.Value.HeadGroup);
 }
 
-@if (canAssign)
-{
-    <nav class="seg" aria-label="Чьи задачи">
-        <a class="seg-btn@(Model.Mine ? " on" : "")" asp-page="/Tasks/Index">
-            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check-square" /></svg>Мои
-            @if (Model.MineCount > 0)
-            {
-                <span class="side-count">@Model.MineCount</span>
-            }
-        </a>
+<nav class="seg" aria-label="Чьи задачи">
+    <a class="seg-btn@(Model.Current == "own" ? " on" : "")" asp-page="/Tasks/Index">
+        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check-square" /></svg>Мои
+    </a>
 
-        <a class="seg-btn@(Model.Mine ? "" : " on")" asp-page="/Tasks/Assigned">
-            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>Подчинённым
+    <a class="seg-btn@(Model.Current == "head" ? " on" : "")" asp-page="/Tasks/Index" asp-route-scope="head">
+        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>От руководителя
+        @if (Model.HeadCount > 0)
+        {
+            <span class="side-count">@Model.HeadCount</span>
+        }
+    </a>
+
+    @if (canAssign)
+    {
+        <a class="seg-btn@(Model.Current == "assigned" ? " on" : "")" asp-page="/Tasks/Assigned">
+            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-sliders" /></svg>Подчинённым
             @if (Model.WaitingCount > 0)
             {
                 <span class="side-count">@Model.WaitingCount</span>
             }
         </a>
-    </nav>
-}
+    }
+</nav>

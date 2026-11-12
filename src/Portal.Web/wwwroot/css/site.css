@@ -1798,7 +1798,10 @@ mark{background:color-mix(in srgb,var(--warn) 42%,transparent);color:inherit;
 .task-state{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;
   background:var(--surface2);color:var(--muted);white-space:nowrap;
   text-transform:lowercase;letter-spacing:.2px;margin-left:auto}
-.task-state.state-submitted{background:var(--accent-soft);color:var(--accent)}
+/* Сдано и возвращено — оба оранжевым: это одно и то же по смыслу,
+   «мяч не на твоей стороне» и «мяч вернулся». Синим было хуже: синий
+   в портале означает обычное действие, а не ожидание. */
+.task-state.state-submitted,
 .task-state.state-returned{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)}
 .task-state.state-accepted,.task-state.state-done{background:color-mix(in srgb,var(--ok) 20%,transparent);color:var(--ok)}
 .task-state.state-missed{background:color-mix(in srgb,var(--danger) 18%,transparent);color:var(--danger)}
@@ -2049,7 +2052,9 @@ html[data-file-view="list"] .flist[hidden]{display:block !important}
   border-radius:7px;color:var(--muted);opacity:0;transition:.14s}
 .tcol:hover .tcol-sort,.tcol-sort:focus-visible{opacity:1}
 .tcol-sort:hover{background:var(--surface3);color:var(--text)}
-.tcol-sort.on{opacity:1;background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)}
+/* Нажатая сортировка выделяется подложкой, а не цветом тревоги:
+   «важные сверху» — это порядок показа, а не беда. */
+.tcol-sort.on{opacity:1;background:var(--surface3);color:var(--text)}
 .tcol-name{font-size:11.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
   color:var(--muted)}
 .tcol-count{margin-left:auto;min-width:20px;padding:1px 7px;border-radius:999px;
@@ -2064,7 +2069,7 @@ html[data-file-view="list"] .flist[hidden]{display:block !important}
 .tcol--submitted::before{background:var(--accent)}
 .tcol--returned::before{background:var(--warn)}
 .tcol--accepted::before,.tcol--done::before{background:var(--ok)}
-.tcol--cancelled::before{background:var(--border)}
+.tcol--cancelled::before,.tcol--archive::before{background:var(--border)}
 .tcol--missed::before{background:var(--danger)}
 
 .tcol-body{display:flex;flex-direction:column;gap:8px}

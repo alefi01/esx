@@ -60,6 +60,20 @@ public class IndexModel : PageModel
 
     private string UserName => User.Identity?.Name ?? "";
 
+    /// <summary>
+    /// Чьи задачи показывать: own — свои заметки, head — поручения
+    /// руководителя.
+    ///
+    /// Две половины одного раздела на одной странице, а не две страницы:
+    /// списки разные, но всё вокруг — заголовок, вкладки, доска —
+    /// одно и то же, и держать это в двух файлах значит однажды
+    /// поправить только один.
+    /// </summary>
+    [BindProperty(SupportsGet = true, Name = "scope")]
+    public string? Scope { get; set; }
+
+    public bool FromHeadView => Scope == "head";
+
     /// <summary>Какой список показываем: active или done.</summary>
     /// <remarks>
     /// Архива больше нет. Он был третьим списком, куда убирали «с глаз»,
@@ -84,75 +98,75 @@ public class IndexModel : PageModel
         public int Count => Head.Count + Own.Count;
     }
 
-    /// <summary>
-    /// Столбцы доски.
-    ///
-    /// Разложены не по видам задач, а по тому, что человеку с ними
-    /// делать: горит — делать сейчас; в работе — делать на днях; сдано —
-    /// от него больше ничего не нужно, ждёт начальника.
-    ///
-    /// Поэтому в одном столбце лежат и задачи от начальника, и свои
-    /// заметки: для того, кто их делает, это один список дел, а не два.
-    /// </summary>
     /// <summary>Задача горит: срок прошёл или истекает сегодня.</summary>
     private static bool Burning(bool overdue, TaskUrgency urgency) =>
         overdue || urgency == TaskUrgency.Now;
 
-    public IReadOnlyList<Column> Columns => ViewMode == "done"
+    /// <summary>
+    /// Столбцы доски.
+    ///
+    /// У своих заметок это путь дела: в работе → выполнено → архив.
+    /// Архив здесь столбец, а не отдельный список: убранное с глаз
+    /// открывают редко, но когда открывают — хотят видеть рядом
+    /// с остальным, а не искать переключатель.
+    ///
+    /// У поручений руководителя — чьего действия ждёт задача:
+    /// исполнителя, начальника и снова исполнителя. Выполненные
+    /// и снятые в этой доске не показываются: для них переключатель
+    /// «Выполненные», как у начальника.
+    /// </summary>
+    public IReadOnlyList<Column> Columns => FromHeadView ? HeadColumns : OwnColumns;
+
+    private IReadOnlyList<Column> OwnColumns => ViewMode == "done"
         ?
         [
-            new("Принято", "accepted",
-                FromHead.Where(c => c.Instance.State is Portal.Web.Data.TaskState.Accepted
-                                        or Portal.Web.Data.TaskState.Done).ToList(),
-                Items),
-            new("Не сдано", "missed",
-                FromHead.Where(c => c.Instance.State is Portal.Web.Data.TaskState.Missed
-                                        or Portal.Web.Data.TaskState.Cancelled).ToList(),
-                [])
+            new("Выполненные", "accepted", [], Items.Where(c => c.Task.IsDone).ToList()),
+            new("Архив", "archive", [], Items.Where(c => !c.Task.IsDone).ToList())
         ]
         :
         [
-            // «Горит» — это не только просроченное, но и то, что нужно
-            // сдать сегодня: к концу дня оно станет просроченным,
-            // и узнавать об этом завтра поздно.
-            new("Горит", "late",
-                FromHead.Where(c => Burning(c.Overdue, c.Urgency)
-                                    && c.Instance.State != Portal.Web.Data.TaskState.Submitted).ToList(),
-                Items.Where(c => Burning(c.Overdue, c.Urgency)).ToList()),
-
-            new("В работе", "open",
-                FromHead.Where(c => !Burning(c.Overdue, c.Urgency)
-                                    && c.Instance.State != Portal.Web.Data.TaskState.Submitted).ToList(),
-                Items.Where(c => !Burning(c.Overdue, c.Urgency)).ToList()),
-
-            new("Сдано на проверку", "submitted",
-                FromHead.Where(c => c.Instance.State == Portal.Web.Data.TaskState.Submitted).ToList(),
-                [])
+            new("Горит", "late", [], Items.Where(c => Burning(c.Overdue, c.Urgency)).ToList()),
+            new("В работе", "open", [], Items.Where(c => !Burning(c.Overdue, c.Urgency)).ToList())
         ];
 
+    private IReadOnlyList<Column> HeadColumns => ViewMode == "done"
+        ?
+        [
+            new("Принято", "accepted", OfState(Portal.Web.Data.TaskState.Accepted,
+                Portal.Web.Data.TaskState.Done), []),
+            new("Не сдано", "missed", OfState(Portal.Web.Data.TaskState.Missed,
+                Portal.Web.Data.TaskState.Cancelled), [])
+        ]
+        :
+        [
+            new("В работе", "open", OfState(Portal.Web.Data.TaskState.Open), []),
+            new("Сдано на проверку", "submitted", OfState(Portal.Web.Data.TaskState.Submitted), []),
+            new("На доработке", "returned", OfState(Portal.Web.Data.TaskState.Returned), [])
+        ];
+
+    private IReadOnlyList<AssignedCard> OfState(params Portal.Web.Data.TaskState[] states) =>
+        FromHead.Where(card => states.Contains(card.Instance.State)).ToList();
+
+    /// <summary>Свои заметки: в работе или закрытые — смотря какая вкладка.</summary>
     public IReadOnlyList<TaskCard> Items { get; private set; } = [];
 
-    /// <summary>Задачи, поставленные начальником, — верхним списком.</summary>
+    /// <summary>Поручения руководителя.</summary>
     public IReadOnlyList<AssignedCard> FromHead { get; private set; } = [];
 
+    /// <summary>Сколько своих задач в работе — число на переключателе.</summary>
     public int ActiveCount { get; private set; }
 
-    /// <summary>Сколько задач от начальника требует внимания — для подписи.</summary>
+    /// <summary>
+    /// Сколько поручений требует внимания: новые, возвращённые
+    /// на доработку и просроченные. Это число стоит на вкладке
+    /// «От руководителя».
+    /// </summary>
     public int HeadCount { get; private set; }
 
-    /// <summary>
-    /// Число на вкладке «Мои» — то же, что на пункте меню: новые
-    /// от начальника, возвращённые и просроченные, свои в том числе.
-    /// Считается по той же формуле, что и в /api/notifications: два
-    /// разных числа в двух местах про одно и то же — верный способ
-    /// перестать им верить.
-    /// </summary>
-    public int MineAttention { get; private set; }
-
-    /// <summary>Сколько подчинённые сдали на проверку — число на второй вкладке.</summary>
+    /// <summary>Сколько подчинённые сдали на проверку — число на третьей вкладке.</summary>
     public int WaitingCount { get; private set; }
 
-    /// <summary>Вправе ли человек ставить задачи — от этого зависят вкладки.</summary>
+    /// <summary>Вправе ли человек ставить задачи — от этого зависит третья вкладка.</summary>
     public bool CanAssign => User.IsInRole(_ad.Value.AdminGroup) || User.IsInRole(_ad.Value.HeadGroup);
 
     [TempData] public string? StatusMessage { get; set; }
@@ -186,21 +200,20 @@ public class IndexModel : PageModel
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
+        // Свои заметки: в работе или всё закрытое — выполненное
+        // и убранное в архив. Разложит их по столбцам доска.
         Items = await _tasks.ListAsync(UserName, ViewMode, cancellationToken);
         ActiveCount = await _tasks.ActiveCountAsync(UserName, cancellationToken);
 
         FromHead = await _assigned.ForAssigneeAsync(
             UserName, closed: ViewMode == "done", cancellationToken);
 
+        // Число на вкладке «От руководителя»: новые поручения,
+        // возвращённые на доработку и просроченные.
         HeadCount = await _assigned.NeedsAttentionCountAsync(UserName, cancellationToken);
 
-        var overdueOwn = (await _tasks.UrgentAsync(UserName, cancellationToken))
-            .Count(t => t.DueOn!.Value.Date < DateTime.Now.Date);
-
-        MineAttention = HeadCount + overdueOwn;
-
-        // Второе число нужно только начальнику — лишний запрос
-        // для остальных не делаем.
+        // Число на вкладке «Подчинённым» нужно только начальнику —
+        // лишний запрос для остальных не делаем.
         WaitingCount = CanAssign
             ? await _assigned.WaitingCheckCountAsync(UserName, cancellationToken)
             : 0;

@@ -1,20 +1,18 @@
 @page
 @model Portal.Web.Pages.Tasks.IndexModel
 @{
-    ViewData["Title"] = "Задачи";
+    ViewData["Title"] = Model.FromHeadView ? "Задачи от руководителя" : "Мои задачи";
 }
 
 @*
-    «Задачи» глазами того, кто их делает.
+    «Задачи» глазами того, кто их выполняет. Две половины раздела
+    на одной странице: свои заметки и поручения руководителя.
 
-    Доска, а не список, и такая же, как у начальника: столбцы по тому,
-    что с задачей делать — горит, в работе, сдано. В одном столбце лежат
-    и поручения начальника, и свои заметки: для того, кто их выполняет,
-    это один список дел, а не два.
-
-    Карточки при этом разные, и намеренно. У поручения нет галочки
-    «выполнено» — его сдают, и закрывает его тот, кто поставил. У своей
-    заметки нет состояния — она либо сделана, либо нет.
+    Разделены они намеренно — у них разные правила. Своя заметка
+    закрывается галочкой и убирается в архив; поручение сдают, и его
+    закрывает тот, кто поставил. Карточки в одном списке, которые
+    ведут себя по-разному, — верный способ научить людей не доверять
+    ни одной.
 *@
 <section class="view active tasks-page">
 
@@ -30,26 +28,33 @@
     <div class="view-head">
         <h2>Задачи</h2>
 
-        <partial name="_TasksTabs" model="new Portal.Web.Pages.Shared.TasksTabs(true, Model.MineAttention, Model.WaitingCount)" />
+        @{
+            var tabs = new Portal.Web.Pages.Shared.TasksTabs(
+                Model.FromHeadView ? "head" : "own", Model.HeadCount, Model.WaitingCount);
+        }
 
-        @* Архива здесь больше нет. Он был третьим списком, куда убирали
-           «с глаз», и этим ничем не отличался от выполненного: открывали
-           его почти никогда, а объяснять разницу приходилось каждому.
-           Убранное туда раньше лежит теперь среди выполненного. *@
+        <partial name="_TasksTabs" model="tabs" />
+
         <nav class="seg seg--sub" aria-label="Какие задачи показывать">
-            <a class="seg-btn@(Model.ViewMode == "active" ? " on" : "")" asp-page="Index">
+            <a class="seg-btn@(Model.ViewMode == "active" ? " on" : "")"
+               asp-page="Index" asp-route-scope="@Model.Scope">
                 В работе
-                @if (Model.ActiveCount > 0)
+                @if (!Model.FromHeadView && Model.ActiveCount > 0)
                 {
                     <span class="side-count">@Model.ActiveCount</span>
                 }
             </a>
-            <a class="seg-btn@(Model.ViewMode == "done" ? " on" : "")" asp-page="Index" asp-route-view="done">
+            <a class="seg-btn@(Model.ViewMode == "done" ? " on" : "")"
+               asp-page="Index" asp-route-scope="@Model.Scope" asp-route-view="done">
                 <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>Выполненные
             </a>
         </nav>
 
-        @if (Model.ViewMode == "active")
+        @* Своя задача ставится в окне — тем же, что и задача
+           подчинённому. Кнопка не пропадает на вкладке «Выполненные»:
+           записать дело можно и оттуда, и прятать кнопку — значит
+           заставлять сначала переключиться. *@
+        @if (!Model.FromHeadView)
         {
             <button class="btn primary" type="button" id="newOwnBtn">
                 <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus" /></svg>Новая задача
@@ -57,11 +62,7 @@
         }
     </div>
 
-    @* Своя задача записывается в окне — тем же, что и задача
-       подчинённому. Раньше здесь висела форма строкой: на одной
-       странице получались две разные формы для одного и того же
-       действия, и та, что в списке, отодвигала вниз сам список. *@
-    @if (Model.ViewMode == "active")
+    @if (!Model.FromHeadView)
     {
         <div id="newOwnHolder" hidden>
             <form method="post" asp-page-handler="Create" class="assigned-form" id="newOwnForm">
@@ -94,7 +95,11 @@
         </div>
     }
 
-    @if (Model.Items.Count == 0 && Model.FromHead.Count == 0)
+    @{
+        var empty = Model.FromHeadView ? Model.FromHead.Count == 0 : Model.Items.Count == 0;
+    }
+
+    @if (empty)
     {
         <div class="empty">
             <svg class="ic" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check-square" /></svg>
@@ -121,7 +126,7 @@
 
                     <div class="tcol-body">
 
-                        @* ---------- Задачи от начальника ---------- *@
+                        @* ---------- Поручения руководителя ---------- *@
                         @foreach (var card in column.Head)
                         {
                             var item = card.Instance;
@@ -191,7 +196,8 @@
                                 @if (!item.IsClosed && item.State != Portal.Web.Data.TaskState.Submitted)
                                 {
                                     <form method="post" asp-page-handler="Submit" asp-route-instanceId="@item.Id"
-                                          asp-route-view="@Model.View" enctype="multipart/form-data" class="task-submit">
+                                          asp-route-scope="@Model.Scope" asp-route-view="@Model.View"
+                                          enctype="multipart/form-data" class="task-submit">
 
                                         <label class="file-pick">
                                             <input type="file" name="attachments" multiple
@@ -236,7 +242,8 @@
                                     @if (card.Mine)
                                     {
                                         <form method="post" asp-page-handler="Done" asp-route-id="@task.Id"
-                                              asp-route-view="@Model.View" class="task-check-form">
+                                              asp-route-scope="@Model.Scope" asp-route-view="@Model.View"
+                                              class="task-check-form">
                                             <button class="task-check@(task.IsDone ? " on" : "")" type="submit"
                                                     title="@(task.IsDone ? "Вернуть в работу" : "Отметить выполненной")">
                                                 <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check" /></svg>
@@ -300,7 +307,8 @@
                                                 @* Форма вынесена из разметки фишки: кнопка внутри
                                                    формы внутри формы — недопустимая разметка. *@
                                                 <form method="post" asp-page-handler="Unshare" asp-route-id="@task.Id"
-                                                      asp-route-view="@Model.View" id="unshare-@task.Id-@share.Id" hidden>
+                                                      asp-route-scope="@Model.Scope" asp-route-view="@Model.View"
+                                                      id="unshare-@task.Id-@share.Id" hidden>
                                                     <input type="hidden" name="login" value="@share.UserName" />
                                                 </form>
                                             }
@@ -316,8 +324,16 @@
                                             <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>
                                         </button>
 
+                                        <form method="post" asp-page-handler="Archive" asp-route-id="@task.Id"
+                                              asp-route-scope="@Model.Scope" asp-route-view="@Model.View" class="head-form">
+                                            <button class="icon-btn" type="submit"
+                                                    title="@(task.IsArchived ? "Вернуть из архива" : "Убрать в архив")">
+                                                <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="@(task.IsArchived ? "#i-restore" : "#i-archive")" /></svg>
+                                            </button>
+                                        </form>
+
                                         <form method="post" asp-page-handler="Delete" asp-route-id="@task.Id"
-                                              asp-route-view="@Model.View" class="head-form">
+                                              asp-route-scope="@Model.Scope" asp-route-view="@Model.View" class="head-form">
                                             <button class="icon-btn del" type="submit" data-confirm-action
                                                     data-confirm-text="Удалить задачу «@task.Title»? Восстановить её будет нельзя."
                                                     data-confirm-ok="Удалить"

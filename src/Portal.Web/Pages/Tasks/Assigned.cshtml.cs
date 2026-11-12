@@ -113,9 +113,9 @@ public class AssignedModel : PageModel
         ]
         :
         [
-            new("Открыто", "open", Of(TaskState.Open)),
+            new("В работе", "open", Of(TaskState.Open)),
             new("Сдано на проверку", "submitted", Of(TaskState.Submitted)),
-            new("Возвращено", "returned", Of(TaskState.Returned))
+            new("На доработке", "returned", Of(TaskState.Returned))
         ];
 
     /// <summary>

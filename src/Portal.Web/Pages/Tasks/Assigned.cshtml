@@ -28,7 +28,12 @@
            Какая половина открыта — видно по вкладке. *@
         <h2>Задачи</h2>
 
-        <partial name="_TasksTabs" model="new Portal.Web.Pages.Shared.TasksTabs(false, Model.MineAttention, Model.WaitingCount)" />
+        @{
+            var tabs = new Portal.Web.Pages.Shared.TasksTabs(
+                "assigned", Model.MineAttention, Model.WaitingCount);
+        }
+
+        <partial name="_TasksTabs" model="tabs" />
 
         <nav class="seg seg--sub" aria-label="Какие задачи показывать">
             <a class="seg-btn@(Model.ViewMode == "active" ? " on" : "")" asp-page="Assigned">
@@ -45,13 +50,14 @@
 
         @* Кнопка стоит в заголовке, а не отдельной карточкой над списком:
            карточка ради одной кнопки занимала целую полосу экрана
-           и отодвигала вниз то, ради чего на страницу заходят. *@
-        @if (Model.ViewMode == "active")
-        {
-            <button class="btn primary" type="button" id="newAssignedBtn">
-                <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus" /></svg>Новая задача
-            </button>
-        }
+           и отодвигала вниз то, ради чего на страницу заходят.
+
+           Видна она и на «Выполненных»: поставить задачу можно
+           и оттуда, а прятать кнопку — значит заставлять сначала
+           переключиться обратно. *@
+        <button class="btn primary" type="button" id="newAssignedBtn">
+            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus" /></svg>Новая задача
+        </button>
     </div>
 
     @* ---------- Новая задача ----------
@@ -65,9 +71,7 @@
        переносит, а не пересобирает. Поэтому работают и проверка
        на сервере, и загрузка файла, и защита от подделки запроса —
        всё то, что пришлось бы повторять, рисуй мы окно кодом. *@
-    @if (Model.ViewMode == "active")
-    {
-        <div id="newAssignedHolder" hidden>
+    <div id="newAssignedHolder" hidden>
             <form method="post" asp-page-handler="Create" enctype="multipart/form-data"
                   id="newAssignedForm" class="assigned-form">
 
@@ -200,9 +204,8 @@
                     <button class="btn primary" type="submit">Поставить задачу</button>
                     <button class="btn" type="button" id="cancelAssigned">Отмена</button>
                 </div>
-            </form>
-        </div>
-    }
+        </form>
+    </div>
 
     @if (Model.Items.Count > 0)
     {
@@ -230,7 +233,7 @@
                            asp-page="Assigned" asp-route-view="@Model.View"
                            asp-route-sort="@(Model.ImportantFirst ? null : "important")"
                            title="@(Model.ImportantFirst ? "Сейчас: важные сверху. Вернуть порядок по сроку" : "Поднять важные наверх")">
-                            <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>
+                            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-sort" /></svg>
                         </a>
 
                         <span class="tcol-count">@column.Cards.Count</span>

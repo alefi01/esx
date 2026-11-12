@@ -363,6 +363,7 @@ builder.Services.AddSingleton<MessageStorage>();
 builder.Services.AddSingleton<Portal.Web.Services.Announcements.AnnouncementStorage>();
 builder.Services.AddScoped<IUserDirectory, UserDirectory>();
 
+
 // Фотографии сотрудников — те, что они поставили себе сами.
 // Без состояния, читает файлы, ответы держит в памяти минуту.
 builder.Services.AddSingleton<Portal.Web.Services.Users.AvatarStore>();
