@@ -433,6 +433,9 @@ namespace Portal.Web.Data.Migrations
                     b.Property<bool>("IsOwner")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsPinned")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime>("JoinedAt")
                         .HasColumnType("timestamp with time zone");
 

@@ -1157,6 +1157,29 @@ public class IndexModel : PageModel
     /// восстанавливать её никто не просил, а держать «удалённые» беседы
     /// вечно значит хранить то, что люди сознательно убрали.
     /// </summary>
+    /// <summary>
+    /// Закрепить беседу наверху списка или снять закрепление.
+    ///
+    /// Закрепление личное: признак лежит у участника, а не у беседы,
+    /// и порядок в своём списке человек устанавливает только себе.
+    /// </summary>
+    /// <param name="id">Какую беседу закрепляем.</param>
+    /// <param name="on">true — закрепить, false — открепить.</param>
+    /// <param name="current">
+    /// Какая беседа открыта сейчас: закрепляют обычно не ту, что читают,
+    /// и после закрепления человек должен остаться там, где был.
+    /// </param>
+    public async Task<IActionResult> OnPostPinAsync(
+        int id, bool on, int? current, CancellationToken cancellationToken)
+    {
+        if (!await _conversations.PinAsync(id, UserName, on, cancellationToken))
+        {
+            ErrorMessage = "Закрепить можно только свою переписку.";
+        }
+
+        return RedirectToPage(new { id = current > 0 ? current : null });
+    }
+
     public async Task<IActionResult> OnPostDeleteConversationAsync(
         int id, CancellationToken cancellationToken)
     {

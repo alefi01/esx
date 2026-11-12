@@ -317,6 +317,13 @@ select.sel{appearance:none;border:1px solid var(--border);background:var(--surfa
 .convo .c-meta b{font-size:13px;display:flex;justify-content:space-between;gap:6px}
 .convo .c-meta b time{font-size:10.5px;color:var(--muted);font-weight:500}
 .convo .c-meta p{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+/* Закреплённая беседа: лёгкая подложка и значок у имени. Без пометки
+   непонятно, почему переписка недельной давности лежит выше
+   сегодняшней. */
+.convo.pinned{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.convo.pinned.active{background:var(--accent-soft)}
+.c-pin{flex:none;color:var(--muted)}
+
 /* Беседа с непрочитанным: первая строка написана обычным цветом,
    а не приглушённым, и чуть жирнее. Одного значка с числом мало —
    глаз цепляется за текст раньше, чем за цифру у правого края.

@@ -3877,8 +3877,22 @@
             const title = node.dataset.convoTitle || 'переписка';
             const group = node.dataset.convoGroup === 'true';
 
+            const pinned = node.dataset.convoPinned === 'true';
+
             const entries = [
                 { icon: 'chat', label: 'Открыть', fn: () => { window.location.href = '/Messages?id=' + id; } },
+
+                // Закрепление личное: порядок в своём списке человек
+                // устанавливает только себе, остальных участников это
+                // не касается.
+                {
+                    icon: 'pin',
+                    label: pinned ? 'Открепить' : 'Закрепить наверху',
+                    fn: () => submit(
+                        '/Messages?handler=Pin&id=' + id + '&on=' + (pinned ? 'false' : 'true'),
+                        { current: conversationId || '' })
+                },
+
                 { icon: 'share', label: 'Скопировать ссылку', fn: () => copyText(location.origin + '/Messages?id=' + id, 'Ссылка на переписку скопирована') }
             ];
 

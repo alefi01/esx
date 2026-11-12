@@ -77,10 +77,11 @@
                 {
                     @* Данные для контекстного меню — в data-атрибутах: встроенные
                        скрипты запрещены политикой безопасности страницы. *@
-                    <a class="convo@(Model.Current?.Id == item.Id ? " active" : "")@(item.Unread > 0 ? " has-unread" : "")"
+                    <a class="convo@(Model.Current?.Id == item.Id ? " active" : "")@(item.Unread > 0 ? " has-unread" : "")@(item.Pinned ? " pinned" : "")"
                        asp-page="Index" asp-route-id="@item.Id"
                        data-convo="@item.Id" data-convo-title="@item.Title"
-                       data-convo-group="@item.IsGroup.ToString().ToLowerInvariant()">
+                       data-convo-group="@item.IsGroup.ToString().ToLowerInvariant()"
+                       data-convo-pinned="@item.Pinned.ToString().ToLowerInvariant()">
 
                         @{
                             var itemStatus = Model.StatusOf(item);
@@ -107,6 +108,15 @@
 
                         <div class="c-meta">
                             <b>
+                                @if (item.Pinned)
+                                {
+                                    @* Закреплённую беседу помечаем значком:
+                                       иначе непонятно, почему переписка
+                                       недельной давности лежит выше
+                                       сегодняшней. *@
+                                    <svg class="ic c-pin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pin" /></svg>
+                                }
+
                                 <span class="c-name">@item.Title</span>
                                 <time>@item.LastAt.ToLocalTime().ToString("dd.MM HH:mm")</time>
                             </b>

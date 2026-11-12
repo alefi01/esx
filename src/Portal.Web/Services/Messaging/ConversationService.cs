@@ -20,9 +20,10 @@ namespace Portal.Web.Services.Messaging;
 /// в сети он или нет. У группы пусто: кружок на групповой аватарке
 /// означал бы «в сети вся группа», а это ничего не значит.
 /// </param>
+/// <param name="Pinned">Человек закрепил беседу наверху списка.</param>
 public sealed record ConversationSummary(
     int Id, string Title, bool IsGroup, string Preview, DateTime LastAt, int Unread, int People,
-    string OtherUserName = "");
+    string OtherUserName = "", bool Pinned = false);
 
 /// <summary>Найденное сообщение: где, кто, когда и кусок текста.</summary>
 /// <param name="ConversationId">В какой беседе.</param>
@@ -117,7 +118,7 @@ public sealed class ConversationService
     {
         var mine = await _db.Participants
             .Where(p => p.UserName.ToLower() == userName.ToLower())
-            .Select(p => new { p.ConversationId, p.LastReadMessageId })
+            .Select(p => new { p.ConversationId, p.LastReadMessageId, p.IsPinned })
             .ToListAsync(cancellationToken);
 
         if (mine.Count == 0)
@@ -167,6 +168,7 @@ public sealed class ConversationService
             .ToListAsync(cancellationToken);
 
         var readMarks = mine.ToDictionary(m => m.ConversationId, m => m.LastReadMessageId);
+        var pinned = mine.Where(m => m.IsPinned).Select(m => m.ConversationId).ToHashSet();
 
         var result = new List<ConversationSummary>();
 
@@ -199,10 +201,42 @@ public sealed class ConversationService
                     : conversation.Participants
                         .FirstOrDefault(p => !string.Equals(
                             p.UserName, userName, StringComparison.OrdinalIgnoreCase))
-                        ?.UserName ?? ""));
+                        ?.UserName ?? "",
+                pinned.Contains(conversation.Id)));
         }
 
-        return result;
+        // Закреплённые — наверх, внутри каждой половины порядок прежний:
+        // свежие сверху. Сортируем уже здесь, в памяти: признак
+        // закрепления личный (лежит у участника), и в запрос к беседам
+        // он не попадает.
+        return result
+            .OrderByDescending(item => item.Pinned)
+            .ThenByDescending(item => item.LastAt)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Закрепить беседу наверху списка или снять закрепление.
+    /// Возвращает false, если человек не участник этой беседы.
+    /// </summary>
+    public async Task<bool> PinAsync(
+        int conversationId, string userName, bool pinned, CancellationToken cancellationToken)
+    {
+        var participant = await _db.Participants.AsTracking()
+            .FirstOrDefaultAsync(
+                p => p.ConversationId == conversationId && p.UserName.ToLower() == userName.ToLower(),
+                cancellationToken);
+
+        if (participant is null)
+        {
+            return false;
+        }
+
+        participant.IsPinned = pinned;
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return true;
     }
 
     /// <summary>
