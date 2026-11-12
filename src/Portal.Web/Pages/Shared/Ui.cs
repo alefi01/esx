@@ -28,6 +28,46 @@ public static class Avatars
     }
 
     /// <summary>
+    /// Кружок целиком: фотография, если человек её поставил, иначе буквы.
+    ///
+    /// Собирается здесь, а не в каждой разметке, по простой причине:
+    /// кружок рисуется в семи местах портала, и добавлять в каждое
+    /// проверку «а есть ли фотография» — значит однажды забыть про одно
+    /// из них, и в списке бесед у человека будет лицо, а в переписке
+    /// буквы.
+    /// </summary>
+    /// <param name="userName">Логин — по нему ищется фотография. Пусто — только буквы.</param>
+    /// <param name="displayName">Имя: из него берутся буквы и цвет.</param>
+    /// <param name="hasPhoto">Есть ли фотография (спрашивается у AvatarStore).</param>
+    /// <param name="extraClass">Добавочный класс: размер кружка в разных местах разный.</param>
+    public static IHtmlContent Circle(
+        string? userName, string? displayName, bool hasPhoto, string extraClass = "")
+    {
+        var classes = "avatar" + (string.IsNullOrEmpty(extraClass) ? "" : " " + extraClass);
+        var color = ColorIndex(displayName);
+
+        var html = new StringBuilder();
+
+        html.Append($"<div class=\"{classes}\" data-av=\"{color}\">");
+
+        if (hasPhoto && !string.IsNullOrWhiteSpace(userName))
+        {
+            // alt пустой намеренно: кружок — украшение, имя человека
+            // и так написано рядом, и читалка экрана не должна
+            // проговаривать его дважды.
+            html.Append($"<img src=\"/avatar/{Uri.EscapeDataString(userName)}\" alt=\"\" />");
+        }
+        else
+        {
+            html.Append(System.Net.WebUtility.HtmlEncode(Initials(displayName)));
+        }
+
+        html.Append("</div>");
+
+        return new HtmlString(html.ToString());
+    }
+
+    /// <summary>
     /// Номер цвета кружка, от 0 до 7. Считается из самого имени, поэтому
     /// у одного человека цвет всегда один и тот же, а у разных людей разный.
     /// Никакой таблицы цветов вести не нужно, и новый сотрудник получает

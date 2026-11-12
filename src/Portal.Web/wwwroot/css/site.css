@@ -939,20 +939,25 @@ a{color:inherit;text-decoration:none}
 .b-del{opacity:0;color:inherit;transition:.15s;display:inline-flex}
 .msg:hover .b-del,.b-del:focus-visible{opacity:.75}
 .b-del:hover{opacity:1;color:var(--danger)}
-.msg.mine .b-del:hover{color:#fff}
+.msg.mine .b-del:hover{color:var(--danger)}
 
 /* Удалённое сообщение остаётся на месте — так видно, что в разговоре
    что-то было, и нумерация реплик не «схлопывается». */
 .b-deleted{font-style:italic;color:var(--muted);opacity:.85}
-.msg.mine .b-deleted{color:rgba(255,255,255,.8)}
+/* Своя подложка стала светлой, и белая надпись «сообщение удалено»
+   на ней пропала. Цвет тот же, что и у чужих удалённых, — приглушённый. */
+.msg.mine .b-deleted{color:var(--muted)}
 
 /* Вложение внутри облачка. */
 .b-file{display:flex;align-items:center;gap:8px;margin-top:6px;padding:7px 10px;
   border-radius:10px;background:var(--surface);border:1px solid var(--border);
   max-width:100%;transition:.15s}
 .b-file:hover{border-color:var(--accent)}
-.msg.mine .b-file{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.3);color:#fff}
-.msg.mine .b-file:hover{background:rgba(255,255,255,.26);border-color:rgba(255,255,255,.55)}
+/* Вложение в своей реплике. Было белым по яркой заливке; подложка
+   стала светлой, и белое на ней исчезло. */
+.msg.mine .b-file{background:var(--surface);
+  border-color:color-mix(in srgb,var(--accent) 28%,transparent);color:var(--text)}
+.msg.mine .b-file:hover{border-color:var(--accent)}
 .b-file svg{flex:none}
 .b-fname{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;min-width:0}
@@ -1239,7 +1244,7 @@ html.nav-hidden .sidebar *{visibility:hidden}
 /* Ссылки в сообщениях. В своём пузырьке (белый текст на цветном фоне)
    обычный синий не читается, поэтому там — подчёркнутый белый. */
 .msg .b-text a{color:var(--accent);text-decoration:underline;overflow-wrap:anywhere}
-.msg.mine .b-text a{color:#fff;text-decoration:underline;text-underline-offset:2px}
+.msg.mine .b-text a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 
 /* ======================================================================
    Главная: два столбца и «пустое» состояние
@@ -1379,8 +1384,8 @@ html.nav-hidden .sidebar *{visibility:hidden}
 /* Адрес отправителя — только в чужой переписке, открытой администратором. */
 .b-ip{font-weight:400;font-size:10.5px;color:var(--muted);margin-left:7px;
   font-family:'Cascadia Code',Consolas,monospace}
-.msg.mine .b-ip{color:rgba(255,255,255,.75)}
-.msg.mine .b-name{color:#fff}
+.msg.mine .b-ip{color:var(--muted)}
+.msg.mine .b-name{color:var(--accent)}
 
 /* Дерево домена в окне прав на папку. Выпадает под полем ввода —
    как список подсказок, а не отдельное окно поверх окна. */
@@ -1702,8 +1707,8 @@ button.pin-btn.on{opacity:1;color:var(--accent)}
 .msg .b-quote:hover{background:rgba(128,128,128,.18)}
 .msg .b-quote b{font-weight:700}
 .msg .b-quote span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.8}
-.msg.mine .b-quote{background:rgba(255,255,255,.16)}
-.msg.mine .b-quote:hover{background:rgba(255,255,255,.24)}
+.msg.mine .b-quote{background:var(--surface)}
+.msg.mine .b-quote:hover{background:var(--surface2)}
 
 .msg .b-fwd{display:flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;
   opacity:.75;margin-bottom:3px}
@@ -1889,6 +1894,22 @@ mark{background:color-mix(in srgb,var(--warn) 42%,transparent);color:inherit;
   [data-assigned-tasks] .task-tools{width:100%;justify-content:flex-start}
 }
 
+/* ---------- Закреплённое сообщение ----------
+
+   Полоска под шапкой беседы. В ней держат то, что должно быть на виду
+   у всех: адрес склада, номер заявки, расписание. Одна строка и никогда
+   больше: как только закреплённых становится несколько, они перестают
+   быть «на виду» — это уже второй список сообщений. */
+.pin-bar{display:flex;align-items:center;gap:9px;padding:9px 16px;
+  border-bottom:1px solid var(--border);background:var(--surface2);color:var(--muted)}
+.pin-bar .ic{flex:none;color:var(--accent)}
+.pin-text{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;
+  background:none;border:0;padding:0;text-align:left;cursor:pointer;color:inherit;font:inherit}
+.pin-text b{flex:none;font-size:11.5px;color:var(--accent)}
+.pin-text span{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+  font-size:12.5px;color:var(--text)}
+.pin-text:hover span{color:var(--accent)}
+
 /* ---------- «…печатает» ----------
 
    Три точки, бегущие по очереди, — знак, который в мессенджерах
@@ -1927,6 +1948,19 @@ html[data-file-view="list"] .flist[hidden]{display:block !important}
 .feed-head{margin:26px 0 12px}
 .feed-empty{padding:18px 0 40px}
 .feed-empty p{max-width:460px;margin:0 auto}
+
+/* ---------- Фотография в кружке ----------
+
+   Картинка обрезается по кругу и заполняет его целиком: снимки люди
+   приносят любой формы, и вписывать их целиком — значит получить
+   белые поля в половине кружков. */
+.avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
+
+/* Карточка «Фотография» в настройках. */
+.ava-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.ava-big{width:72px;height:72px;font-size:22px;flex:none}
+.ava-actions{display:flex;flex-direction:column;gap:10px}
+.ava-buttons{display:flex;gap:8px}
 
 /* ---------- Кружок состояния на аватарке ----------
 

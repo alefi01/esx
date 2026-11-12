@@ -10,8 +10,64 @@
 *@
 <section class="view active set-page" data-personal-settings>
 
+    @if (!string.IsNullOrEmpty(Model.StatusMessage))
+    {
+        <span data-flash="@Model.StatusMessage" data-flash-kind="ok" hidden></span>
+    }
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <span data-flash="@Model.ErrorMessage" data-flash-kind="danger" hidden></span>
+    }
+
     <div class="view-head">
         <h2>Настройки</h2>
+    </div>
+
+    @* ---------- Фотография ----------
+
+       В Active Directory поле для фотографии есть, но его не заполняет
+       никто: чтобы там что-то появилось, кадровику пришлось бы сажать
+       всех по очереди перед фотоаппаратом. Проще дать человеку
+       поставить снимок самому. *@
+    <div class="card set-card">
+        <div class="set-head">
+            <h2>Фотография</h2>
+            <span class="set-now">видна коллегам</span>
+        </div>
+
+        <form class="set-row ava-row" method="post" asp-page-handler="Avatar" enctype="multipart/form-data">
+            <div class="avatar ava-big" data-av="@Portal.Web.Pages.Shared.Avatars.ColorIndex(User.Identity?.Name)">
+                @if (Model.HasAvatar)
+                {
+                    <img src="/avatar/@Uri.EscapeDataString(User.Identity?.Name ?? "")" alt="" />
+                }
+                else
+                {
+                    @Portal.Web.Pages.Shared.Avatars.Initials(
+                        User.FindFirst(System.Security.Claims.ClaimTypes.GivenName)?.Value
+                        ?? User.Identity?.Name)
+                }
+            </div>
+
+            <div class="ava-actions">
+                <label class="file-pick">
+                    <input type="file" name="photo" accept="image/*" data-file-pick />
+                    <span class="file-pick-btn">
+                        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload" /></svg>Выбрать файл
+                    </span>
+                    <span class="file-pick-name" data-file-name>не выбран</span>
+                </label>
+
+                <div class="ava-buttons">
+                    <button class="btn primary" type="submit">Сохранить</button>
+
+                    @if (Model.HasAvatar)
+                    {
+                        <button class="btn" type="submit" formaction="?handler=AvatarRemove">Убрать</button>
+                    }
+                </div>
+            </div>
+        </form>
     </div>
 
     <div class="card set-card">

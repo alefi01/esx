@@ -2,6 +2,7 @@
 @using Portal.Web.Configuration
 @using Portal.Web.Services.Storage
 @inject IOptions<ActiveDirectoryOptions> AdOptions
+@inject Portal.Web.Services.Users.AvatarStore Avatars
 @inject IOptions<BrandingOptions> BrandingOptions
 @inject StorageUsage Usage
 @inject Portal.Web.Services.Appearance.BackgroundCatalog Backgrounds
@@ -67,6 +68,7 @@
 
     var displayName = User.Identity?.Name ?? "";
     var initials = Portal.Web.Pages.Shared.Avatars.Initials(displayName);
+    var userName = User.Identity?.Name ?? "";
 }
 <!DOCTYPE html>
 <html lang="ru">
@@ -220,7 +222,14 @@
                    сам (при каждом опросе колокольчика), поэтому здесь
                    всегда «в сети». *@
                 <div class="avatar" data-av="@Portal.Web.Pages.Shared.Avatars.ColorIndex(displayName)">
-                    @initials
+                    @if (Avatars.Has(userName))
+                    {
+                        <img src="/avatar/@Uri.EscapeDataString(userName)" alt="" />
+                    }
+                    else
+                    {
+                        @initials
+                    }
                     <span class="dot dot--online" title="в сети"></span>
                 </div>
                 <div class="u-meta">

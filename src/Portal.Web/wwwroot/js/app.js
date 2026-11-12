@@ -3860,6 +3860,20 @@
                     icon: 'smile', label: 'Поставить реакцию',
                     fn: () => pickReaction(e.clientX, e.clientY, node.dataset.message)
                 });
+
+                // Закреплённое сообщение одно на беседу и общее для всех:
+                // его вешают, чтобы увидели все участники.
+                const pinnedNow = node.dataset.pinned === 'true';
+
+                entries.push({
+                    icon: 'pin',
+                    label: pinnedNow ? 'Открепить' : 'Закрепить в беседе',
+                    fn: () => submit(
+                        '/Messages?handler=PinMessage&id=' + conversationId +
+                        '&messageId=' + node.dataset.message +
+                        '&on=' + (pinnedNow ? 'false' : 'true'))
+                });
+
                 entries.push({ sep: 1 });
             }
 

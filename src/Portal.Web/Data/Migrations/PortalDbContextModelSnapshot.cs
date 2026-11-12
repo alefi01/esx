@@ -394,6 +394,9 @@ namespace Portal.Web.Data.Migrations
                         .HasMaxLength(520)
                         .HasColumnType("character varying(520)");
 
+                    b.Property<int?>("PinnedMessageId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(120)

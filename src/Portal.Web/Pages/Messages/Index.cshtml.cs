@@ -115,6 +115,12 @@ public class IndexModel : PageModel
     /// <summary>Кружок на аватарке в шапке беседы: online, away, offline.</summary>
     public string HeadStatus { get; private set; } = "";
 
+    /// <summary>Логин собеседника в открытой переписке двоих — для его фотографии.</summary>
+    public string OtherUserName { get; private set; } = "";
+
+    /// <summary>Закреплённое сообщение беседы — полоска под шапкой.</summary>
+    public Message? PinnedMessage { get; private set; }
+
     /// <summary>Собеседник (или хоть кто-то из группы) прямо сейчас в портале.</summary>
     public bool IsOnline { get; private set; }
 
@@ -246,6 +252,16 @@ public class IndexModel : PageModel
             .OrderBy(m => m.Id)
             .ToListAsync(cancellationToken);
 
+        // Закреплённое сообщение. Ищем среди уже загруженных реплик —
+        // лишнего запроса не нужно; если закреплено что-то давнее,
+        // спрашиваем отдельно.
+        if (conversation.PinnedMessageId is { } pinnedId)
+        {
+            PinnedMessage = Items.FirstOrDefault(m => m.Id == pinnedId)
+                ?? await _db.Messages.FirstOrDefaultAsync(
+                    m => m.Id == pinnedId && m.ConversationId == conversation.Id, cancellationToken);
+        }
+
         // Кто из собеседников в сети и до какого сообщения они дочитали.
         var others = conversation.Participants
             .Where(p => !string.Equals(p.UserName, UserName, StringComparison.OrdinalIgnoreCase))
@@ -265,6 +281,8 @@ public class IndexModel : PageModel
         }
         else if (!conversation.IsGroup && others.Count == 1)
         {
+            OtherUserName = others[0].UserName;
+
             var single = Presence.GetValueOrDefault(others[0].UserName, new Presence(false, null));
 
             IsOnline = single.Online;
@@ -1178,6 +1196,61 @@ public class IndexModel : PageModel
         }
 
         return RedirectToPage(new { id = current > 0 ? current : null });
+    }
+
+    /// <summary>
+    /// Закрепить сообщение в беседе или снять закрепление.
+    ///
+    /// Закреплённое — одно на беседу и общее для всех: его вешают,
+    /// чтобы увидели все участники. Поэтому закрепить может любой,
+    /// кто вправе писать в эту беседу, и снять тоже: договариваться,
+    /// чьё закрепление главнее, в рабочем чате не о чем.
+    /// </summary>
+    public async Task<IActionResult> OnPostPinMessageAsync(
+        int id, int messageId, bool on, CancellationToken cancellationToken)
+    {
+        var conversation = await _conversations.GetAsync(id, cancellationToken);
+
+        if (conversation is null || !ConversationService.CanWrite(User, conversation))
+        {
+            ErrorMessage = "Закреплять сообщения может только участник беседы.";
+
+            return RedirectToPage(new { id });
+        }
+
+        if (on)
+        {
+            var exists = await _db.Messages.AnyAsync(
+                m => m.Id == messageId && m.ConversationId == id && m.DeletedAt == null,
+                cancellationToken);
+
+            if (!exists)
+            {
+                ErrorMessage = "Это сообщение закрепить нельзя.";
+
+                return RedirectToPage(new { id });
+            }
+        }
+
+        var tracked = await _db.Conversations.AsTracking()
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+
+        if (tracked is null)
+        {
+            return RedirectToPage(new { id });
+        }
+
+        tracked.PinnedMessageId = on ? messageId : null;
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        // Будим остальных: полоска должна появиться у всех, а не только
+        // у того, кто закрепил.
+        NotifyOthers(conversation);
+
+        StatusMessage = on ? "Сообщение закреплено." : "Закрепление снято.";
+
+        return RedirectToPage(new { id });
     }
 
     public async Task<IActionResult> OnPostDeleteConversationAsync(

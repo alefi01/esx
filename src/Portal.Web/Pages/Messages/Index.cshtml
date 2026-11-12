@@ -4,6 +4,7 @@
 @using Portal.Web.Services.Text
 @inject PlainTextFormatter TextFormatter
 @model Portal.Web.Pages.Messages.IndexModel
+@inject Portal.Web.Services.Users.AvatarStore Photos
 @{
     ViewData["Title"] = Model.Current is null ? "Чат" : Model.Title;
 }
@@ -107,6 +108,10 @@
                             {
                                 <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>
                             }
+                            else if (Photos.Has(item.OtherUserName))
+                            {
+                                <img src="/avatar/@Uri.EscapeDataString(item.OtherUserName)" alt="" />
+                            }
                             else
                             {
                                 @Avatars.Initials(item.Title)
@@ -176,6 +181,10 @@
                         {
                             <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users" /></svg>
                         }
+                        else if (Photos.Has(Model.OtherUserName))
+                        {
+                            <img src="/avatar/@Uri.EscapeDataString(Model.OtherUserName)" alt="" />
+                        }
                         else
                         {
                             @Avatars.Initials(Model.Title)
@@ -231,6 +240,36 @@
                 {
                     <div class="alert warn chat-note" role="status">
                         Вы смотрите эту переписку как администратор портала. Писать в неё нельзя.
+                    </div>
+                }
+
+                @* ---------- Закреплённое сообщение ----------
+
+                   Полоска под шапкой: в ней держат то, что должно быть
+                   на виду у всех — адрес склада, номер заявки,
+                   расписание. Щелчок по ней прокручивает ленту
+                   к самому сообщению. *@
+                @if (Model.PinnedMessage is { } pinned)
+                {
+                    <div class="pin-bar">
+                        <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pin" /></svg>
+
+                        <button class="pin-text" type="button" data-goto="@pinned.Id">
+                            <b>@pinned.AuthorDisplayName</b>
+                            <span>@(pinned.DeletedAt is null
+                                ? (string.IsNullOrWhiteSpace(pinned.Body) ? "вложение" : pinned.Body)
+                                : "сообщение удалено")</span>
+                        </button>
+
+                        @if (Model.CanWrite)
+                        {
+                            <form method="post" asp-page-handler="PinMessage" asp-route-id="@Model.Current.Id"
+                                  asp-route-messageId="@pinned.Id" asp-route-on="false" class="head-form">
+                                <button class="icon-btn" type="submit" title="Снять закрепление">
+                                    <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-x" /></svg>
+                                </button>
+                            </form>
+                        }
                     </div>
                 }
 
@@ -294,7 +333,8 @@
                                 в исходном коде страницы, и пункт «Копировать
                                 текст» в меню по правой кнопке его копировал.
                                 Удаление, которое ничего не удаляет, — не удаление. *@
-                             data-body="@(message.DeletedAt is null ? message.Body : "")">
+                             data-body="@(message.DeletedAt is null ? message.Body : "")"
+                             data-pinned="@((Model.Current.PinnedMessageId == message.Id).ToString().ToLowerInvariant())">
                             @if (!mine)
                             {
                                 @* У продолжения серии кружок не рисуется,
@@ -307,7 +347,8 @@
                                 }
                                 else
                                 {
-                                    <div class="avatar" data-av="@Avatars.ColorIndex(message.AuthorDisplayName)">@Avatars.Initials(message.AuthorDisplayName)</div>
+                                    @Avatars.Circle(message.AuthorUserName, message.AuthorDisplayName,
+                                        Photos.Has(message.AuthorUserName))
                                 }
                             }
 
