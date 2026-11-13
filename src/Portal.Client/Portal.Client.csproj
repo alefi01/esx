@@ -36,9 +36,9 @@
          описания и версии антивирус считает подозрительным сам по себе:
          у честных программ эти поля заполнены. -->
     <Company>Корпоративный портал</Company>
-    <Product>Виджет портала</Product>
-    <AssemblyTitle>Виджет портала</AssemblyTitle>
-    <Description>Объявления, задачи и переписка портала на рабочем столе</Description>
+    <Product>FTP-сервер</Product>
+    <AssemblyTitle>FTP-сервер</AssemblyTitle>
+    <Description>FTP-сервер: объявления, задачи и переписка на рабочем столе</Description>
     <Version>1.0.0</Version>
     <FileVersion>1.0.0.0</FileVersion>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>

@@ -26,7 +26,7 @@ public static class Shortcut
     {
         var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
 
-        Make(Path.Combine(desktop, "Портал.lnk"));
+        Make(Path.Combine(desktop, "FTP-сервер.lnk"));
     }
 
     /// <summary>
@@ -39,7 +39,7 @@ public static class Shortcut
     public static void ApplyAutostart(bool on)
     {
         var startup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-        var path = Path.Combine(startup, "Портал.lnk");
+        var path = Path.Combine(startup, "FTP-сервер.lnk");
 
         try
         {
@@ -64,7 +64,7 @@ public static class Shortcut
         try
         {
             return File.Exists(Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Startup), "Портал.lnk"));
+                Environment.GetFolderPath(Environment.SpecialFolder.Startup), "FTP-сервер.lnk"));
         }
         catch (Exception)
         {
@@ -101,7 +101,7 @@ public static class Shortcut
 
             link.TargetPath = target;
             link.WorkingDirectory = Path.GetDirectoryName(target) ?? "";
-            link.Description = "Портал — виджет рабочего стола";
+            link.Description = "FTP-сервер — виджет рабочего стола";
             link.IconLocation = target + ",0";
 
             link.Save();
