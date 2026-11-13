@@ -40,12 +40,37 @@ public static class ClientDownloads
     public static string FolderOf(IWebHostEnvironment environment) =>
         Path.Combine(environment.ContentRootPath, "App_Data", "client");
 
-    public static string WidgetPathOf(IWebHostEnvironment environment) =>
-        Path.Combine(FolderOf(environment), WidgetFileName);
+    /// <summary>
+    /// Имена, под которыми может лежать виджет.
+    ///
+    /// Новое — ftp-widget.exe. Старое — portal-widget.exe: после
+    /// переименования админ мог ещё не переложить файл, и кнопка
+    /// «Скачать» пропала бы вместе со старым именем. Пока лежит хоть
+    /// один, виджет считается выложенным.
+    /// </summary>
+    private static readonly string[] WidgetNames = { "ftp-widget.exe", "portal-widget.exe" };
+
+    /// <summary>Путь к выложенному виджету — под новым именем или старым. null — не выложен.</summary>
+    public static string? WidgetPathOf(IWebHostEnvironment environment)
+    {
+        var folder = FolderOf(environment);
+
+        foreach (var name in WidgetNames)
+        {
+            var path = Path.Combine(folder, name);
+
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>Выложен ли виджет — для страницы настроек.</summary>
     public static bool WidgetReady(IWebHostEnvironment environment) =>
-        File.Exists(WidgetPathOf(environment));
+        WidgetPathOf(environment) is not null;
 
     /// <summary>Выложен ли установщик компонента WebView2.</summary>
     public static bool RuntimeReady(IWebHostEnvironment environment) =>
@@ -120,7 +145,7 @@ public static class ClientDownloads
         {
             var path = WidgetPathOf(environment);
 
-            if (!File.Exists(path))
+            if (path is null)
             {
                 return Results.NotFound();
             }
@@ -148,7 +173,7 @@ public static class ClientDownloads
         {
             var path = WidgetPathOf(environment);
 
-            return File.Exists(path)
+            return path is not null
                 ? Results.File(path, "application/octet-stream", WidgetFileName, enableRangeProcessing: true)
                 : Results.NotFound();
         }).AllowAnonymous();

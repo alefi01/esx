@@ -135,6 +135,18 @@
     }
 
     <div class="top-actions">
+        @* Кнопки окна виджета: свернуть и закрыть. Рисует их портал,
+           потому что у окна виджета нет системной рамки. Видны только
+           в виджете (класс in-widget на документе), работают через мост
+           window.portalWidget. Закрытие прячет окно, а не выходит
+           из аккаунта. *@
+        <button class="icon-btn win-btn" type="button" id="wgMin" title="Свернуть" hidden>
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+        </button>
+        <button class="icon-btn win-btn" type="button" id="wgClose" title="Закрыть" hidden>
+            <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-x" /></svg>
+        </button>
+
         @if (signedIn)
         {
             @* Оформление. Кнопка не переключает тему сразу, а открывает
@@ -338,6 +350,19 @@
                    встроенные стили запрещены политикой безопасности. *@
                 <div class="bar"><i id="storageBar" data-percent="@((int)Math.Round(usage.Fraction * 100))"></i></div>
             </div>
+        }
+
+        @* Выход — в боковом меню. В виджете его убрали из шапки (там
+           тесно), а меню открывается кнопкой и место под него есть.
+           Показывается только в виджете: в браузере выход стоит
+           в шапке, как привык человек. *@
+        @if (signedIn)
+        {
+            <form method="post" asp-page="/Account/Logout" class="nav-logout">
+                <button class="nav-item" type="submit">
+                    <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-logout" /></svg>Выйти
+                </button>
+            </form>
         }
     </aside>
 

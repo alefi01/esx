@@ -57,7 +57,7 @@
             <div class="tile-icon">
                 @if (item.IsFolder)
                 {
-                    @(item.IsInternal ? FileIcons.Locked() : FileIcons.Folder())
+                    @(item.IsInternal ? FileIcons.Locked() : item.IsPublic ? FileIcons.PublicFolder() : FileIcons.Folder())
                 }
                 else
                 {

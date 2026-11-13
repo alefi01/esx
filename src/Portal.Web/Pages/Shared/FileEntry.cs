@@ -50,6 +50,9 @@ public sealed record FileEntry(
     /// <summary>Это «Внутренняя работа» отдела: рисуется замком и пунктиром.</summary>
     public bool IsInternal => Role == Portal.Web.Data.DepartmentRoles.Internal;
 
+    /// <summary>Это «Общая» часть отдела: рисуется папкой с человечками.</summary>
+    public bool IsPublic => Role == Portal.Web.Data.DepartmentRoles.Public;
+
     /// <summary>
     /// Папка в списке.
     ///

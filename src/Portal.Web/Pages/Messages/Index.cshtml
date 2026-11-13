@@ -476,13 +476,13 @@
                                         </span>
                                     }
 
-                                    @* Сколько человек видело сообщение.
-                                       Галочки отвечают «прочитали все» или
-                                       «ещё нет», а в разговоре на троих важно
-                                       знать, кто именно, — и знать это хочет
-                                       не только написавший. Поэтому глазик
-                                       у каждого сообщения и открыт всем. *@
-                                    @if (message.DeletedAt is null && Model.SeenBy(message) > 0)
+                                    @* Глазик — ТОЛЬКО в группе. В личной переписке
+                                       собеседник один, и галочки уже говорят всё:
+                                       вторая галочка и значит «он прочитал».
+                                       А в группе важно, кто именно из нескольких
+                                       видел, — это и показывает глазик, открытый
+                                       всем участникам. *@
+                                    @if (message.DeletedAt is null && Model.Current.IsGroup && Model.SeenBy(message) > 0)
                                     {
                                         <button class="b-seen" type="button"
                                                 data-seen="@message.Id" title="Кто видел">
@@ -571,6 +571,10 @@
 
                     <form class="chat-input" method="post" asp-page-handler="Send" asp-route-id="@Model.Current.Id"
                           enctype="multipart/form-data" id="chatForm">
+
+                        @* Полоска загрузки файла: видна, только пока
+                           тяжёлое вложение уходит на сервер. *@
+                        <div class="send-progress" data-send-progress hidden><span></span></div>
 
                         <input type="hidden" asp-for="ReplyTo" id="chatReplyTo" value="0" />
 

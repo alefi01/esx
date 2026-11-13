@@ -53,6 +53,19 @@ internal static class Native
     public const int WmNcLButtonDown = 0x00A1;
     public const int HtCaption = 2;
 
+    // Зоны окна для изменения размера мышью. Их возвращает WM_NCHITTEST
+    // на краях безрамочного окна, и Windows дальше тянет рамку сама —
+    // своего кода перетаскивания писать не нужно.
+    public const int WmNcHitTest = 0x0084;
+    public const int HtLeft = 10;
+    public const int HtRight = 11;
+    public const int HtTop = 12;
+    public const int HtTopLeft = 13;
+    public const int HtTopRight = 14;
+    public const int HtBottom = 15;
+    public const int HtBottomLeft = 16;
+    public const int HtBottomRight = 17;
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool ReleaseCapture();

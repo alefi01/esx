@@ -292,7 +292,12 @@ public class IndexModel : PageModel
 
         Presence = await _presence.ForAsync(others.Select(p => p.UserName).ToList(), cancellationToken);
 
-        ReadByOthersUpTo = others.Count == 0 ? 0 : others.Min(p => p.LastReadMessageId);
+        // Вторая галочка — когда прочитал ХОТЯ БЫ ОДИН собеседник,
+        // поэтому берём максимум, а не минимум. В личной переписке
+        // собеседник один, и разницы нет; в группе «прочитали все»
+        // показывал бы одну галочку, пока последний не откроет беседу,
+        // — а кто именно прочитал, видно по глазику.
+        ReadByOthersUpTo = others.Count == 0 ? 0 : others.Max(p => p.LastReadMessageId);
 
         ReadMarks = conversation.Participants
             .Select(p => (p.UserName, p.DisplayName, p.LastReadMessageId))
@@ -1277,8 +1282,9 @@ public class IndexModel : PageModel
         // у того, кто закрепил.
         NotifyOthers(conversation);
 
-        StatusMessage = on ? "Сообщение закреплено." : "Закрепление снято.";
-
+        // Уведомления «закреплено / снято» нет намеренно: полоска
+        // с закреплённым появляется или исчезает тут же, и сообщать
+        // словами о том, что человек и так видит, — лишний шум.
         return RedirectToPage(new { id });
     }
 
@@ -1538,7 +1544,7 @@ public class IndexModel : PageModel
             .Where(p => !string.Equals(p.UserName, UserName, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        var readUpTo = others.Count == 0 ? 0 : others.Min(p => p.LastReadMessageId);
+        var readUpTo = others.Count == 0 ? 0 : others.Max(p => p.LastReadMessageId);
 
         // Реакции по последним сообщениям беседы — а не только по новым.
         //

@@ -152,6 +152,7 @@ public sealed class MainForm : Form
             alert: function (on) { this.send('alert', { on: !!on }); },
             shape: function (name) { this.send('shape', { name: name }); },
             drag: function () { this.send('drag'); },
+            minimize: function () { this.send('minimize'); },
             hide: function () { this.send('hide'); },
             quit: function () { this.send('quit'); }
         };
@@ -266,12 +267,19 @@ public sealed class MainForm : Form
                 break;
 
             case "drag":
-                if (!_settings.Locked && _shape == "widget")
+                // Перетаскивание работает и у виджета, и у развёрнутого
+                // окна: шапку тянут в обоих. Не работает только когда
+                // виджет закреплён на месте.
+                if (!_settings.Locked)
                 {
                     Native.ReleaseCapture();
                     Native.SendMessage(Handle, Native.WmNcLButtonDown, Native.HtCaption, IntPtr.Zero);
                 }
 
+                break;
+
+            case "minimize":
+                WindowState = FormWindowState.Minimized;
                 break;
 
             case "hide":
@@ -638,6 +646,43 @@ public sealed class MainForm : Form
             return;
         }
 
+        // Изменение размера за края безрамочного окна. Рамка в восемь
+        // пикселей по периметру и по углам: навёл на край — курсор стал
+        // двусторонней стрелкой, потянул — окно меняет размер. Дальше
+        // всё делает Windows, своего кода тут нет.
+        if (m.Msg == Native.WmNcHitTest)
+        {
+            base.WndProc(ref m);
+
+            // Меняем размер только у виджета и развёрнутого окна; у окна
+            // «ответ» и когда виджет закреплён — нет.
+            if (_settings.Locked || _shape == "answer")
+            {
+                return;
+            }
+
+            const int edge = 8;
+            var pos = PointToClient(new Point(m.LParam.ToInt32() & 0xFFFF, m.LParam.ToInt32() >> 16));
+
+            var left = pos.X < edge;
+            var right = pos.X >= Width - edge;
+            var top = pos.Y < edge;
+            var bottom = pos.Y >= Height - edge;
+
+            m.Result = (IntPtr)(
+                top && left ? Native.HtTopLeft
+                : top && right ? Native.HtTopRight
+                : bottom && left ? Native.HtBottomLeft
+                : bottom && right ? Native.HtBottomRight
+                : left ? Native.HtLeft
+                : right ? Native.HtRight
+                : top ? Native.HtTop
+                : bottom ? Native.HtBottom
+                : m.Result.ToInt32());
+
+            return;
+        }
+
         base.WndProc(ref m);
     }
 
@@ -652,6 +697,7 @@ public sealed class MainForm : Form
 
         _settings.X = Location.X;
         _settings.Y = Location.Y;
+        _settings.Width = Width;
         _settings.Height = Height;
         _settings.Save();
     }

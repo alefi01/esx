@@ -2873,3 +2873,67 @@ html.lite .main{background-image:none !important}
 .b-seen:hover { opacity: 1; color: var(--accent); }
 
 .msg.mine .b-seen { color: inherit; }
+
+/* Полоска загрузки файла над полем ввода чата. Тонкая линия, ползущая
+   по проценту: тяжёлый документ грузится несколько секунд, и без неё
+   кажется, что отправка зависла. */
+.chat-input { position: relative; }
+
+.send-progress {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -2px;
+    height: 3px;
+    background: var(--surface-3);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.send-progress span {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: linear-gradient(90deg, var(--accent-2), var(--accent));
+    transition: width .15s;
+}
+
+/* ---------- Компактный режим в настольном виджете ----------
+
+   Окно виджета шириной в треть экрана. Полная шапка с поиском, темой,
+   подписями и выходом в неё не помещается — элементы налезают друг
+   на друга. Поэтому в шапке остаётся только меню, название и аватар,
+   а поиск, выбор темы и выход уезжают в боковое меню. */
+html.in-widget .searchbar,
+html.in-widget .theme-wrap,
+html.in-widget .topbar .logout-form,
+html.in-widget .u-meta { display: none; }
+
+/* Название без подзаголовка: «Корпоративный портал» второй строкой
+   в узкой шапке только теснит. */
+html.in-widget .brand small { display: none; }
+html.in-widget .brand > div { font-size: 14px; }
+
+/* Шапка плотнее и действия прижаты к краю. */
+html.in-widget .topbar { padding-left: 8px; padding-right: 8px; gap: 8px; }
+html.in-widget .top-actions { gap: 6px; }
+
+/* Выход в меню виден только здесь; в браузере он в шапке. */
+.nav-logout { margin-top: 6px; }
+.nav-logout .nav-item { width: 100%; border: 0; background: none; cursor: pointer; font: inherit; }
+html:not(.in-widget) .nav-logout { display: none; }
+
+/* Содержимое на всю ширину: двух колонок рядом в окне виджета нет. */
+html.in-widget .home-cols { grid-template-columns: 1fr; }
+html.in-widget .folder-ann { grid-template-columns: 1fr; }
+
+/* Кнопки окна виджета (свернуть/закрыть) видны только в нём. */
+html:not(.in-widget) .win-btn { display: none; }
+
+/* Шапку в виджете можно тянуть — курсор это подсказывает. Кнопки
+   и поля внутри ведут себя как обычно. */
+html.in-widget .topbar { cursor: move; }
+html.in-widget .topbar button,
+html.in-widget .topbar a,
+html.in-widget .topbar input,
+html.in-widget .topbar form { cursor: default; }

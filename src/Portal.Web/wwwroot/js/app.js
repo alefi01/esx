@@ -454,6 +454,49 @@
         }, 150);
     });
 
+    // ---------- Кнопки окна виджета и перетаскивание ----------
+    //
+    // У окна виджета нет системной рамки, поэтому «свернуть», «закрыть»
+    // и перетаскивание рисует портал и просит программу через мост
+    // window.portalWidget. В браузере моста нет, кнопки остаются
+    // скрытыми, и всё это просто не включается.
+    (function () {
+        const bridge = window.portalWidget;
+
+        if (!bridge) { return; }
+
+        const min = document.getElementById('wgMin');
+        const close = document.getElementById('wgClose');
+
+        if (min) {
+            min.hidden = false;
+            min.onclick = () => bridge.minimize && bridge.minimize();
+        }
+
+        if (close) {
+            close.hidden = false;
+            // Закрыть — спрятать окно, а не выйти из аккаунта: человек
+            // закрывает виджет, а не сеанс. Выход — отдельным пунктом
+            // в боковом меню.
+            close.onclick = () => bridge.hide && bridge.hide();
+        }
+
+        // Перетаскивание за шапку: зажал пустое место шапки и повёл —
+        // окно поехало. Кнопки и поля перехватывают нажатие сами,
+        // поэтому тянется только фон шапки.
+        const bar = document.querySelector('.topbar');
+
+        if (bar && bridge.drag) {
+            bar.addEventListener('mousedown', e => {
+                if (e.button !== 0) { return; }
+
+                if (e.target.closest('button, a, input, form, .theme-panel')) { return; }
+
+                bridge.drag();
+            });
+        }
+    })();
+
     // Боковое меню на узком экране.
     (function () {
         const burger = $('#burgerBtn');
@@ -3498,6 +3541,67 @@
         // Теперь сообщение уходит запросом, а пузырёк дорисовывается тем же
         // путём, что и входящие (checkNew). Форма при этом осталась формой:
         // без JavaScript она отправится как прежде, перенаправлением.
+
+        // Полоска загрузки над полем ввода. Живёт в DOM всегда, скрыта,
+        // а при отправке файла показывается и ползёт по проценту.
+        const progress = form ? form.querySelector('[data-send-progress]') : null;
+        const progressBar = progress ? progress.querySelector('span') : null;
+
+        /**
+         * Отправка сообщения. С файлом — XHR ради полоски прогресса,
+         * без файла — обычный fetch. Возвращает разобранный JSON-ответ.
+         */
+        function sendMessageRequest(url, body, withProgress) {
+            if (!withProgress) {
+                return fetch(url, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body
+                }).then(r => (r.ok ? r.json() : Promise.reject(r.status)));
+            }
+
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+
+                xhr.open('POST', url);
+                xhr.withCredentials = true;
+                xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+                const showProgress = pct => {
+                    if (!progress) { return; }
+
+                    progress.hidden = false;
+
+                    if (progressBar) { progressBar.style.width = pct + '%'; }
+                };
+
+                xhr.upload.onprogress = e => {
+                    if (e.lengthComputable) {
+                        showProgress(Math.round(e.loaded / e.total * 100));
+                    }
+                };
+
+                const done = () => { if (progress) { progress.hidden = true; } };
+
+                xhr.onload = () => {
+                    done();
+
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try { resolve(JSON.parse(xhr.responseText)); }
+                        catch { resolve({}); }
+                    } else {
+                        reject(xhr.status);
+                    }
+                };
+
+                xhr.onerror = () => { done(); reject(0); };
+
+                showProgress(0);
+                xhr.send(body);
+            });
+        }
+
         if (form && settings.canWrite === 'true') {
             let sending = false;
 
@@ -3528,13 +3632,13 @@
                 // не целясь в него мышью.
                 text.focus();
 
-                fetch(form.getAttribute('action') || location.href, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                    body
-                })
-                    .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                // С файлом — через XHR: только он сообщает, сколько
+                // уже ушло. Над полем ввода ползёт полоска, и человек
+                // видит, что тяжёлый документ грузится, а не завис.
+                // Без файла прогресс не нужен — отправляем как прежде.
+                const hasFiles = files && files.files.length > 0;
+
+                sendMessageRequest(form.getAttribute('action') || location.href, body, hasFiles)
                     .then(answer => {
                         if (answer.error) { toast(answer.error, 'warn'); }
 

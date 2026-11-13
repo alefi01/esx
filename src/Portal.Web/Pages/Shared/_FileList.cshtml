@@ -37,7 +37,7 @@
             <div class="ficon">
                 @if (item.IsFolder)
                 {
-                    @(item.IsInternal ? FileIcons.Locked(30) : FileIcons.Folder(30))
+                    @(item.IsInternal ? FileIcons.Locked(30) : item.IsPublic ? FileIcons.PublicFolder(30) : FileIcons.Folder(30))
                 }
                 else
                 {
