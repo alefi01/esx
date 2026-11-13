@@ -288,15 +288,20 @@ public sealed class FolderTree
             return FolderAccess.Manage;
         }
 
-        // Папка только для чтения — меняет её лишь начальник отдела.
+        // Папка только для чтения: менять нельзя никому — кроме тех,
+        // кого прямо назвали. Список при этом не ограничивает, а наоборот
+        // открывает: «папка закрыта, ведут её вот эти».
+        //
+        // Пустой список — закрыта для всех: ровно то, чего и хотят
+        // от бланков, инструкций и приказов.
         if (IsReadOnly(folder))
         {
-            return FolderAccess.Read;
+            return HasEditors(folder) && CanEditHere(user, folder)
+                ? FolderAccess.Write
+                : FolderAccess.Read;
         }
 
-        // Список тех, кому разрешено менять, действует и на вложенное:
-        // поручили человеку папку — поручили и всё, что он в ней заведёт.
-        return CanEditHere(user, folder) ? FolderAccess.Write : FolderAccess.Read;
+        return FolderAccess.Write;
     }
 
     /// <summary>Человек состоит в этом отделе.</summary>
@@ -342,11 +347,36 @@ public sealed class FolderTree
     }
 
     /// <summary>
-    /// Человеку разрешено менять содержимое этой папки.
+    /// У папки (или у той, что выше) назван список тех, кто её ведёт.
+    /// </summary>
+    private bool HasEditors(StorageFolder folder)
+    {
+        var current = folder;
+        var guard = 0;
+
+        while (current is not null && guard++ < 64)
+        {
+            if (current.Editors.Count > 0)
+            {
+                return true;
+            }
+
+            if (current.IsDepartment)
+            {
+                break;
+            }
+
+            current = current.Parent;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Человек назван среди тех, кто ведёт эту папку.
     ///
     /// Список ищется снизу вверх: у самой папки, потом у той, что выше.
-    /// Пустые списки пропускаются — «не задано» означает «меняют все,
-    /// кому видно», а не «никто».
+    /// Поручили человеку папку — поручили и всё, что он в ней заведёт.
     /// </summary>
     private bool CanEditHere(ClaimsPrincipal user, StorageFolder folder)
     {

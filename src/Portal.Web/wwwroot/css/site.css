@@ -439,7 +439,25 @@ select.sel{appearance:none;border:1px solid var(--border);background:var(--surfa
 .chip.imp{background:rgba(229,72,77,.1);color:var(--danger)}
 .ann-card h3{font-size:15px;font-weight:700;margin-bottom:6px}
 .ann-card p{font-size:13px;line-height:1.65;color:var(--muted);white-space:pre-line}
+/* Подвал карточки объявления: автор слева, кнопки правки и число
+   прочитавших — у правого края. Карточка — колонка с распоркой,
+   поэтому в ряду сетки подвалы стоят на одной линии, даже если
+   текст у объявлений разной длины. */
 .ann-foot{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:11.5px;color:var(--muted)}
+.ann-card{display:flex;flex-direction:column}
+.ann-card .ann-foot{margin-top:auto;padding-top:12px}
+
+/* Имя и дата одним куском: при переносе они не должны разъезжаться
+   по разным строкам, утаскивая за собой число прочитавших. */
+/* Подпись в одну строку: «имя · дата» в узкой колонке переносилось
+   и разрывало подвал пополам, из-за чего карточки в ряду выглядели
+   по-разному. Что не влезло — скрывается многоточием, полностью
+   видно в подсказке. */
+.ann-by{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Дата не сжимается и не переносится: обрезанная дата не значит
+   ничего, а по сокращённому имени автора всё равно узнают. */
+.ann-when{flex:none;white-space:nowrap}
 .ann-foot .avatar{width:24px;height:24px;font-size:9.5px}
 .ann-foot .del{margin-left:auto;color:var(--muted);opacity:0;transition:.15s}
 .ann-card:hover .del{opacity:1}
@@ -738,7 +756,7 @@ button.fav-star.on svg{fill:currentColor}
 
 /* Кнопки правки в подписи объявления — появляются при наведении,
    как «удалить» в макете. */
-.ann-tools{display:flex;gap:2px;margin-left:auto;opacity:0;transition:.15s}
+.ann-tools{display:flex;gap:2px;opacity:0;transition:.15s}
 .ann-card:hover .ann-tools,.ann-tools:focus-within{opacity:1}
 .ann-tools .icon-btn{width:30px;height:30px}
 .ann-tools .icon-btn.on{background:var(--accent-soft);color:var(--accent)}
@@ -2503,7 +2521,12 @@ html.lite .main{background-image:none !important}
 .folder-ann {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-    align-items: start;
+
+    /* Карточки в ряду одной высоты: подвал у каждой прижат книзу
+       (margin-top:auto), поэтому автор и число прочитавших стоят
+       на одной линии. Карточки разной высоты рядом читались как
+       неровная кладка. */
+    align-items: stretch;
     gap: 12px;
     max-width: none;
 }
@@ -2535,7 +2558,7 @@ html.lite .main{background-image:none !important}
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    margin-left: auto;
+    flex: none;
     border: 0;
     background: none;
     padding: 2px 6px;

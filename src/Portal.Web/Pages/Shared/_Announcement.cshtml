@@ -100,21 +100,19 @@
 
     <div class="ann-foot">
         <div class="avatar" data-av="@Avatars.ColorIndex(Model.Item.AuthorDisplayName)">@Model.Initials</div>
-        @Model.Item.AuthorDisplayName · @Model.Item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
-        @if (Model.Item.UpdatedAt is not null)
-        {
-            <span>· изменено</span>
-        }
+        @* Дата без времени: с ним строка «имя · дата» не помещалась
+           в колонку сетки и переносилась, разрывая подпись пополам.
+           Точное время осталось в подсказке — оно нужно редко. *@
+        @* Имя и дата — отдельно: когда места мало, сокращается имя,
+           а дата остаётся целой. Обрезанная дата («12.11.20…»)
+           не значит ничего, а по сокращённому имени человек всё равно
+           узнаёт автора; полное — в подсказке. *@
+        <span class="ann-by" title="@Model.Item.AuthorDisplayName">@Model.Item.AuthorDisplayName</span>
 
-        @* Сколько человек прочитало. Начальник вешает объявление
-           и не знает, дошло ли оно: в переписке на это отвечают
-           галочки, а объявление уходило в пустоту. Список имён открыт
-           всем, кому видно объявление, — это не слежка за людьми,
-           а ответ на вопрос «надо ли повторить на планёрке». *@
-        <button class="ann-views" type="button" data-ann-views="@Model.Item.Id"
-                title="Кто прочитал">
-            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-eye" /></svg>@Model.Views
-        </button>
+        <span class="ann-when" title="@Model.Item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")">
+            @Model.Item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")@(Model.Item.UpdatedAt is not null ? " · изменено" : "")
+        </span>
+
 
         @if (Model.CanModify)
         {
@@ -147,5 +145,19 @@
                 </a>
             </div>
         }
+
+        @* Сколько человек прочитало. Начальник вешает объявление
+           и не знает, дошло ли оно: в переписке на это отвечают
+           галочки, а объявление уходило в пустоту. Список имён открыт
+           всем, кому видно объявление, — это не слежка за людьми,
+           а ответ на вопрос «надо ли повторить на планёрке».
+
+           Стоит последним и у самого края: иначе в карточке во всю
+           ширину он оказывался посередине — там, где кончается место,
+           занятое невидимыми кнопками правки. *@
+        <button class="ann-views" type="button" data-ann-views="@Model.Item.Id"
+                title="Кто прочитал">
+            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-eye" /></svg>@Model.Views
+        </button>
     </div>
 </div>

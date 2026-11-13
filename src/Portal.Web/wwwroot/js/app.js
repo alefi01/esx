@@ -2341,13 +2341,7 @@
                 const m = openModal({
                     title: 'Отдел «' + esc(data.name) + '»',
                     body:
-                        '<p class="hint">В отделе две части, и менять их устройство нельзя: ' +
-                        '<b>«Общая»</b> открыта всем сотрудникам портала, ' +
-                        '<b>«Внутренняя работа»</b> — только сотрудникам этого отдела. ' +
-                        'Новые папки заводятся внутри них.</p>' +
-
                         '<h4>Сотрудники отдела</h4>' +
-                        '<p class="hint">От этого списка зависит, кто видит «Внутреннюю работу».</p>' +
                         '<div class="chips" id="dpMembers">' +
                         members.map(x => chip(x, 'member')).join('') +
                         '</div>' +
@@ -2398,17 +2392,18 @@
                     (data.inPublicPart
                         ? 'все сотрудники портала'
                         : 'только сотрудники отдела «' + esc(data.departmentName || '') + '»') +
-                    '</b>. Это задано устройством отдела и не меняется.</p>' +
+                    '</b></p>' +
 
                     '<label class="fs-check"><input type="checkbox" id="dpRead"' +
                     (data.readOnly ? ' checked' : '') + ' />' +
                     '<span>Только для чтения</span></label>' +
-                    '<p class="hint">Готовые документы — бланки, инструкции, приказы: ' +
-                    'их видно всем, но менять не может никто, кроме вас.</p>' +
 
-                    '<h4>Кто может менять</h4>' +
-                    '<p class="hint">Пусто — меняют все, кому папка видна. ' +
-                    'Вписан хоть один — остальные только смотрят.</p>' +
+                    // Список тех, кто ведёт папку, нужен только при запрете:
+                    // это исключения из него. Без запрета менять могут все,
+                    // кому папка видна, и список отвечал бы на незаданный
+                    // вопрос.
+                    '<div id="dpEdBlock"' + (data.readOnly ? '' : ' hidden') + '>' +
+                    '<h4>Кроме них</h4>' +
                     '<div class="chips" id="dpEditors">' +
                     editors.map(x => chip(x, 'editor')).join('') +
                     '</div>' +
@@ -2418,20 +2413,15 @@
                     'placeholder="Фамилия или логин" />' +
                     '<div class="pick-list" id="dpEdList" hidden></div>' +
                     '</div>' +
+                    '</div>' +
 
-                    '<h4>Уборка</h4>' +
                     '<div class="field"><label for="dpDays">Удалять файлы старше, дней</label>' +
                     '<input type="number" id="dpDays" min="0" value="' +
-                    (data.retentionDays ?? '') + '" placeholder="не удалять" />' +
-                    '<p class="hint">Файлы уходят в корзину, а не стираются сразу — ' +
-                    'ошибку в сроке можно заметить. На вложенные папки срок ' +
-                    'не распространяется: у каждой свой.</p></div>' +
+                    (data.retentionDays ?? '') + '" placeholder="не удалять" /></div>' +
 
                     '<label class="fs-check"><input type="checkbox" id="dpDrop"' +
                     (data.retentionDropsFolder ? ' checked' : '') + ' />' +
-                    '<span>Удалять и саму папку, когда опустеет</span></label>' +
-                    '<p class="hint">Для временных папок: «Сверка за ноябрь», ' +
-                    '«Заявки на пропуск». Иначе после уборки остаётся дерево пустых папок.</p>',
+                    '<span>Удалять и саму папку</span></label>',
 
                 foot: (data.isAdmin
                     ? '<a class="btn" href="/Files/Settings/' + data.id +
@@ -2458,6 +2448,13 @@
 
                 editors.splice(editors.findIndex(p => p.userName === login), 1);
                 paintEditors();
+            });
+
+            const readBox = $('#dpRead', m);
+            const edBlock = $('#dpEdBlock', m);
+
+            readBox.addEventListener('change', () => {
+                edBlock.hidden = !readBox.checked;
             });
 
             staffPicker($('#dpEdAdd', m), $('#dpEdList', m), data.id, person => {
