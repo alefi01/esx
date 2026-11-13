@@ -180,16 +180,40 @@
            в пол-экрана. Сетка сама решает, сколько колонок помещается,
            а важное и закреплённое занимает всю ширину — оно и должно
            бросаться в глаза первым. *@
-        <div class="ann-list folder-ann">
-            @foreach (var item in Model.Announcements)
-            {
-                @await Html.PartialAsync("_Announcement",
-                    new AnnouncementCard(
-                        item,
-                        Model.CanModifyAnnouncement(item),
-                        Model.ViewsOf(item),
-                        Model.Current?.DepartmentRole))
-            }
+        @* ---------- Свернуть объявления ----------
+
+           Объявления стоят над файлами, потому что новость устаревает,
+           а файлы нет. Но тот, кто пришёл за документом в двадцатый раз
+           за день, уже всё прочитал, и лента отодвигает ему работу вниз.
+
+           Поэтому у блока есть язычок на нижней границе: тонкая черта
+           по центру, какой обычно помечают «потяни». Пока на блок
+           не навели, она еле видна и ничего не просит; при наведении
+           проявляется и подписывается. Свёрнутое состояние помнится
+           по папке — человек сворачивает один раз, а не каждый заход. *@
+        <div class="ann-fold" data-ann-fold="@Model.Current?.Id">
+            <div class="ann-fold-body">
+                <div class="ann-list folder-ann">
+                    @foreach (var item in Model.Announcements)
+                    {
+                        @await Html.PartialAsync("_Announcement",
+                            new AnnouncementCard(
+                                item,
+                                Model.CanModifyAnnouncement(item),
+                                Model.ViewsOf(item),
+                                Model.Current?.DepartmentRole))
+                    }
+                </div>
+            </div>
+
+            <button class="ann-handle" type="button" data-ann-toggle
+                    aria-expanded="true" title="Свернуть объявления">
+                <span class="ann-handle-bar"></span>
+                <span class="ann-handle-text">
+                    <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-chev-u" /></svg>
+                    <span data-ann-label>Свернуть</span>
+                </span>
+            </button>
         </div>
     }
 

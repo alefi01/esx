@@ -518,15 +518,32 @@ select.sel{appearance:none;border:1px solid var(--border);background:var(--surfa
    15. Всплывающие сообщения
    ====================================================================== */
 #toastRoot{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:9px;z-index:400;width:340px}
-.toast{background:var(--surface);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow-lg);padding:12px 14px;display:flex;gap:10px;align-items:flex-start;animation:tin .35s cubic-bezier(.2,.9,.3,1.2);position:relative;overflow:hidden}
+/* Уведомление: рамка заметнее обычной и крупнее текст.
+   Прежнее сливалось с белым фоном страницы — его замечали
+   уже исчезающим, и человек не знал, сохранилось ли, что он сделал.
+   Цвет рамки и полоски отсчёта берётся от вида сообщения, поэтому
+   «готово» и «не вышло» различаются до того, как текст прочитан. */
+.toast{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;
+  box-shadow:var(--shadow-lg);padding:14px 16px;display:flex;gap:12px;align-items:flex-start;
+  animation:tin .35s cubic-bezier(.2,.9,.3,1.2);position:relative;overflow:hidden;min-width:300px}
 @keyframes tin{from{opacity:0;transform:translateX(60px)}to{opacity:1;transform:none}}
 .toast.out{animation:tout .3s forwards}
 @keyframes tout{to{opacity:0;transform:translateX(60px)}}
-.toast .t-ic{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none}
-.toast p{font-size:12.5px;line-height:1.45;flex:1}
-.toast .t-act{color:var(--accent);font-weight:700;font-size:12px;flex:none;padding:4px 2px}
+.toast .t-ic{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex:none}
+.toast p{font-size:13.5px;line-height:1.5;flex:1;padding-top:6px}
+.toast .t-act{color:var(--accent);font-weight:700;font-size:13px;flex:none;padding:6px 2px}
 .toast .t-x{color:var(--muted);flex:none}
 .toast .tprog{position:absolute;left:0;bottom:0;height:3px;background:linear-gradient(90deg,var(--accent-2),var(--accent));width:0}
+
+/* Рамка под вид сообщения. Полоска отсчёта — тем же цветом:
+   две разные краски в одном окошке выглядят как брак вёрстки. */
+.toast:has(.t-ic--ok){border-color:color-mix(in srgb,var(--ok) 45%,var(--border))}
+.toast:has(.t-ic--danger){border-color:color-mix(in srgb,var(--danger) 45%,var(--border))}
+.toast:has(.t-ic--warn){border-color:color-mix(in srgb,var(--warn) 45%,var(--border))}
+
+.toast:has(.t-ic--ok) .tprog{background:var(--ok)}
+.toast:has(.t-ic--danger) .tprog{background:var(--danger)}
+.toast:has(.t-ic--warn) .tprog{background:var(--warn)}
 
 @media (max-width:1100px){
   .burger{display:flex}
@@ -2656,3 +2673,87 @@ html.lite .main{background-image:none !important}
 .modal h4 { margin: 16px 0 4px; font-size: 13px; }
 .modal h4:first-child { margin-top: 0; }
 .modal .chips { margin-top: 6px; }
+
+/* ---------- Свернуть объявления ----------
+
+   Язычок на нижней границе блока: тонкая черта по центру, какой
+   обычно помечают «потяни». Пока на блок не навели, она еле видна
+   и ничего не просит; при наведении проявляется и подписывается.
+
+   Высота анимируется через grid-template-rows: это единственный
+   способ плавно свернуть блок, высота которого заранее неизвестна,
+   без вычислений в коде и без «прыжка» в конце. */
+.ann-fold { position: relative; }
+
+.ann-fold-body {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows .28s cubic-bezier(.2, .9, .3, 1);
+}
+
+.ann-fold-body > * { overflow: hidden; min-height: 0; }
+
+.ann-fold.folded .ann-fold-body { grid-template-rows: 0fr; }
+
+.ann-handle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 100%;
+    padding: 6px 0 2px;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+}
+
+/* Сама черта. В покое — бледная и короткая: это намёк, а не кнопка. */
+.ann-handle-bar {
+    width: 46px;
+    height: 4px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--muted) 28%, transparent);
+    transition: .18s;
+}
+
+.ann-fold:hover .ann-handle-bar,
+.ann-handle:focus-visible .ann-handle-bar {
+    width: 72px;
+    background: color-mix(in srgb, var(--muted) 55%, transparent);
+}
+
+/* Подпись проявляется только при наведении — чтобы в покое блок
+   не заканчивался строкой, которую никто не просил читать. */
+.ann-handle-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    opacity: 0;
+    transform: translateY(-3px);
+    transition: .18s;
+    pointer-events: none;
+}
+
+.ann-fold:hover .ann-handle-text,
+.ann-handle:focus-visible .ann-handle-text { opacity: 1; transform: none; }
+
+.ann-handle:hover { color: var(--accent); }
+
+/* Свёрнуто — подпись видна всегда: иначе непонятно, куда делись
+   объявления и как их вернуть. Стрелка смотрит вниз. */
+.ann-fold.folded .ann-handle-text { opacity: 1; transform: none; }
+.ann-fold.folded .ann-handle svg { transform: rotate(180deg); }
+.ann-fold.folded .ann-handle { padding-top: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .ann-fold-body, .ann-handle-bar, .ann-handle-text { transition: none; }
+}
+
+/* Первая отрисовка без движения: иначе при каждом заходе в папку
+   блок на глазах складывался бы заново. */
+.ann-fold.no-anim .ann-fold-body,
+.ann-fold.no-anim .ann-handle-bar,
+.ann-fold.no-anim .ann-handle-text { transition: none; }

@@ -4863,6 +4863,66 @@
         }
     }
 
+    // ---------- Свернуть объявления ----------
+    //
+    // Тот, кто пришёл за документом в двадцатый раз за день, уже всё
+    // прочитал, а лента отодвигает ему работу вниз. Свёрнутое состояние
+    // помнится по папке: человек сворачивает один раз, а не каждый
+    // заход.
+    //
+    // Хранится в браузере, а не на сервере: это личная привычка
+    // смотреть папку так, а не настройка папки для всех.
+    const foldBox = $('[data-ann-fold]');
+
+    if (foldBox) {
+        const key = 'annFold:' + (foldBox.dataset.annFold || '');
+        const label = $('[data-ann-label]', foldBox);
+        const button = $('[data-ann-toggle]', foldBox);
+        const count = $$('.ann-card', foldBox).length;
+
+        // Согласование числительного: «1 объявление», «2 объявления»,
+        // «5 объявлений». Без него выходит «3 объявление» — и портал
+        // сразу выглядит сделанным наспех.
+        const word = n => {
+            const tail = n % 100 >= 11 && n % 100 <= 14 ? 0 : n % 10;
+
+            return n + ' ' + (tail === 1
+                ? 'объявление'
+                : (tail >= 2 && tail <= 4 ? 'объявления' : 'объявлений'));
+        };
+
+        const paint = folded => {
+            foldBox.classList.toggle('folded', folded);
+
+            if (label) { label.textContent = folded ? word(count) : 'Свернуть'; }
+
+            if (button) {
+                button.setAttribute('aria-expanded', folded ? 'false' : 'true');
+                button.title = folded ? 'Показать объявления' : 'Свернуть объявления';
+            }
+        };
+
+        let folded = false;
+
+        try { folded = localStorage.getItem(key) === '1'; } catch { /* приватный режим */ }
+
+        // Первая отрисовка без движения: иначе при каждом заходе
+        // в папку блок на глазах складывался бы заново.
+        foldBox.classList.add('no-anim');
+        paint(folded);
+        requestAnimationFrame(() => foldBox.classList.remove('no-anim'));
+
+        if (button) {
+            button.onclick = () => {
+                folded = !folded;
+
+                paint(folded);
+
+                try { localStorage.setItem(key, folded ? '1' : '0'); } catch { /* не беда */ }
+            };
+        }
+    }
+
     // ---------- Кто прочитал объявление ----------
     //
     // Список открыт всем, кому видно само объявление: это не слежка
@@ -4899,7 +4959,7 @@
                     body
                 });
             })
-            .catch(() => toast('Не удалось получить список', 'err'));
+            .catch(() => toast('Не удалось получить список', 'danger'));
     });
 
     // ---------- Правка своей задачи ----------
@@ -5171,7 +5231,7 @@
                 if (login && login.value.trim() === '') {
                     e.preventDefault();
 
-                    toast('Выберите, кому поставить задачу', 'err');
+                    toast('Выберите, кому поставить задачу', 'warn');
 
                     if (name) { name.focus(); }
                 }
