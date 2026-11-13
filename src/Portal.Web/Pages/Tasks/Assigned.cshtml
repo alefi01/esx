@@ -355,16 +355,29 @@
                             };
 
                             <article class="bcard@(card.Overdue ? " overdue" : "")@urgency">
-                                <div class="bcard-top">
-                                    @if (task.Important)
-                                    {
-                                        <span class="t-imp" title="Важная задача">
-                                            <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>Важно
-                                        </span>
-                                    }
+                                @if (task.Important || item is { State: TaskState.Open, TakenAt: null })
+                                {
+                                    @* Метки — над названием: в одной строке
+                                       с ним они отъедали половину ширины,
+                                       и заголовок переносился по слову. *@
+                                    <div class="bcard-flags">
+                                        @if (task.Important)
+                                        {
+                                            <span class="t-imp" title="Важная задача">
+                                                <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert" /></svg>Важно
+                                            </span>
+                                        }
 
-                                    <b>@task.Title</b>
-                                </div>
+                                        @if (item is { State: TaskState.Open, TakenAt: null })
+                                        {
+                                            @* Ответ на вопрос «он её вообще видел?».
+                                               До сих пор его выясняли в переписке. *@
+                                            <span class="task-state state-fresh">не взята в работу</span>
+                                        }
+                                    </div>
+                                }
+
+                                <b class="bcard-title">@task.Title</b>
 
                                 @if (!string.IsNullOrWhiteSpace(task.Notes))
                                 {
@@ -410,14 +423,6 @@
                                        что прочитал. Молча подменённый текст
                                        хуже отсутствия правки вовсе. *@
                                     <p class="bcard-edited">отредактировано @edited.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</p>
-                                }
-
-                                @if (item is { State: TaskState.Open, TakenAt: null })
-                                {
-                                    @* Ответ на вопрос «он её вообще видел?».
-                                       До сих пор его приходилось выяснять
-                                       в переписке. *@
-                                    <p class="t-fresh">исполнитель ещё не взял в работу</p>
                                 }
 
                                 <footer class="bcard-foot">

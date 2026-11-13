@@ -141,7 +141,12 @@
                             };
 
                             <article class="bcard from-head@(card.Overdue ? " overdue" : "")@urgency">
-                                <div class="bcard-top">
+                                @* Метки стоят НАД названием, а не рядом с ним:
+                                   в строке с заголовком они отъедали половину
+                                   ширины, и название переносилось по одному
+                                   слову. Сверху они читаются как подпись
+                                   к карточке и не мешают. *@
+                                <div class="bcard-flags">
                                     @if (task.Important)
                                     {
                                         <span class="t-imp" title="Важная задача">
@@ -149,12 +154,12 @@
                                         </span>
                                     }
 
-                                    <b>@task.Title</b>
-
                                     <span class="task-state state-@(item is { State: Portal.Web.Data.TaskState.Open, TakenAt: null } ? "fresh" : item.State.ToString().ToLowerInvariant())">
                                         @Portal.Web.Pages.Tasks.AssignedTaskText.StateFor(item)
                                     </span>
                                 </div>
+
+                                <b class="bcard-title">@task.Title</b>
 
                                 @if (!string.IsNullOrWhiteSpace(task.Notes))
                                 {
@@ -236,7 +241,13 @@
                                             </form>
                                         }
 
-                                        @if (item.State != Portal.Web.Data.TaskState.Submitted)
+                                        @* Сдать можно только то, что взято в работу:
+                                           иначе «взял» превращается в кнопку,
+                                           которую никто не нажимает, и начальник
+                                           снова не знает, видел ли человек задачу. *@
+                                        @if (item.State != Portal.Web.Data.TaskState.Submitted
+                                             && (item.TakenAt is not null
+                                                 || item.State == Portal.Web.Data.TaskState.Returned))
                                         {
                                             <form method="post" asp-page-handler="Submit" asp-route-instanceId="@item.Id"
                                                   asp-route-scope="@Model.Scope" asp-route-view="@Model.View"

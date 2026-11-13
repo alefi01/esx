@@ -523,7 +523,7 @@ select.sel{appearance:none;border:1px solid var(--border);background:var(--surfa
    уже исчезающим, и человек не знал, сохранилось ли, что он сделал.
    Цвет рамки и полоски отсчёта берётся от вида сообщения, поэтому
    «готово» и «не вышло» различаются до того, как текст прочитан. */
-.toast{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;
+.toast{background:var(--surface);border:2px solid var(--border);border-radius:14px;
   box-shadow:var(--shadow-lg);padding:14px 16px;display:flex;gap:12px;align-items:flex-start;
   animation:tin .35s cubic-bezier(.2,.9,.3,1.2);position:relative;overflow:hidden;min-width:300px}
 @keyframes tin{from{opacity:0;transform:translateX(60px)}to{opacity:1;transform:none}}
@@ -2757,3 +2757,98 @@ html.lite .main{background-image:none !important}
 .ann-fold.no-anim .ann-fold-body,
 .ann-fold.no-anim .ann-handle-bar,
 .ann-fold.no-anim .ann-handle-text { transition: none; }
+
+/* ---------- Карточка задачи ----------
+
+   Элементы были однотипны и стояли вплотную: метка, название, срок,
+   служебные строки и подпись читались одной серой массой, и глаз
+   не знал, за что зацепиться. Теперь у карточки три слоя — метки,
+   суть (название и подробности), обстоятельства (срок, файлы), —
+   и между ними больше воздуха, чем внутри каждого. */
+.bcard-flags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 7px;
+}
+
+/* Название крупнее прежнего и всегда с новой строки: метка рядом
+   с ним отъедала половину ширины, и заголовок переносился по слову. */
+.bcard-title {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 700;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+/* Срок — плашка, а не строка текста. Это первое, что ищут
+   на карточке, и серым по белому его приходилось выглядывать. */
+.bcard .task-meta-row { margin-top: 9px; gap: 6px; }
+
+.bcard .t-when {
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--surface-3);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
+.bcard .t-when.urgent-soon { background: color-mix(in srgb, var(--warn) 16%, transparent); }
+
+.bcard .t-when.urgent-close,
+.bcard .t-when.urgent-now,
+.bcard .t-when.late { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+
+/* Повтор и прочие обстоятельства — тише срока: они не решают,
+   когда браться за дело. */
+.bcard .t-rep { font-size: 11.5px; color: var(--muted); }
+.bcard .t-dot-sep { display: none; }
+
+/* Имя файла в рамке: без неё оно сливалось с подробностями задачи
+   и не выглядело тем, на что можно нажать. */
+.task-files .chip {
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    font-weight: 600;
+    font-size: 11.5px;
+    padding: 5px 10px;
+    color: var(--text);
+}
+
+.task-files .chip:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-soft);
+}
+
+/* Служебные пометки — самым мелким и тихим: «отредактировано»
+   и «изменено» объясняют, а не зовут к действию. */
+.bcard-edited, .t-edited { font-size: 10.5px; margin-top: 6px; }
+
+/* Подвал ближе к содержимому: пустая полоса над фамилией делала
+   карточку выше без всякой пользы. */
+.bcard-foot { margin-top: 10px; padding-top: 8px; gap: 8px; }
+.bcard-foot .bcard-who { font-size: 12px; font-weight: 600; color: var(--text); }
+.bcard .task-acts { margin-top: 8px; }
+
+/* Кнопка «Скрыть всё» под стопкой уведомлений. Появляется, только
+   когда их больше трёх: когда действий подряд много, окошки занимают
+   весь правый край и закрывают собой то, с чем человек работает. */
+.toast-clear {
+    align-self: flex-end;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+    box-shadow: var(--shadow);
+}
+
+.toast-clear:hover { color: var(--text); border-color: var(--muted); }
+
+.toast[hidden] { display: none; }

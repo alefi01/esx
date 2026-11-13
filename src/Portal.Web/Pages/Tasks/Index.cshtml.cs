@@ -125,7 +125,7 @@ public class IndexModel : PageModel
         ]
         :
         [
-            new("Горит", "late", [], Items.Where(c => Burning(c.Overdue, c.Urgency)).ToList()),
+            new("Истекает срок", "late", [], Items.Where(c => Burning(c.Overdue, c.Urgency)).ToList()),
             new("В работе", "open", [], Items.Where(c => !Burning(c.Overdue, c.Urgency)).ToList())
         ];
 

@@ -191,7 +191,7 @@
     // ======================================================================
 
     const TOAST_COLOR = { info: 'var(--accent)', ok: 'var(--ok)', warn: 'var(--warn)', danger: 'var(--danger)' };
-    const TOAST_ICON = { info: 'info', ok: 'check', warn: 'alert', danger: 'trash' };
+    const TOAST_ICON = { info: 'info', ok: 'check', warn: 'alert', danger: 'alert' };
 
     function toast(msg, type, actionLabel, actionFn) {
         const kind = type || 'info';
@@ -209,7 +209,7 @@
 
         const kill = () => {
             t.classList.add('out');
-            setTimeout(() => t.remove(), 280);
+            setTimeout(() => { t.remove(); trimToasts(root); }, 280);
         };
 
         t.querySelector('.t-x').onclick = kill;
@@ -223,7 +223,60 @@
 
         setTimeout(kill, actionLabel ? 6000 : 4200);
 
+        trimToasts(root);
+
         return t;
+    }
+
+    /** Сколько уведомлений показываем разом. */
+    const TOAST_MAX = 3;
+
+    /**
+     * Держать на экране не больше трёх уведомлений.
+     *
+     * ПОЧЕМУ ВООБЩЕ ПРЕДЕЛ
+     *
+     * Когда действий подряд много — приняли пять задач, загрузили
+     * десять файлов, — окошки занимают весь правый край и закрывают
+     * собой то, с чем человек работает. Три — столько, сколько можно
+     * прочитать, пока они не исчезли сами.
+     *
+     * Лишние НЕ удаляются молча: самые старые просто уходят из виду,
+     * а на их месте появляется «Скрыть всё». Это именно скрыть,
+     * а не прочитать: ничего важного в окошке нет — всё, что стоит
+     * сохранить, лежит в колокольчике.
+     */
+    function trimToasts(root) {
+        const all = $$('.toast', root);
+        const extra = $('.toast-clear', root);
+
+        all.forEach((t, i) => {
+            // Прячем самые старые: новое всегда снизу, его и читают.
+            t.hidden = i < all.length - TOAST_MAX;
+        });
+
+        if (all.length <= TOAST_MAX) {
+            if (extra) { extra.remove(); }
+
+            return;
+        }
+
+        if (extra) {
+            // Новое уведомление встало после кнопки — возвращаем её вниз,
+            // иначе она оказывается в середине стопки.
+            root.appendChild(extra);
+
+            return;
+        }
+
+        const clear = el('<button class="toast-clear" type="button">Скрыть всё</button>');
+
+        clear.onclick = () => {
+            $$('.toast', root).forEach(t => t.remove());
+            clear.remove();
+        };
+
+        root.appendChild(clear);
     }
 
     // Наружу — чтобы сервер мог показать сообщение после перезагрузки
