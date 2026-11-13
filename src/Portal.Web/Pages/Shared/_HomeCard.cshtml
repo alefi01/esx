@@ -34,7 +34,7 @@
     <b>@item.Title</b>
     <span class="pin-body">@TextFormatter.ToMarkedText(item.Body)</span>
     <span class="pin-foot">
-        @item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy") · @item.AuthorDisplayName
+        @item.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · @item.AuthorDisplayName
         @if (folder is not null)
         {
             <text> · @folder.Name</text>

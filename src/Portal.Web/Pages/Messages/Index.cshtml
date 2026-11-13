@@ -476,6 +476,20 @@
                                         </span>
                                     }
 
+                                    @* Сколько человек видело сообщение.
+                                       Галочки отвечают «прочитали все» или
+                                       «ещё нет», а в разговоре на троих важно
+                                       знать, кто именно, — и знать это хочет
+                                       не только написавший. Поэтому глазик
+                                       у каждого сообщения и открыт всем. *@
+                                    @if (message.DeletedAt is null && Model.SeenBy(message) > 0)
+                                    {
+                                        <button class="b-seen" type="button"
+                                                data-seen="@message.Id" title="Кто видел">
+                                            <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-eye" /></svg>@Model.SeenBy(message)
+                                        </button>
+                                    }
+
                                     @if (message.DeletedAt is null && (mine || Model.IsOutsideObserver))
                                     {
                                         <button class="b-del" type="button"

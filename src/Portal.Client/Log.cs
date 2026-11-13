@@ -59,7 +59,7 @@ public static class Log
             }
         }
 
-        return System.IO.Path.Combine(System.IO.Path.GetTempPath(), "portal-widget.log");
+        return System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ftp-widget.log");
     }
 
     public static void Write(string message)

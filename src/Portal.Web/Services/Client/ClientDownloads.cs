@@ -34,7 +34,7 @@ namespace Portal.Web.Services.Client;
 /// </summary>
 public static class ClientDownloads
 {
-    public const string WidgetFileName = "portal-widget.exe";
+    public const string WidgetFileName = "ftp-widget.exe";
 
     /// <summary>Папка, куда администратор кладёт файлы для рабочих ПК.</summary>
     public static string FolderOf(IWebHostEnvironment environment) =>
@@ -128,42 +128,29 @@ public static class ClientDownloads
             return Results.File(path, "application/octet-stream", WidgetFileName, enableRangeProcessing: true);
         }).AllowAnonymous();
 
-        // ---- Файл для установки ----
+        // ---- Прежний адрес «установщика» ----
         //
-        // Тот же виджет, но с дописанным в конец адресом ЭТОГО портала:
-        // человек скачал и запустил — программа уже знает, куда
-        // подключаться, и спрашивать адрес сервера не нужно.
-        // Для Windows такой хвост невидим, запуску он не мешает.
-        app.MapGet("/client/setup.exe", async (
-            IWebHostEnvironment environment,
-            HttpContext http,
-            CancellationToken cancellationToken) =>
+        // Раньше здесь отдавался тот же виджет, но с дописанным в конец
+        // адресом ЭТОГО портала: человек скачал и запустил — программа
+        // уже знала, куда подключаться.
+        //
+        // Так больше нельзя. Дописанный хвост делал КАЖДУЮ скачанную
+        // копию уникальной: у файла всякий раз другой размер и другая
+        // контрольная сумма, и ни в один список известных и безопасных
+        // программ он не попадал. Для антивируса это признак
+        // самоизменяющейся программы, и Касперский такие файлы удаляет.
+        //
+        // Адрес портала теперь спрашивается в самом окне при первом
+        // запуске — один раз, одним полем. Этот адрес оставлен, чтобы
+        // старые ссылки и закладки не ломались: он просто отдаёт тот же
+        // файл, что и /client/portal-widget.exe.
+        app.MapGet("/client/setup.exe", (IWebHostEnvironment environment) =>
         {
             var path = WidgetPathOf(environment);
 
-            if (!File.Exists(path))
-            {
-                return Results.NotFound();
-            }
-
-            var address = http.Request.Scheme + "://" + http.Request.Host.Value;
-            var tail = "\n[PORTAL-ADDRESS]" + address;
-
-            http.Response.ContentType = "application/octet-stream";
-            http.Response.Headers.ContentDisposition = "attachment; filename=\"portal-widget-setup.exe\"";
-
-            // Длину сообщаем заранее, чтобы в браузере была видна
-            // полоса загрузки, а не «неизвестно сколько осталось».
-            http.Response.ContentLength = new FileInfo(path).Length + tail.Length;
-
-            await using (var file = File.OpenRead(path))
-            {
-                await file.CopyToAsync(http.Response.Body, cancellationToken);
-            }
-
-            await http.Response.WriteAsync(tail, cancellationToken);
-
-            return Results.Empty;
+            return File.Exists(path)
+                ? Results.File(path, "application/octet-stream", WidgetFileName, enableRangeProcessing: true)
+                : Results.NotFound();
         }).AllowAnonymous();
 
         // ---- Недостающий компонент ----

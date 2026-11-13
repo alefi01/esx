@@ -109,6 +109,23 @@ public class IndexModel : PageModel
     /// </summary>
     public int ReadByOthersUpTo { get; private set; }
 
+    /// <summary>
+    /// До какого сообщения дочитал каждый участник, кроме меня.
+    ///
+    /// По этому и считается, кто видел сообщение: человек дочитал
+    /// до N — значит видел всё, что было раньше. Отдельной записи
+    /// «прочитано вот это» в переписке не бывает ни у кого:
+    /// она означала бы запись на каждое сообщение каждому участнику.
+    /// </summary>
+    public IReadOnlyList<(string UserName, string DisplayName, int UpTo)> ReadMarks
+    { get; private set; } = [];
+
+    /// <summary>Сколько человек видело это сообщение.</summary>
+    public int SeenBy(Message message) =>
+        ReadMarks.Count(mark => mark.UpTo >= message.Id
+                                && !string.Equals(mark.UserName, message.AuthorUserName,
+                                    StringComparison.OrdinalIgnoreCase));
+
     /// <summary>Подпись под именем собеседника в шапке беседы.</summary>
     public string PresenceCaption { get; private set; } = "";
 
@@ -276,6 +293,10 @@ public class IndexModel : PageModel
         Presence = await _presence.ForAsync(others.Select(p => p.UserName).ToList(), cancellationToken);
 
         ReadByOthersUpTo = others.Count == 0 ? 0 : others.Min(p => p.LastReadMessageId);
+
+        ReadMarks = conversation.Participants
+            .Select(p => (p.UserName, p.DisplayName, p.LastReadMessageId))
+            .ToList();
 
         if (IsOutsideObserver)
         {
@@ -1324,6 +1345,51 @@ public class IndexModel : PageModel
     // ==================================================================
     // Вложения
     // ==================================================================
+
+    /// <summary>
+    /// Кто видел это сообщение.
+    ///
+    /// Открыто всем участникам беседы, а не только автору: в разговоре
+    /// на троих вопрос «все ли прочитали» возникает у каждого, кто
+    /// что-то предложил, а не только у того, кто написал последним.
+    /// Посторонним (администратору в режиме просмотра) список тоже
+    /// виден — он и так видит всю переписку.
+    /// </summary>
+    public async Task<IActionResult> OnGetSeenAsync(
+        int id, int messageId, CancellationToken cancellationToken)
+    {
+        var conversation = await _conversations.GetAsync(id, cancellationToken);
+
+        if (conversation is null || !_conversations.CanRead(User, conversation))
+        {
+            return NotFound();
+        }
+
+        var message = await _db.Messages
+            .FirstOrDefaultAsync(m => m.Id == messageId && m.ConversationId == id, cancellationToken);
+
+        if (message is null)
+        {
+            return NotFound();
+        }
+
+        var people = conversation.Participants
+            .Where(p => p.LastReadMessageId >= messageId
+                        && !string.Equals(p.UserName, message.AuthorUserName,
+                            StringComparison.OrdinalIgnoreCase))
+            .Select(p => new
+            {
+                name = string.IsNullOrWhiteSpace(p.DisplayName) ? p.UserName : p.DisplayName
+            })
+            .ToList();
+
+        // Сколько всего могло прочитать — чтобы окно могло сказать
+        // «двое из пяти», а не просто перечислить имена.
+        var total = conversation.Participants.Count(p =>
+            !string.Equals(p.UserName, message.AuthorUserName, StringComparison.OrdinalIgnoreCase));
+
+        return new JsonResult(new { people, total });
+    }
 
     public async Task<IActionResult> OnGetAttachmentAsync(int fileId, CancellationToken cancellationToken)
     {

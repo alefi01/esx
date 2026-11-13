@@ -9,7 +9,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Portal.Client</RootNamespace>
-    <AssemblyName>portal-widget</AssemblyName>
+    <AssemblyName>ftp-widget</AssemblyName>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 
     <!-- Один файл без установленного .NET на рабочих ПК: ставить рантайм
@@ -19,11 +19,29 @@
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
-    <!-- Сжатие внутри одного файла: без него программа весит 112 МБ.
-         Такой файл дольше скачивается по сети филиала, дольше
-         проверяется антивирусом и не помещается в хранилище исходников
-         (там предел 100 МБ на файл). Со сжатием — около сорока. -->
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- СЖАТИЕ НАМЕРЕННО ВЫКЛЮЧЕНО.
+         Сжатый однофайловый exe с точки зрения антивируса устроен как
+         упаковщик: содержимое нечитаемо до запуска, а при запуске
+         распаковывается на диск. Ровно так прячут вредоносное, и
+         эвристика это ловит. Размер лучше уменьшать обрезкой
+         неиспользуемого кода — она оставляет файл «читаемым». -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+
+    <!-- Обрезка неиспользуемого кода здесь невозможна: WinForms
+         обращается к коду через отражение, и пакет SDK прямо отказывает
+         (NETSDK1175). Поэтому размер уменьшается не обрезкой, а тем,
+         что в хранилище исходников файл лежит архивом. -->
+
+    <!-- Сведения о файле. Исполняемый файл без имени издателя,
+         описания и версии антивирус считает подозрительным сам по себе:
+         у честных программ эти поля заполнены. -->
+    <Company>Корпоративный портал</Company>
+    <Product>Виджет портала</Product>
+    <AssemblyTitle>Виджет портала</AssemblyTitle>
+    <Description>Объявления, задачи и переписка портала на рабочем столе</Description>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
 
     <!-- Сборка идёт и на машине разработчика без Windows: targeting pack
          для WinForms подтягивается пакетом. На самой программе это никак
@@ -31,6 +49,7 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
 
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
 
     <!-- Масштаб экрана: на мониторе со 150% без этого виджет размыт.
          Задаётся свойством проекта, а не манифестом — так требует

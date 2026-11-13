@@ -67,7 +67,7 @@ public static class Updater
             return false;
         }
 
-        var data = await Http.GetByteArrayAsync(settings.Server + "/client/portal-widget.exe");
+        var data = await Http.GetByteArrayAsync(settings.Server + "/client/ftp-widget.exe");
 
         // Проверяем, что это вообще программа: оборванная закачка или
         // страница с ошибкой вместо файла не должны заменить собой

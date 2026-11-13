@@ -79,7 +79,7 @@ public sealed class TrayIcon : IDisposable
 
         var autostart = new ToolStripMenuItem("Запускать вместе с Windows")
         {
-            Checked = settings.Autostart,
+            Checked = Shortcut.AutostartOn(),
             CheckOnClick = true
         };
 
@@ -87,7 +87,7 @@ public sealed class TrayIcon : IDisposable
         {
             settings.Autostart = autostart.Checked;
             settings.Save();
-            ApplyAutostart(settings.Autostart);
+            Shortcut.ApplyAutostart(settings.Autostart);
         };
 
         menu.Items.Add(autostart);
@@ -99,37 +99,6 @@ public sealed class TrayIcon : IDisposable
         return menu;
     }
 
-    /// <summary>
-    /// Запуск вместе с Windows — строкой в разделе реестра для текущего
-    /// пользователя. Не служба и не планировщик: программа работает
-    /// в сеансе человека и показывает ЕГО задачи.
-    /// </summary>
-    public static void ApplyAutostart(bool on)
-    {
-        try
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(
-                @"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
-
-            if (key is null)
-            {
-                return;
-            }
-
-            if (on)
-            {
-                key.SetValue("PortalWidget", "\"" + Environment.ProcessPath + "\"");
-            }
-            else
-            {
-                key.DeleteValue("PortalWidget", throwOnMissingValue: false);
-            }
-        }
-        catch (Exception)
-        {
-            // Политика могла запретить запись — не повод ронять программу.
-        }
-    }
 
     /// <summary>
     /// Число непрочитанного на значке и в подсказке.
@@ -198,10 +167,19 @@ public sealed class TrayIcon : IDisposable
             }
             else
             {
-                // Пусто — рисуем точку: значок должен отличаться от «есть
-                // непрочитанное», но оставаться узнаваемым.
+                // Пусто — пишем «FTP»: значок узнаётся сам по себе,
+                // а не только когда на нём висит число. Три буквы
+                // в кружке — это и есть опознавательный знак программы,
+                // тот же, что на ярлыке рабочего стола.
+                using var font = new Font("Segoe UI", 11f, FontStyle.Bold, GraphicsUnit.Pixel);
                 using var white = new SolidBrush(Color.White);
-                g.FillEllipse(white, 13, 13, 6, 6);
+                using var format = new StringFormat
+                {
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center
+                };
+
+                g.DrawString("FTP", font, white, new RectangleF(0, 0, 32, 33), format);
             }
         }
 

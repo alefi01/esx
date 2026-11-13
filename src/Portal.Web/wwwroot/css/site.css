@@ -447,16 +447,16 @@ select.sel{appearance:none;border:1px solid var(--border);background:var(--surfa
 .ann-card{display:flex;flex-direction:column}
 .ann-card .ann-foot{margin-top:auto;padding-top:12px}
 
-/* Имя и дата одним куском: при переносе они не должны разъезжаться
-   по разным строкам, утаскивая за собой число прочитавших. */
-/* Подпись в одну строку: «имя · дата» в узкой колонке переносилось
-   и разрывало подвал пополам, из-за чего карточки в ряду выглядели
-   по-разному. Что не влезло — скрывается многоточием, полностью
-   видно в подсказке. */
-.ann-by{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Подпись «кто и когда» — одной группой у левого края. В широкой
+   карточке дата улетала к кнопкам справа и читалась как подпись
+   к ним, а не к объявлению.
 
-/* Дата не сжимается и не переносится: обрезанная дата не значит
-   ничего, а по сокращённому имени автора всё равно узнают. */
+   Когда места мало, сокращается имя: обрезанная дата («12.11.20…»)
+   не значит ничего, а по сокращённому имени автора всё равно узнают. */
+/* Имя не растягивается на всю ширину, а стоит вплотную к дате:
+   с flex:1 оно толкало дату к правому краю, и подпись «кто когда»
+   разрывалась через всю карточку. */
+.ann-by{min-width:0;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ann-when{flex:none;white-space:nowrap}
 .ann-foot .avatar{width:24px;height:24px;font-size:9.5px}
 .ann-foot .del{margin-left:auto;color:var(--muted);opacity:0;transition:.15s}
@@ -773,7 +773,7 @@ button.fav-star.on svg{fill:currentColor}
 
 /* Кнопки правки в подписи объявления — появляются при наведении,
    как «удалить» в макете. */
-.ann-tools{display:flex;gap:2px;opacity:0;transition:.15s}
+.ann-tools{display:flex;gap:2px;margin-left:auto;opacity:0;transition:.15s}
 .ann-card:hover .ann-tools,.ann-tools:focus-within{opacity:1}
 .ann-tools .icon-btn{width:30px;height:30px}
 .ann-tools .icon-btn.on{background:var(--accent-soft);color:var(--accent)}
@@ -2576,6 +2576,7 @@ html.lite .main{background-image:none !important}
     align-items: center;
     gap: 4px;
     flex: none;
+    margin-right: auto;
     border: 0;
     background: none;
     padding: 2px 6px;
@@ -2852,3 +2853,23 @@ html.lite .main{background-image:none !important}
 .toast-clear:hover { color: var(--text); border-color: var(--muted); }
 
 .toast[hidden] { display: none; }
+
+/* Сколько человек видело сообщение. Рядом с галочками, но тише их:
+   галочки отвечают «дошло», а это — «кто именно». */
+.b-seen {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    border: 0;
+    background: none;
+    padding: 0 2px;
+    font: inherit;
+    font-size: 10px;
+    color: var(--muted);
+    cursor: pointer;
+    opacity: .75;
+}
+
+.b-seen:hover { opacity: 1; color: var(--accent); }
+
+.msg.mine .b-seen { color: inherit; }

@@ -83,8 +83,8 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
-        // Адрес портала: из командной строки, из хвоста собственного
-        // файла (его дописывает портал при скачивании) или из настроек.
+        // Адрес портала: из командной строки или из настроек. Если
+        // не задан нигде, окно само спросит его при первом открытии.
         var fromArgs = "";
 
         for (var i = 0; i < args.Length - 1; i++)
@@ -93,22 +93,6 @@ internal static class Program
             {
                 fromArgs = Settings.NormalizeServer(args[i + 1]);
             }
-        }
-
-        // Установка — ДО захвата признака единственной копии: установленная
-        // копия запускается отсюда же и должна этот признак получить.
-        if (Installer.NeedsInstall())
-        {
-            var address = fromArgs.Length > 0 ? fromArgs : Installer.ReadAddressFromTail();
-
-            if (address.Length == 0)
-            {
-                address = Settings.Load().Server;
-            }
-
-            Installer.Run(address);
-
-            return;
         }
 
         using var single = new Mutex(initiallyOwned: true, @"Local\PortalWidget", out var first);
@@ -136,7 +120,39 @@ internal static class Program
             settings.Save();
         }
 
-        TrayIcon.ApplyAutostart(settings.Autostart);
+        // Ярлык на рабочем столе — один раз, при первом запуске.
+        //
+        // Программа больше не копирует себя в профиль и не пишет
+        // в реестр автозапуска: для антивируса это узнаваемая связка
+        // (файл сам себя размножает и закрепляется в системе), и
+        // Касперский такой файл удалял — отличить по поведению было
+        // нельзя. Теперь она работает оттуда, куда её положили,
+        // а закрепление сводится к обычным ярлыкам.
+        if (!settings.ShortcutMade)
+        {
+            Shortcut.EnsureDesktop();
+
+            settings.ShortcutMade = true;
+            settings.Save();
+        }
+
+        Shortcut.ApplyAutostart(settings.Autostart);
+
+        // Без этого компонента окно портала не покажется вовсе,
+        // поэтому проверяем до открытия окна и предлагаем доставить.
+        if (!Installer.WebView2Present())
+        {
+            Log.Write("WebView2 не найден");
+
+            using var ask = new WebView2Prompt(settings.Server);
+
+            ask.ShowDialog();
+
+            if (!ask.Installed)
+            {
+                return;
+            }
+        }
 
         Log.Write("Окно открывается. Адрес портала: "
             + (settings.Server.Length == 0 ? "не задан" : settings.Server));

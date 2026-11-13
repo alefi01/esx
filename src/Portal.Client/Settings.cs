@@ -41,6 +41,15 @@ public sealed class Settings
 
     public bool Autostart { get; set; } = true;
 
+    /// <summary>
+    /// Ярлык на рабочем столе уже делали.
+    ///
+    /// Нужна, чтобы не создавать его заново при каждом запуске: человек
+    /// мог ярлык удалить намеренно, и возвращать его против воли —
+    /// навязчивость.
+    /// </summary>
+    public bool ShortcutMade { get; set; }
+
     /// <summary>Виджет уже ставили на экран — значит X и Y осмысленные.</summary>
     public bool Placed { get; set; }
 

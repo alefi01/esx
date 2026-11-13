@@ -26,122 +26,25 @@ namespace Portal.Client;
 /// Прав администратора установка не требует: без повышения прав рантайм
 /// ставится «для пользователя», и программа живёт в профиле.
 /// </summary>
+/// <summary>
+/// Компонент Microsoft Edge WebView2, на котором работает окно портала.
+///
+/// ПОЧЕМУ ЗДЕСЬ БОЛЬШЕ НЕТ УСТАНОВКИ
+///
+/// Раньше программа копировала себя в профиль пользователя, дописывала
+/// себе в хвост адрес портала и прописывалась в реестр автозапуска.
+/// Для антивируса это узнаваемая связка: файл сам себя размножает,
+/// сам себя изменяет и закрепляется в системе. Касперский такой файл
+/// удалял — и отличить его по поведению от настоящей заразы было
+/// нельзя.
+///
+/// Теперь программа работает оттуда, куда её положили, адрес портала
+/// спрашивается в окне, а ярлыки делает <see cref="Shortcut"/>.
+/// Здесь осталась только проверка компонента: без него окно портала
+/// не покажется вовсе.
+/// </summary>
 public static class Installer
 {
-    /// <summary>Куда ставится программа.</summary>
-    public static string InstallFolder => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PortalWidget");
-
-    public static string InstalledExe => Path.Combine(InstallFolder, "portal-widget.exe");
-
-    /// <summary>
-    /// Программа запущена НЕ из места установки — значит её принесли
-    /// и запустили, чтобы установить.
-    /// </summary>
-    public static bool NeedsInstall()
-    {
-        var current = Environment.ProcessPath;
-
-        if (current is null)
-        {
-            return false;
-        }
-
-        return !string.Equals(
-            Path.GetFullPath(current),
-            Path.GetFullPath(InstalledExe),
-            StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Ставит программу и запускает её из места установки.
-    /// Возвращает false, если человек отказался или не получилось.
-    /// </summary>
-    public static bool Run(string server)
-    {
-        Log.Write("Установка: начало. Адрес портала: "
-            + (server.Length > 0 ? server : "неизвестен"));
-
-        var current = Environment.ProcessPath;
-
-        if (current is null)
-        {
-            Log.Write("Установка: не удалось узнать путь к себе");
-
-            return false;
-        }
-
-        var answer = MessageBox.Show(
-            "Установить виджет портала на этот компьютер?\n\n"
-            + "Программа встанет в вашу учётную запись и будет запускаться вместе с Windows. "
-            + "Права администратора не нужны.",
-            "Портал", MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
-
-        if (answer != DialogResult.OK)
-        {
-            Log.Write("Установка: человек отказался");
-
-            return false;
-        }
-
-        // 1. Компонент, на котором работает окно портала.
-        if (!WebView2Present())
-        {
-            Log.Write("Установка: WebView2 не найден, спрашиваем человека");
-
-            if (!InstallWebView2(server))
-            {
-                return false;
-            }
-        }
-
-        // 2. Сама программа.
-        try
-        {
-            Directory.CreateDirectory(InstallFolder);
-
-            // Старый файл может быть занят работающей копией — тогда
-            // отодвигаем его, как при обновлении.
-            if (File.Exists(InstalledExe))
-            {
-                var old = InstalledExe + ".old";
-
-                File.Delete(old);
-                File.Move(InstalledExe, old);
-            }
-
-            File.Copy(current, InstalledExe, overwrite: true);
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(
-                "Не удалось скопировать программу:\n\n" + ex.Message,
-                "Портал", MessageBoxButtons.OK, MessageBoxIcon.Error);
-
-            return false;
-        }
-
-        // 3. Адрес портала запоминаем до первого запуска, чтобы человеку
-        //    не пришлось вводить его руками.
-        if (server.Length > 0)
-        {
-            var settings = Settings.Load();
-
-            settings.Server = server;
-            settings.Save();
-        }
-
-        // 4. Запускаем установленную копию и уходим.
-        Process.Start(new ProcessStartInfo { FileName = InstalledExe, UseShellExecute = true });
-
-        return true;
-    }
-
-    // ==================================================================
-    // WebView2
-    // ==================================================================
-
     /// <summary>
     /// Есть ли на машине рантайм WebView2.
     ///
@@ -213,66 +116,5 @@ public static class Installer
         }
 
         return ask.Installed;
-    }
-
-    // ==================================================================
-    // Адрес портала внутри файла
-    // ==================================================================
-
-    /// <summary>
-    /// Метка, которой портал дописывает свой адрес в конец файла,
-    /// когда отдаёт его на скачивание.
-    /// </summary>
-    public const string AddressMarker = "\n[PORTAL-ADDRESS]";
-
-    /// <summary>
-    /// Читает адрес портала из хвоста собственного файла.
-    ///
-    /// ЗАЧЕМ ТАК
-    ///
-    /// Человек скачивает программу со страницы портала и запускает.
-    /// Спрашивать у него адрес сервера в этот момент — значит заставить
-    /// идти выяснять то, что порталу и так известно. Поэтому портал
-    /// дописывает адрес в конец файла при скачивании.
-    ///
-    /// Для Windows такой хвост невидим: программа запускается по тому,
-    /// что написано в её заголовке, а лишние байты в конце она не читает.
-    /// </summary>
-    public static string ReadAddressFromTail()
-    {
-        try
-        {
-            var path = Environment.ProcessPath;
-
-            if (path is null)
-            {
-                return "";
-            }
-
-            using var stream = File.OpenRead(path);
-
-            // Хвост заведомо короткий — читаем последний килобайт.
-            var size = (int)Math.Min(1024, stream.Length);
-
-            stream.Seek(-size, SeekOrigin.End);
-
-            var buffer = new byte[size];
-
-            stream.ReadExactly(buffer, 0, size);
-
-            var tail = Encoding.UTF8.GetString(buffer);
-            var at = tail.LastIndexOf(AddressMarker, StringComparison.Ordinal);
-
-            if (at < 0)
-            {
-                return "";
-            }
-
-            return Settings.NormalizeServer(tail[(at + AddressMarker.Length)..]);
-        }
-        catch (Exception)
-        {
-            return "";
-        }
     }
 }

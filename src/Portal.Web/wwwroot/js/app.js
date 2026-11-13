@@ -4058,6 +4058,41 @@
             if (quote) { gotoMessage(quote.dataset.goto); }
         });
 
+        // ---------- Кто видел сообщение ----------
+        //
+        // Галочки отвечают «прочитали все» или «ещё нет». В разговоре
+        // на троих этого мало: важно, кто именно, — и знать это хочет
+        // не только тот, кто написал.
+        msgs.addEventListener('click', e => {
+            const button = e.target.closest('[data-seen]');
+
+            if (!button) { return; }
+
+            const id = button.dataset.seen;
+
+            fetch('/Messages?handler=Seen&id=' + conversationId + '&messageId=' + id, {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+                .then(answer => {
+                    const people = answer.people || [];
+
+                    openModal({
+                        title: 'Видели: ' + people.length
+                            + (answer.total > people.length ? ' из ' + answer.total : ''),
+                        body: people.length === 0
+                            ? '<p class="hint">Пока никто не открывал беседу после этого сообщения.</p>'
+                            : '<div class="viewers">' + people.map(person =>
+                                '<div class="viewer">' +
+                                '<span class="avatar sm">' + esc(initials(person.name)) + '</span>' +
+                                '<span class="viewer-name">' + esc(person.name) + '</span>' +
+                                '</div>').join('') + '</div>'
+                    });
+                })
+                .catch(() => toast('Не удалось получить список', 'danger'));
+        });
+
         // ---------- Переход по закреплённым ----------
         //
         // Закреплённых может быть несколько, но на виду всегда одно:
